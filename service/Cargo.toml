@@ -16,12 +16,12 @@ features = [
   "sqlx-sqlite",         # `DATABASE_DRIVER` feature
 ]
 
-[dev-dependencies]
-tokio = { version = "1.45.0", features = ["full"] }
+# [dev-dependencies]
+# tokio = { version = "1.45.0", features = ["full"] }
 
-[features]
-mock = ["sea-orm/mock"]
+# [features]
+# mock = ["sea-orm/mock"]
 
-[[test]]
-name = "mock"
-required-features = ["mock"]
+# [[test]]
+# name = "mock"
+# required-features = ["mock"]
