@@ -6,13 +6,13 @@ use axum::{
     },
 };
 use axum_extra::TypedHeader;
+use eventsource_stream::EventStream;
 use futures::stream::{self, BoxStream, StreamExt}; // 用于处理异步流
 use reqwest::Client; // 用于发起 HTTP 请求
 use serde_json::{Value, json}; // 用于解析 JSON 数据
 use std::error::Error as StdError; // 用于统一错误类型
-use eventsource_stream::EventStream;
 
-use crate::relay::OPENAI_API_URL;
+use crate::relay::openai::OPENAI_API_URL;
 
 /// SSE 接口函数：将上游 API 的事件流代理给前端客户端
 async fn sse_completions(
@@ -37,7 +37,7 @@ async fn sse_completions(
 
     // 向远程 API 发起 POST 请求
     let request_result = api_client
-        .post(OPENAI_API_URL)
+        .post(format!("{}/chat/completions", OPENAI_API_URL))
         .header("Authorization", auth_header_value)
         .header("Content-Type", content_type.to_string())
         .body(body_json_str)
@@ -122,7 +122,7 @@ async fn no_sse_completions(
     let token = authorization.token();
     let auth_header_value = format!("Bearer {}", token);
     let request_result = api_client
-        .post(OPENAI_API_URL)
+        .post(format!("{}/chat/completions", OPENAI_API_URL))
         .header("Authorization", auth_header_value)
         .header("Content-Type", content_type.to_string())
         .body(body_json_str)

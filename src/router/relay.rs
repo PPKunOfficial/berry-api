@@ -11,11 +11,9 @@ pub fn set_relay_router() -> Router {
 fn set_relay_v1_router() -> Router {
     Router::new()
         .route("/", get(|| async { "Hello, World!" }))
-        .nest("/chat", set_relay_v1_chat_router())
-}
-fn set_relay_v1_chat_router() -> Router {
-    Router::new().route(
-        "/completions",
-        post(relay::openai::completions::handle_completions),
-    )
+        .route(
+            "/chat/completions",
+            post(relay::openai::completions::handle_completions),
+        )
+        .route("/models", get(relay::openai::model::handle_model))
 }
