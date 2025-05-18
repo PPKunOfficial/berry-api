@@ -10,9 +10,6 @@ use futures::stream::{self, BoxStream, StreamExt}; // 用于处理异步流
 use reqwest::Client; // 用于发起 HTTP 请求
 use serde_json::{Value, json}; // 用于解析 JSON 数据
 use std::error::Error as StdError; // 用于统一错误类型
-
-// 需要在 Cargo.toml 中添加：
-// eventsource_stream = "0.3" 或者最新版本
 use eventsource_stream::EventStream;
 
 use crate::relay::OPENAI_API_URL;

@@ -1,4 +1,7 @@
-use axum::{routing::{get, post}, Router};
+use axum::{
+    Router,
+    routing::{get, post},
+};
 
 use crate::relay;
 
@@ -11,5 +14,8 @@ fn set_relay_v1_router() -> Router {
         .nest("/chat", set_relay_v1_chat_router())
 }
 fn set_relay_v1_chat_router() -> Router {
-    Router::new().route("/completions", post(relay::openai::handle_completions))
+    Router::new().route(
+        "/completions",
+        post(relay::openai::completions::handle_completions),
+    )
 }
