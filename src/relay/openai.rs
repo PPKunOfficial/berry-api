@@ -16,6 +16,7 @@ use eventsource_stream::EventStream;
 pub async fn sse_completions(
     // 提取 Bearer Token 类型的 Authorization 头
     TypedHeader(authorization): TypedHeader<headers::Authorization<headers::authorization::Bearer>>,
+    TypedHeader(content_type): TypedHeader<headers::ContentType>,
     // 接收 JSON 格式的请求体
     Json(body): Json<Value>,
 ) -> Sse<BoxStream<'static, Result<Event, Box<dyn StdError + Send + Sync + 'static>>>> {
@@ -36,7 +37,7 @@ pub async fn sse_completions(
     let request_result = api_client
         .post("https://aigc.x-see.cn/v1/chat/completions")
         .header("Authorization", auth_header_value)
-        .header("Content-Type", "application/json")
+        .header("Content-Type", content_type.to_string())
         .body(body_json_str)
         .send()
         .await;
@@ -51,17 +52,14 @@ pub async fn sse_completions(
                         match parse_result {
                             Ok(parsed_event) => {
                                 // 将 eventsource_stream::ParsedEvent 转换为 axum 的 Event
-                                let axum_event = Event::default().data(parsed_event.data);
+                                let axum_event = Event::default().data(&parsed_event.data);
 
-                                // // 如果存在 id，则设置到 axum_event 中
-                                // if !parsed_event.id.is_empty() {
-                                //     axum_event = axum_event.id(parsed_event.id);
-                                // }
-                                // // 如果存在 event 类型，则设置到 axum_event 中
-                                // if !parsed_event.event.is_empty() {
-                                //     axum_event = axum_event.event(parsed_event.event);
-                                // }
-
+                                // 不用过多设置 原汁原味转发即可
+                                tracing::trace!(
+                                    "转发事件: 传入: {:?} 传出: {:?}",
+                                    &parsed_event.data,
+                                    &axum_event
+                                );
                                 Ok(axum_event)
                             }
                             Err(e) => {
