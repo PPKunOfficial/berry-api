@@ -137,14 +137,16 @@ async fn no_sse_completions(
                 let text = resp.text().await.unwrap();
                 match serde_json::from_str(&text) {
                     Ok(val) => Json(val),
-                    Err(_) => Json(json!({"berry-api-error": text})),
+                    Err(_) => Json(
+                        json!({"berry-api-error": text,"错误信息": "上游返回数据格式错误，解析失败"}),
+                    ),
                 }
             } else {
                 let text = resp.text().await.unwrap();
-                Json(json!({"berry-api-error": text}))
+                Json(json!({"berry-api-error": text,"错误信息": "请求上游失败"}))
             }
         }
-        Err(e) => Json(json!({"berry-api-error": e.to_string()})),
+        Err(e) => Json(json!({"berry-api-error": e.to_string(),"错误信息": "请求上游失败"})),
     }
 }
 pub async fn handle_completions(
