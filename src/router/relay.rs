@@ -11,5 +11,5 @@ fn set_relay_v1_router() -> Router {
         .nest("/chat", set_relay_v1_chat_router())
 }
 fn set_relay_v1_chat_router() -> Router {
-    Router::new().route("/completions", post(relay::openai::sse_completions))
+    Router::new().route("/completions", post(relay::openai::handle_completions))
 }

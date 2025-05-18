@@ -1,19 +1,24 @@
 use axum::{
     extract::Json,
-    response::sse::{Event, KeepAlive, Sse},
+    response::{
+        IntoResponse,
+        sse::{Event, KeepAlive, Sse},
+    },
 };
 use axum_extra::TypedHeader;
 use futures::stream::{self, BoxStream, StreamExt}; // 用于处理异步流
 use reqwest::Client; // 用于发起 HTTP 请求
-use serde_json::Value; // 用于解析 JSON 数据
+use serde_json::{Value, json}; // 用于解析 JSON 数据
 use std::error::Error as StdError; // 用于统一错误类型
 
 // 需要在 Cargo.toml 中添加：
 // eventsource_stream = "0.3" 或者最新版本
 use eventsource_stream::EventStream;
 
+use crate::relay::OPENAI_API_URL;
+
 /// SSE 接口函数：将上游 API 的事件流代理给前端客户端
-pub async fn sse_completions(
+async fn sse_completions(
     // 提取 Bearer Token 类型的 Authorization 头
     TypedHeader(authorization): TypedHeader<headers::Authorization<headers::authorization::Bearer>>,
     TypedHeader(content_type): TypedHeader<headers::ContentType>,
@@ -35,7 +40,7 @@ pub async fn sse_completions(
 
     // 向远程 API 发起 POST 请求
     let request_result = api_client
-        .post("https://aigc.x-see.cn/v1/chat/completions")
+        .post(OPENAI_API_URL)
         .header("Authorization", auth_header_value)
         .header("Content-Type", content_type.to_string())
         .body(body_json_str)
@@ -106,4 +111,68 @@ pub async fn sse_completions(
 
     // 返回 Sse 响应，并设置保持连接活跃（心跳）
     Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
+async fn no_sse_completions(
+    // 提取 Bearer Token 类型的 Authorization 头
+    TypedHeader(authorization): TypedHeader<headers::Authorization<headers::authorization::Bearer>>,
+    TypedHeader(content_type): TypedHeader<headers::ContentType>,
+    // 接收 JSON 格式的请求体
+    Json(body): Json<Value>,
+) -> Json<Value> {
+    let api_client = Client::new();
+    let body_json_str = body.to_string();
+    let token = authorization.token();
+    let auth_header_value = format!("Bearer {}", token);
+    let request_result = api_client
+        .post(OPENAI_API_URL)
+        .header("Authorization", auth_header_value)
+        .header("Content-Type", content_type.to_string())
+        .body(body_json_str)
+        .send()
+        .await;
+    match request_result {
+        Ok(resp) => {
+            if resp.status().is_success() {
+                let text = resp.text().await.unwrap();
+                match serde_json::from_str(&text) {
+                    Ok(val) => Json(val),
+                    Err(_) => Json(json!({"berry-api-error": text})),
+                }
+            } else {
+                let text = resp.text().await.unwrap();
+                Json(json!({"berry-api-error": text}))
+            }
+        }
+        Err(e) => Json(json!({"berry-api-error": e.to_string()})),
+    }
+}
+pub async fn handle_completions(
+    TypedHeader(authorization): TypedHeader<headers::Authorization<headers::authorization::Bearer>>,
+    TypedHeader(content_type): TypedHeader<headers::ContentType>,
+    Json(body): Json<Value>,
+) -> impl IntoResponse {
+    let is_stream = body
+        .get("stream")
+        .unwrap_or(&Value::Bool(true))
+        .as_bool()
+        .unwrap_or(true);
+
+    if is_stream {
+        sse_completions(
+            TypedHeader(authorization),
+            TypedHeader(content_type),
+            Json(body),
+        )
+        .await
+        .into_response()
+    } else {
+        no_sse_completions(
+            TypedHeader(authorization),
+            TypedHeader(content_type),
+            Json(body),
+        )
+        .await
+        .into_response()
+    }
 }
