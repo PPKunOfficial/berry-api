@@ -10,7 +10,6 @@ pub fn set_relay_router() -> Router {
 }
 fn set_relay_v1_router() -> Router {
     Router::new()
-        .route("/", get(|| async { "Hello, World!" }))
         .route(
             "/chat/completions",
             post(relay::openai::completions::handle_completions),
