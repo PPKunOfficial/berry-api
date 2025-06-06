@@ -8,7 +8,6 @@ use crate::relay::openai::OPENAI_API_URL;
 pub async fn handle_model(
     // 提取 Bearer Token 类型的 Authorization 头
     TypedHeader(authorization): TypedHeader<headers::Authorization<headers::authorization::Bearer>>,
-    TypedHeader(content_type): TypedHeader<headers::ContentType>,
 ) -> Json<Value> {
     let api_client = Client::new();
     let token = authorization.token();
@@ -16,7 +15,6 @@ pub async fn handle_model(
     let request_result = api_client
         .get(format!("{}/models", OPENAI_API_URL))
         .header("Authorization", auth_header_value)
-        .header("Content-Type", content_type.to_string())
         .send()
         .await;
     match request_result {
