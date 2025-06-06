@@ -8,3 +8,4 @@ members = [".", "api"]
 
 [dependencies]
 berry-api-api = { path = "api" }
+eventsource-stream = "0.2.3"
