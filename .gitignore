@@ -23,3 +23,4 @@ target/
 
 # Personal temp
 dev_tmp/
+.env
