@@ -3,7 +3,6 @@ use axum::response::Sse;
 use axum::{extract::Json, response::IntoResponse};
 use axum::response::sse::Event;
 use axum_extra::TypedHeader;
-use bytes::Bytes;
 use futures::{Stream, StreamExt};
 use reqwest::Client;
 use serde_json::{json, Value};
@@ -46,7 +45,7 @@ async fn sse_completions(
                 Ok(Event::default().data(data))
             },
             Err(err) => {
-                Ok(Event::default().data("error"))
+                Ok(Event::default().data(err.to_string()))
             }
         }
     });
