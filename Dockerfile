@@ -2,7 +2,7 @@
 # Stage 1: Builder - 编译你的 Rust 应用
 # 使用 slim 镜像并固定版本以保证构建的稳定性
 # =================================================================
-FROM rust:1.87-slim-bookworm as builder
+FROM rust:1.87-slim-bookworm AS builder
 
 # 创建应用目录
 WORKDIR /app
