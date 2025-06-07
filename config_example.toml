@@ -23,7 +23,7 @@ tags = ["admin", "unlimited"]
 [users.user1]
 name = "Regular User 1"
 token = "berry-user1-token-67890"
-allowed_models = ["gpt-3.5-turbo", "fast-chat"]  # 只能访问这些模型
+allowed_models = ["gpt_3_5_turbo", "fast_chat"]  # 只能访问这些模型（使用模型ID）
 enabled = true
 tags = ["user", "basic"]
 
@@ -31,7 +31,7 @@ tags = ["user", "basic"]
 [users.premium]
 name = "Premium User"
 token = "berry-premium-token-abcde"
-allowed_models = ["gpt-4", "gpt-4-turbo", "premium", "claude_3"]
+allowed_models = ["gpt_4", "gpt_4_turbo", "premium", "claude_3"]  # 使用模型ID
 enabled = true
 tags = ["premium", "advanced"]
 

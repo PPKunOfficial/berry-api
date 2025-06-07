@@ -1,18 +1,11 @@
 use crate::config::loader::load_config;
 use crate::loadbalance::LoadBalanceService;
 use crate::relay::handler::LoadBalancedHandler;
+use crate::router::router::create_app_router;
 
 use anyhow::Result;
-use axum::{
-    Router,
-    extract::{Json, State},
-    response::IntoResponse,
-    routing::{get, post},
-};
-use axum_extra::TypedHeader;
-use serde_json::{Value, json};
+use axum::Router;
 use std::sync::Arc;
-use tower_http::trace::TraceLayer;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
@@ -58,196 +51,12 @@ impl AppState {
 
 /// 创建应用路由
 pub fn create_app(state: AppState) -> Router {
-    Router::new()
-        .route("/", get(index))
-        .route("/health", get(health_check))
-        .route("/metrics", get(metrics))
-        .route("/models", get(list_models))
-        .nest("/v1", create_v1_routes())
-        .layer(TraceLayer::new_for_http())
-        .with_state(state)
+    create_app_router().with_state(state)
 }
 
-/// 创建 v1 API 路由
-fn create_v1_routes() -> Router<AppState> {
-    Router::new()
-        .route("/chat/completions", post(chat_completions))
-        .route("/models", get(list_models_v1))
-        .route("/health", get(health_check_v1))
-}
 
-/// 首页处理器
-async fn index() -> &'static str {
-    "Berry API - Load Balanced AI Gateway"
-}
 
-/// 健康检查处理器
-async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
-    let health = state.load_balancer.get_service_health().await;
 
-    let status = if health.is_healthy() {
-        "healthy"
-    } else {
-        "unhealthy"
-    };
-    let status_code = if health.is_healthy() {
-        axum::http::StatusCode::OK
-    } else {
-        axum::http::StatusCode::SERVICE_UNAVAILABLE
-    };
-
-    (
-        status_code,
-        Json(json!({
-            "status": status,
-            "service_running": health.is_running,
-            "provider_health": {
-                "total": health.health_summary.total_providers,
-                "healthy": health.health_summary.healthy_providers,
-                "ratio": health.health_summary.provider_health_ratio
-            },
-            "model_health": {
-                "total": health.health_summary.total_models,
-                "healthy": health.health_summary.healthy_models,
-                "ratio": health.health_summary.model_health_ratio
-            },
-            "timestamp": chrono::Utc::now().to_rfc3339()
-        })),
-    )
-}
-
-/// 指标处理器
-async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
-    let health = state.load_balancer.get_service_health().await;
-
-    Json(json!({
-        "service": {
-            "running": health.is_running,
-            "total_requests": health.total_requests,
-            "successful_requests": health.successful_requests,
-            "success_rate": health.success_rate()
-        },
-        "providers": {
-            "total": health.health_summary.total_providers,
-            "healthy": health.health_summary.healthy_providers,
-            "health_ratio": health.health_summary.provider_health_ratio
-        },
-        "models": {
-            "total": health.health_summary.total_models,
-            "healthy": health.health_summary.healthy_models,
-            "health_ratio": health.health_summary.model_health_ratio,
-            "details": health.model_stats
-        },
-        "timestamp": chrono::Utc::now().to_rfc3339()
-    }))
-}
-
-/// 列出可用模型（无认证，返回所有可用模型）
-async fn list_models(State(state): State<AppState>) -> impl IntoResponse {
-    let all_models = state.load_balancer.get_available_models();
-    state.handler.handle_models_for_user(all_models).await
-}
-
-/// V1 API: 列出可用模型
-async fn list_models_v1(
-    State(state): State<AppState>,
-    TypedHeader(authorization): TypedHeader<headers::Authorization<headers::authorization::Bearer>>,
-) -> impl IntoResponse {
-    // 认证检查
-    let token = authorization.token();
-    let user = match state.config.validate_user_token(token) {
-        Some(user) if user.enabled => user,
-        _ => {
-            return (
-                axum::http::StatusCode::UNAUTHORIZED,
-                Json(json!({
-                    "error": {
-                        "type": "invalid_token",
-                        "message": "The provided API key is invalid",
-                        "code": 401
-                    }
-                })),
-            )
-                .into_response();
-        }
-    };
-
-    // 获取用户可访问的模型列表
-    let user_models = state.config.get_user_available_models(user);
-
-    // 使用handler的方法来格式化响应
-    state
-        .handler
-        .handle_models_for_user(user_models)
-        .await
-        .into_response()
-}
-
-/// V1 API: 健康检查
-async fn health_check_v1(State(state): State<AppState>) -> impl IntoResponse {
-    let health = state.load_balancer.get_service_health().await;
-
-    Json(json!({
-        "status": if health.is_healthy() { "ok" } else { "error" },
-        "models_available": health.health_summary.has_available_models(),
-        "timestamp": chrono::Utc::now().timestamp()
-    }))
-}
-
-/// V1 API: 聊天完成
-async fn chat_completions(
-    State(state): State<AppState>,
-    TypedHeader(authorization): TypedHeader<headers::Authorization<headers::authorization::Bearer>>,
-    TypedHeader(content_type): TypedHeader<headers::ContentType>,
-    Json(body): Json<Value>,
-) -> axum::response::Response {
-    // 认证检查
-    let token = authorization.token();
-    let user = match state.config.validate_user_token(token) {
-        Some(user) if user.enabled => user,
-        _ => {
-            return (
-                axum::http::StatusCode::UNAUTHORIZED,
-                Json(json!({
-                    "error": {
-                        "type": "invalid_token",
-                        "message": "The provided API key is invalid",
-                        "code": 401
-                    }
-                })),
-            )
-                .into_response();
-        }
-    };
-
-    // 检查模型访问权限
-    if let Some(model_name) = body.get("model").and_then(|m| m.as_str()) {
-        if !state.config.user_can_access_model(user, model_name) {
-            return (
-                axum::http::StatusCode::FORBIDDEN,
-                Json(json!({
-                    "error": {
-                        "type": "model_access_denied",
-                        "message": format!("Access denied for model: {}", model_name),
-                        "code": 403
-                    }
-                })),
-            )
-                .into_response();
-        }
-    }
-
-    // 继续处理请求
-    state
-        .handler
-        .clone()
-        .handle_completions(
-            TypedHeader(authorization),
-            TypedHeader(content_type),
-            Json(body),
-        )
-        .await
-}
 
 /// 启动应用服务器
 pub async fn start_server() -> Result<()> {
@@ -340,6 +149,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_index_endpoint() {
+        use axum::routing::get;
+        use crate::router::router::index;
+
         // 创建一个简单的测试，不需要真实的配置
         let app = Router::new().route("/", get(index));
         let server = TestServer::new(app).unwrap();
