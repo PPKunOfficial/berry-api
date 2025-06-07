@@ -157,6 +157,9 @@ impl BackendSelector {
             LoadBalanceStrategy::Random => {
                 self.select_random(&enabled_backends)
             }
+            LoadBalanceStrategy::WeightedFailover => {
+                self.select_weighted_failover(&enabled_backends)
+            }
         }
     }
 
@@ -210,5 +213,148 @@ impl BackendSelector {
         let mut rng = thread_rng();
         let index = rng.gen_range(0..backends.len());
         Ok(backends[index].clone())
+    }
+
+    fn select_weighted_failover(&self, backends: &[Backend]) -> Result<Backend> {
+        // 首先过滤出健康的后端
+        let healthy_backends: Vec<Backend> = backends
+            .iter()
+            .filter(|b| self.metrics.is_healthy(&b.provider, &b.model))
+            .cloned()
+            .collect();
+
+        // 如果有健康的后端，使用权重随机选择
+        if !healthy_backends.is_empty() {
+            return self.select_weighted_random(&healthy_backends);
+        }
+
+        // 如果没有健康的后端，使用故障转移策略
+        // 按优先级排序，选择优先级最高的后端
+        let mut sorted = backends.to_vec();
+        sorted.sort_by_key(|b| b.priority);
+
+        // 返回优先级最高的后端（即使它可能不健康）
+        Ok(sorted[0].clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::model::{ModelMapping, LoadBalanceStrategy};
+
+    fn create_test_backends() -> Vec<Backend> {
+        vec![
+            Backend {
+                provider: "provider1".to_string(),
+                model: "model1".to_string(),
+                weight: 0.6,
+                priority: 1,
+                enabled: true,
+                tags: vec![],
+            },
+            Backend {
+                provider: "provider2".to_string(),
+                model: "model2".to_string(),
+                weight: 0.3,
+                priority: 2,
+                enabled: true,
+                tags: vec![],
+            },
+            Backend {
+                provider: "provider3".to_string(),
+                model: "model3".to_string(),
+                weight: 0.1,
+                priority: 3,
+                enabled: true,
+                tags: vec![],
+            },
+        ]
+    }
+
+    fn create_test_mapping() -> ModelMapping {
+        ModelMapping {
+            name: "test-model".to_string(),
+            backends: create_test_backends(),
+            strategy: LoadBalanceStrategy::WeightedFailover,
+            enabled: true,
+        }
+    }
+
+    #[test]
+    fn test_weighted_failover_all_healthy() {
+        let metrics = Arc::new(MetricsCollector::new());
+        let mapping = create_test_mapping();
+        let selector = BackendSelector::new(mapping, metrics.clone());
+
+        // 标记所有后端为健康
+        metrics.record_success("provider1:model1");
+        metrics.record_success("provider2:model2");
+        metrics.record_success("provider3:model3");
+
+        // 多次选择，验证权重分布
+        let mut selections = std::collections::HashMap::new();
+        for _ in 0..1000 {
+            let backend = selector.select().unwrap();
+            let key = format!("{}:{}", backend.provider, backend.model);
+            *selections.entry(key).or_insert(0) += 1;
+        }
+
+        // 验证选择分布大致符合权重比例
+        assert!(selections.contains_key("provider1:model1"));
+        assert!(selections.contains_key("provider2:model2"));
+        assert!(selections.contains_key("provider3:model3"));
+
+        // provider1应该被选择最多（权重0.6）
+        let provider1_count = selections.get("provider1:model1").unwrap_or(&0);
+        let provider2_count = selections.get("provider2:model2").unwrap_or(&0);
+        let provider3_count = selections.get("provider3:model3").unwrap_or(&0);
+
+        assert!(provider1_count > provider2_count);
+        assert!(provider2_count > provider3_count);
+    }
+
+    #[test]
+    fn test_weighted_failover_partial_failure() {
+        let metrics = Arc::new(MetricsCollector::new());
+        let mapping = create_test_mapping();
+        let selector = BackendSelector::new(mapping, metrics.clone());
+
+        // 标记provider1为不健康，其他为健康
+        metrics.record_failure("provider1:model1");
+        metrics.record_success("provider2:model2");
+        metrics.record_success("provider3:model3");
+
+        // 多次选择，验证只选择健康的后端
+        let mut selections = std::collections::HashMap::new();
+        for _ in 0..100 {
+            let backend = selector.select().unwrap();
+            let key = format!("{}:{}", backend.provider, backend.model);
+            *selections.entry(key).or_insert(0) += 1;
+        }
+
+        // 不应该选择不健康的provider1
+        assert!(!selections.contains_key("provider1:model1"));
+        // 应该选择健康的provider2和provider3
+        assert!(selections.contains_key("provider2:model2"));
+        assert!(selections.contains_key("provider3:model3"));
+    }
+
+    #[test]
+    fn test_weighted_failover_all_failed() {
+        let metrics = Arc::new(MetricsCollector::new());
+        let mapping = create_test_mapping();
+        let selector = BackendSelector::new(mapping, metrics.clone());
+
+        // 标记所有后端为不健康
+        metrics.record_failure("provider1:model1");
+        metrics.record_failure("provider2:model2");
+        metrics.record_failure("provider3:model3");
+
+        // 应该选择优先级最高的后端（priority=1）
+        let backend = selector.select().unwrap();
+        assert_eq!(backend.provider, "provider1");
+        assert_eq!(backend.model, "model1");
+        assert_eq!(backend.priority, 1);
     }
 }

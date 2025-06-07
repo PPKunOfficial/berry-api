@@ -17,6 +17,7 @@ Berry API 是一个高性能的AI服务负载均衡网关，支持多种AI服务
 - **最低延迟 (least_latency)**: 选择响应时间最短的后端
 - **故障转移 (failover)**: 按优先级顺序选择，主要用于备份场景
 - **随机 (random)**: 完全随机选择后端
+- **权重故障转移 (weighted_failover)**: 🆕 结合权重选择和故障转移，优先从健康的后端中按权重选择，故障时自动切换
 
 ### 监控与指标
 - **实时健康状态**: 提供详细的服务健康状态信息
@@ -164,6 +165,44 @@ curl http://localhost:3000/metrics
 2. **性能优化**: 使用`least_latency`策略，自动选择最快的服务
 3. **成本控制**: 使用`weighted_random`策略，按成本分配权重
 4. **简单均衡**: 使用`round_robin`策略，平均分配请求
+5. **🆕 智能负载均衡**: 使用`weighted_failover`策略，结合权重分配和故障转移的优势
+
+#### 权重故障转移策略详解
+
+`weighted_failover` 策略的工作原理：
+
+1. **正常情况**: 从所有健康的后端中按权重随机选择
+2. **故障情况**: 自动屏蔽不健康的后端，只在健康的后端中选择
+3. **全部故障**: 如果所有后端都不健康，按优先级选择（优先级数字越小越优先）
+4. **自动恢复**: 后端恢复健康后自动重新加入负载均衡
+
+```toml
+[models.smart_model]
+name = "smart-model"
+strategy = "weighted_failover"
+enabled = true
+
+[[models.smart_model.backends]]
+provider = "openai-main"
+model = "gpt-4"
+weight = 0.6    # 60%权重 - 主要服务
+priority = 1    # 最高优先级
+enabled = true
+
+[[models.smart_model.backends]]
+provider = "openai-backup"
+model = "gpt-4"
+weight = 0.3    # 30%权重 - 备用服务
+priority = 2    # 中等优先级
+enabled = true
+
+[[models.smart_model.backends]]
+provider = "azure"
+model = "gpt-4"
+weight = 0.1    # 10%权重 - 应急服务
+priority = 3    # 最低优先级
+enabled = true
+```
 
 ### 健康检查配置
 ```toml

@@ -135,6 +135,7 @@ pub enum LoadBalanceStrategy {
     LeastLatency,
     Failover,
     Random,
+    WeightedFailover,
 }
 
 impl Default for LoadBalanceStrategy {

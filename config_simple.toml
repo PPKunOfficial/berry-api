@@ -134,3 +134,30 @@ model = "gpt-35-turbo"
 weight = 1.0
 priority = 2    # 备用
 enabled = true
+
+# 智能负载均衡模型 - 权重故障转移策略
+[models.smart_model]
+name = "smart-model"
+strategy = "weighted_failover"  # 新的负载均衡策略
+enabled = true
+
+[[models.smart_model.backends]]
+provider = "openai-main"
+model = "gpt-4"
+weight = 0.6    # 主要服务60%权重
+priority = 1    # 最高优先级
+enabled = true
+
+[[models.smart_model.backends]]
+provider = "openai-backup"
+model = "gpt-4"
+weight = 0.3    # 备用服务30%权重
+priority = 2    # 中等优先级
+enabled = true
+
+[[models.smart_model.backends]]
+provider = "azure"
+model = "gpt-4"
+weight = 0.1    # Azure服务10%权重
+priority = 3    # 最低优先级
+enabled = true
