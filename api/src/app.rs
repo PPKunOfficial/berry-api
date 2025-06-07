@@ -2,19 +2,18 @@ use crate::config::loader::load_config;
 use crate::loadbalance::LoadBalanceService;
 use crate::relay::handler::LoadBalancedHandler;
 
-
 use anyhow::Result;
 use axum::{
+    Router,
     extract::{Json, State},
     response::IntoResponse,
     routing::{get, post},
-    Router,
 };
 use axum_extra::TypedHeader;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 use tower_http::trace::TraceLayer;
-use tracing::{info, error};
+use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 /// 应用状态，包含负载均衡服务
@@ -85,35 +84,42 @@ async fn index() -> &'static str {
 /// 健康检查处理器
 async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
     let health = state.load_balancer.get_service_health().await;
-    
-    let status = if health.is_healthy() { "healthy" } else { "unhealthy" };
-    let status_code = if health.is_healthy() { 
-        axum::http::StatusCode::OK 
-    } else { 
-        axum::http::StatusCode::SERVICE_UNAVAILABLE 
+
+    let status = if health.is_healthy() {
+        "healthy"
+    } else {
+        "unhealthy"
+    };
+    let status_code = if health.is_healthy() {
+        axum::http::StatusCode::OK
+    } else {
+        axum::http::StatusCode::SERVICE_UNAVAILABLE
     };
 
-    (status_code, Json(json!({
-        "status": status,
-        "service_running": health.is_running,
-        "provider_health": {
-            "total": health.health_summary.total_providers,
-            "healthy": health.health_summary.healthy_providers,
-            "ratio": health.health_summary.provider_health_ratio
-        },
-        "model_health": {
-            "total": health.health_summary.total_models,
-            "healthy": health.health_summary.healthy_models,
-            "ratio": health.health_summary.model_health_ratio
-        },
-        "timestamp": chrono::Utc::now().to_rfc3339()
-    })))
+    (
+        status_code,
+        Json(json!({
+            "status": status,
+            "service_running": health.is_running,
+            "provider_health": {
+                "total": health.health_summary.total_providers,
+                "healthy": health.health_summary.healthy_providers,
+                "ratio": health.health_summary.provider_health_ratio
+            },
+            "model_health": {
+                "total": health.health_summary.total_models,
+                "healthy": health.health_summary.healthy_models,
+                "ratio": health.health_summary.model_health_ratio
+            },
+            "timestamp": chrono::Utc::now().to_rfc3339()
+        })),
+    )
 }
 
 /// 指标处理器
 async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
     let health = state.load_balancer.get_service_health().await;
-    
+
     Json(json!({
         "service": {
             "running": health.is_running,
@@ -161,7 +167,8 @@ async fn list_models_v1(
                         "code": 401
                     }
                 })),
-            ).into_response();
+            )
+                .into_response();
         }
     };
 
@@ -169,13 +176,17 @@ async fn list_models_v1(
     let user_models = state.config.get_user_available_models(user);
 
     // 使用handler的方法来格式化响应
-    state.handler.handle_models_for_user(user_models).await.into_response()
+    state
+        .handler
+        .handle_models_for_user(user_models)
+        .await
+        .into_response()
 }
 
 /// V1 API: 健康检查
 async fn health_check_v1(State(state): State<AppState>) -> impl IntoResponse {
     let health = state.load_balancer.get_service_health().await;
-    
+
     Json(json!({
         "status": if health.is_healthy() { "ok" } else { "error" },
         "models_available": health.health_summary.has_available_models(),
@@ -204,7 +215,8 @@ async fn chat_completions(
                         "code": 401
                     }
                 })),
-            ).into_response();
+            )
+                .into_response();
         }
     };
 
@@ -220,16 +232,21 @@ async fn chat_completions(
                         "code": 403
                     }
                 })),
-            ).into_response();
+            )
+                .into_response();
         }
     }
 
     // 继续处理请求
-    state.handler.clone().handle_completions(
-        TypedHeader(authorization),
-        TypedHeader(content_type),
-        Json(body),
-    ).await
+    state
+        .handler
+        .clone()
+        .handle_completions(
+            TypedHeader(authorization),
+            TypedHeader(content_type),
+            Json(body),
+        )
+        .await
 }
 
 /// 启动应用服务器
@@ -256,9 +273,10 @@ pub async fn start_server() -> Result<()> {
     let app = create_app(app_state.clone());
 
     // 启动服务器
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await?;
+    let bind_addr = std::env::var("BIND_ADDRESS").unwrap_or_else(|_| "127.0.0.1:3000".to_string());
+    let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
     let addr = listener.local_addr()?;
-    
+
     info!("Server listening on http://{}", addr);
     info!("Available endpoints:");
     info!("  GET  /              - API information");
@@ -279,7 +297,7 @@ pub async fn start_server() -> Result<()> {
 
     // 启动服务器
     let server = axum::serve(listener, app).with_graceful_shutdown(shutdown_signal);
-    
+
     if let Err(e) = server.await {
         error!("Server error: {}", e);
         app_state.shutdown().await;
@@ -300,18 +318,23 @@ mod tests {
     async fn test_health_endpoint() {
         // 注意：这个测试需要有效的配置文件
         // 在实际测试中，你可能需要使用模拟的配置
-        
+
         // 创建测试配置
-        unsafe { std::env::set_var("CONFIG_PATH", "config_example.toml"); }
-        
+        unsafe {
+            std::env::set_var("CONFIG_PATH", "config_example.toml");
+        }
+
         // 这个测试可能会失败，因为需要真实的API密钥
         // 在实际项目中，应该使用模拟的服务
         if let Ok(app_state) = AppState::new().await {
             let app = create_app(app_state);
             let server = TestServer::new(app).unwrap();
-            
+
             let response = server.get("/health").await;
-            assert!(response.status_code() == StatusCode::OK || response.status_code() == StatusCode::SERVICE_UNAVAILABLE);
+            assert!(
+                response.status_code() == StatusCode::OK
+                    || response.status_code() == StatusCode::SERVICE_UNAVAILABLE
+            );
         }
     }
 
@@ -320,7 +343,7 @@ mod tests {
         // 创建一个简单的测试，不需要真实的配置
         let app = Router::new().route("/", get(index));
         let server = TestServer::new(app).unwrap();
-        
+
         let response = server.get("/").await;
         assert_eq!(response.status_code(), StatusCode::OK);
         assert_eq!(response.text(), "Berry API - Load Balanced AI Gateway");
