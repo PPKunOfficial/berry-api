@@ -27,4 +27,6 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64
-          tags: ppkun00/berry-api:${{ github.ref_name }}
+          tags: |
+            ppkun00/berry-api:${{ github.ref_name }}
+            ppkun00/berry-api:latest
