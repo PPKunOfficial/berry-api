@@ -202,8 +202,10 @@ impl SelectedBackend {
 
     /// 获取API密钥
     pub fn get_api_key(&self) -> Result<String> {
-        std::env::var(&self.provider.api_key_env)
-            .map_err(|_| anyhow::anyhow!("API key not found: {}", self.provider.api_key_env))
+        if self.provider.api_key.is_empty() {
+            anyhow::bail!("API key is empty for provider: {}", self.provider.name);
+        }
+        Ok(self.provider.api_key.clone())
     }
 
     /// 获取请求头
@@ -261,7 +263,7 @@ mod tests {
         providers.insert("test-provider".to_string(), Provider {
             name: "Test Provider".to_string(),
             base_url: "https://api.test.com".to_string(),
-            api_key_env: "TEST_API_KEY".to_string(),
+            api_key: "test-api-key".to_string(),
             models: vec!["test-model".to_string()],
             headers: HashMap::new(),
             enabled: true,

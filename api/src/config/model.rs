@@ -40,7 +40,7 @@ impl Default for GlobalSettings {
 pub struct Provider {
     pub name: String,
     pub base_url: String,
-    pub api_key_env: String,
+    pub api_key: String,
     pub models: Vec<String>,
     #[serde(default)]
     pub headers: HashMap<String, String>,
@@ -132,8 +132,8 @@ impl Config {
             if provider.base_url.is_empty() {
                 anyhow::bail!("Provider '{}' has empty base_url", provider_id);
             }
-            if provider.api_key_env.is_empty() {
-                anyhow::bail!("Provider '{}' has empty api_key_env", provider_id);
+            if provider.api_key.is_empty() {
+                anyhow::bail!("Provider '{}' has empty api_key", provider_id);
             }
             if provider.models.is_empty() {
                 anyhow::bail!("Provider '{}' has no models defined", provider_id);

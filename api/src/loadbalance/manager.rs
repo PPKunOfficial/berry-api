@@ -192,7 +192,7 @@ mod tests {
         providers.insert("test-provider".to_string(), Provider {
             name: "Test Provider".to_string(),
             base_url: "https://api.test.com".to_string(),
-            api_key_env: "TEST_API_KEY".to_string(),
+            api_key: "test-api-key".to_string(),
             models: vec!["test-model".to_string()],
             headers: HashMap::new(),
             enabled: true,

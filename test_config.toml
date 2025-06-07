@@ -10,7 +10,7 @@ circuit_breaker_timeout_seconds = 30
 [providers.test-provider]
 name = "Test Provider"
 base_url = "https://httpbin.org"
-api_key_env = "TEST_API_KEY"
+api_key = "test-api-key"
 models = ["test-model"]
 enabled = true
 timeout_seconds = 10

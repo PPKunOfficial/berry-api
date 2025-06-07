@@ -54,22 +54,19 @@ cd berry-api
 cp config_example.toml config.toml
 ```
 
-### 4. 设置环境变量
+### 4. 配置API密钥
+直接在配置文件中设置API密钥：
+```toml
+[providers.openai-primary]
+name = "OpenAI Primary Account"
+base_url = "https://api.openai.com/v1"
+api_key = "sk-your-openai-key-here"  # 直接在配置文件中设置
+models = ["gpt-4", "gpt-3.5-turbo"]
+enabled = true
+```
+
+可选：设置配置文件路径环境变量
 ```bash
-# OpenAI API密钥
-export OPENAI_API_KEY_PRIMARY="sk-your-primary-key"
-export OPENAI_API_KEY_SECONDARY="sk-your-secondary-key"
-
-# Azure OpenAI
-export AZURE_OPENAI_API_KEY="your-azure-key"
-
-# Anthropic
-export ANTHROPIC_API_KEY="your-anthropic-key"
-
-# 代理服务
-export PROXY_API_KEY="your-proxy-key"
-
-# 配置文件路径（可选）
 export CONFIG_PATH="config.toml"
 ```
 
@@ -85,7 +82,7 @@ cargo run
 [providers.openai-primary]
 name = "OpenAI Primary Account"
 base_url = "https://api.openai.com/v1"
-api_key_env = "OPENAI_API_KEY_PRIMARY"
+api_key = "sk-your-openai-key-here"
 models = ["gpt-4", "gpt-4-turbo", "gpt-3.5-turbo"]
 enabled = true
 timeout_seconds = 30

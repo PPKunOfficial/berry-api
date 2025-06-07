@@ -91,18 +91,17 @@ impl HealthChecker {
     ) {
         let start_time = Instant::now();
         
-        // 尝试获取API密钥
-        let api_key = match std::env::var(&provider.api_key_env) {
-            Ok(key) => key,
-            Err(_) => {
-                warn!("API key not found for provider {}: {}", provider_id, provider.api_key_env);
-                // 标记所有模型为不健康
-                for model in &provider.models {
-                    metrics.record_failure(&format!("{}:{}", provider_id, model));
-                }
-                return;
+        // 直接使用配置中的API密钥
+        let api_key = &provider.api_key;
+
+        if api_key.is_empty() {
+            warn!("API key is empty for provider {}", provider_id);
+            // 标记所有模型为不健康
+            for model in &provider.models {
+                metrics.record_failure(&format!("{}:{}", provider_id, model));
             }
-        };
+            return;
+        }
 
         // 构建健康检查请求
         let health_check_url = format!("{}/models", provider.base_url);
@@ -256,7 +255,7 @@ mod tests {
         providers.insert("test-provider".to_string(), Provider {
             name: "Test Provider".to_string(),
             base_url: "https://httpbin.org".to_string(), // 使用httpbin进行测试
-            api_key_env: "TEST_API_KEY".to_string(),
+            api_key: "test-api-key".to_string(),
             models: vec!["test-model".to_string()],
             headers: HashMap::new(),
             enabled: true,
