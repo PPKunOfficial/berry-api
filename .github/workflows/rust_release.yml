@@ -32,12 +32,6 @@ jobs:
             target: aarch64-apple-darwin
             artifact_name: target/aarch64-apple-darwin/release/berry-api
             asset_name: berry-api-macos-aarch64
-          
-          # Windows x86_64
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            artifact_name: target/x86_64-pc-windows-msvc/release/berry-api.exe
-            asset_name: berry-api-windows-x86_64.exe
 
     steps:
       - name: 检出代码
@@ -98,7 +92,6 @@ jobs:
             berry-api-linux-x86_64/berry-api
             berry-api-linux-aarch64/berry-api
             berry-api-macos-aarch64/berry-api
-            berry-api-windows-x86_64.exe/berry-api.exe
           generate_release_notes: true
           draft: false
           prerelease: false
