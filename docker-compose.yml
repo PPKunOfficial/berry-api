@@ -14,11 +14,5 @@ services:
       - CONFIG_PATH=/app/config.toml
     volumes:
       # 挂载配置文件
-      - ./config.toml:/app/config.toml:ro
+      - ./dev_tmp/config.toml:/app/config.toml:ro
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
