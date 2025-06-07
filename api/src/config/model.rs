@@ -263,15 +263,21 @@ impl Config {
             .find(|user| user.enabled && user.token == token)
     }
 
-    /// 检查用户是否有权限访问指定模型
+    /// 检查用户是否有权限访问指定模型（通过模型名称）
     pub fn user_can_access_model(&self, user: &UserToken, model_name: &str) -> bool {
         // 如果allowed_models为空，表示允许访问所有模型
         if user.allowed_models.is_empty() {
             return true;
         }
 
-        // 检查模型是否在允许列表中
-        user.allowed_models.contains(&model_name.to_string())
+        // 需要找到模型名称对应的模型ID，然后检查权限
+        for (model_id, model) in &self.models {
+            if model.name == model_name && model.enabled {
+                return user.allowed_models.contains(model_id);
+            }
+        }
+
+        false
     }
 
     /// 获取用户信息
@@ -282,18 +288,19 @@ impl Config {
     /// 获取用户可访问的模型列表
     pub fn get_user_available_models(&self, user: &UserToken) -> Vec<String> {
         if user.allowed_models.is_empty() {
-            // 如果没有限制，返回所有可用模型
+            // 如果没有限制，返回所有可用模型的名称（面向客户的名称）
             self.get_available_models()
         } else {
-            // 返回用户允许的且系统中存在的模型
+            // 返回用户允许的且系统中存在的模型的面向客户名称
             user.allowed_models
                 .iter()
-                .filter(|model_name| {
+                .filter_map(|model_id| {
+                    // 检查模型ID是否存在且启用
                     self.models
-                        .get(*model_name)
-                        .map_or(false, |model| model.enabled)
+                        .get(model_id)
+                        .filter(|model| model.enabled)
+                        .map(|model| model.name.clone()) // 返回面向客户的模型名称
                 })
-                .cloned()
                 .collect()
         }
     }

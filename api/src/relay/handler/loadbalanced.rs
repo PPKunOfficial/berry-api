@@ -317,11 +317,9 @@ impl LoadBalancedHandler {
         }
     }
 
-    /// 获取可用模型列表
-    pub async fn handle_models(&self) -> Json<Value> {
-        let models = self.load_balancer.get_available_models();
-        
-        let model_list: Vec<Value> = models
+    /// 获取可用模型列表（根据用户权限过滤）
+    pub async fn handle_models_for_user(&self, user_models: Vec<String>) -> Json<Value> {
+        let model_list: Vec<Value> = user_models
             .into_iter()
             .map(|model_name| {
                 json!({

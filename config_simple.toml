@@ -17,11 +17,11 @@ allowed_models = []  # 允许访问所有模型
 enabled = true
 tags = ["admin"]
 
-# 普通用户
+# 普通用户 - 只能访问基础模型
 [users.user1]
 name = "Regular User"
 token = "berry-user-789012"
-allowed_models = ["gpt-3.5-turbo", "fast-model"]
+allowed_models = ["gpt_3_5_turbo", "fast_model"]  # 注意：使用配置中定义的模型ID
 enabled = true
 tags = ["user"]
 

@@ -108,7 +108,7 @@ user_chat_data='{
 }'
 test_request "普通用户访问允许的模型" "POST" "/v1/chat/completions" "$USER_TOKEN" "$user_chat_data" "200"
 
-# 测试8: 普通用户访问不允许的模型
+# 测试8: 普通用户访问不允许的模型（gpt-4不在用户的allowed_models中）
 restricted_chat_data='{
   "model": "gpt-4",
   "messages": [{"role": "user", "content": "Hello"}],
@@ -151,7 +151,8 @@ echo
 echo -e "${YELLOW}使用说明:${NC}"
 echo "1. 确保使用 config_simple.toml 配置文件启动服务"
 echo "2. 管理员令牌: $ADMIN_TOKEN (可访问所有模型)"
-echo "3. 普通用户令牌: $USER_TOKEN (只能访问指定模型)"
-echo "4. 所有API请求都需要在Header中包含: Authorization: Bearer <token>"
+echo "3. 普通用户令牌: $USER_TOKEN (只能访问 gpt_3_5_turbo 和 fast_model)"
+echo "4. 用户只能看到自己有权限访问的模型列表"
+echo "5. 所有API请求都需要在Header中包含: Authorization: Bearer <token>"
 echo
 echo -e "${GREEN}认证系统已成功集成到Berry API中！${NC}"

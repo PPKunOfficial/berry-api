@@ -135,9 +135,10 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
     }))
 }
 
-/// 列出可用模型
+/// 列出可用模型（无认证，返回所有可用模型）
 async fn list_models(State(state): State<AppState>) -> impl IntoResponse {
-    state.handler.handle_models().await
+    let all_models = state.load_balancer.get_available_models();
+    state.handler.handle_models_for_user(all_models).await
 }
 
 /// V1 API: 列出可用模型
@@ -164,24 +165,10 @@ async fn list_models_v1(
     };
 
     // 获取用户可访问的模型列表
-    let models = state.config.get_user_available_models(user);
+    let user_models = state.config.get_user_available_models(user);
 
-    let model_list: Vec<Value> = models
-        .into_iter()
-        .map(|model_name| {
-            json!({
-                "id": model_name,
-                "object": "model",
-                "created": chrono::Utc::now().timestamp(),
-                "owned_by": "berry-api"
-            })
-        })
-        .collect();
-
-    Json(json!({
-        "object": "list",
-        "data": model_list
-    })).into_response()
+    // 使用handler的方法来格式化响应
+    state.handler.handle_models_for_user(user_models).await.into_response()
 }
 
 /// V1 API: 健康检查
