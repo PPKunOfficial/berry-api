@@ -281,6 +281,7 @@ mod tests {
         Config {
             providers,
             models,
+            users: HashMap::new(),
             settings: GlobalSettings {
                 health_check_interval_seconds: 10,
                 request_timeout_seconds: 5,

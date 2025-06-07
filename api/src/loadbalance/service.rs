@@ -289,6 +289,7 @@ mod tests {
         Config {
             providers,
             models,
+            users: HashMap::new(),
             settings: GlobalSettings::default(),
         }
     }

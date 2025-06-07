@@ -9,6 +9,40 @@ max_retries = 3                       # 最大重试次数
 circuit_breaker_failure_threshold = 5 # 熔断器失败阈值
 circuit_breaker_timeout_seconds = 60  # 熔断器超时时间（秒）
 
+# ===== 用户令牌配置 =====
+
+# 管理员用户 - 可以访问所有模型
+[users.admin]
+name = "Administrator"
+token = "berry-admin-token-12345"
+allowed_models = []  # 空数组表示允许访问所有模型
+enabled = true
+tags = ["admin", "unlimited"]
+
+# 普通用户 - 只能访问指定模型
+[users.user1]
+name = "Regular User 1"
+token = "berry-user1-token-67890"
+allowed_models = ["gpt-3.5-turbo", "fast-chat"]  # 只能访问这些模型
+enabled = true
+tags = ["user", "basic"]
+
+# 高级用户 - 可以访问高级模型
+[users.premium]
+name = "Premium User"
+token = "berry-premium-token-abcde"
+allowed_models = ["gpt-4", "gpt-4-turbo", "premium", "claude_3"]
+enabled = true
+tags = ["premium", "advanced"]
+
+# 测试用户 - 已禁用
+[users.test]
+name = "Test User"
+token = "berry-test-token-fghij"
+allowed_models = ["test"]
+enabled = false  # 已禁用
+tags = ["test"]
+
 # ===== 定义 Provider（AI服务提供商）=====
 
 # OpenAI 主要账户

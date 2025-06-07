@@ -7,6 +7,24 @@ max_retries = 3
 circuit_breaker_failure_threshold = 5
 circuit_breaker_timeout_seconds = 60
 
+# ===== 用户令牌配置 =====
+
+# 管理员用户
+[users.admin]
+name = "Admin User"
+token = "berry-admin-123456"
+allowed_models = []  # 允许访问所有模型
+enabled = true
+tags = ["admin"]
+
+# 普通用户
+[users.user1]
+name = "Regular User"
+token = "berry-user-789012"
+allowed_models = ["gpt-3.5-turbo", "fast-model"]
+enabled = true
+tags = ["user"]
+
 # ===== Provider 配置 =====
 
 # OpenAI 主账户

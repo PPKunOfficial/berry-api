@@ -6,6 +6,14 @@ max_retries = 2
 circuit_breaker_failure_threshold = 3
 circuit_breaker_timeout_seconds = 30
 
+# 测试用户令牌
+[users.test-user]
+name = "Test User"
+token = "test-token-123"
+allowed_models = ["test-model"]
+enabled = true
+tags = ["test"]
+
 # 测试Provider - 使用httpbin作为测试端点
 [providers.test-provider]
 name = "Test Provider"

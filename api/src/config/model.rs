@@ -6,6 +6,7 @@ use anyhow::Result;
 pub struct Config {
     pub providers: HashMap<String, Provider>,
     pub models: HashMap<String, ModelMapping>,
+    pub users: HashMap<String, UserToken>,
     #[serde(default)]
     pub settings: GlobalSettings,
 }
@@ -74,6 +75,27 @@ pub struct Backend {
     pub enabled: bool,
     #[serde(default)]
     pub tags: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct UserToken {
+    pub name: String,
+    pub token: String,
+    #[serde(default)]
+    pub allowed_models: Vec<String>, // 空表示允许所有模型
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub rate_limit: Option<RateLimit>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct RateLimit {
+    pub requests_per_minute: u32,
+    pub requests_per_hour: u32,
+    pub requests_per_day: u32,
 }
 
 // Default value functions
@@ -175,6 +197,26 @@ impl Config {
             }
         }
 
+        // 验证用户令牌
+        for (user_id, user) in &self.users {
+            if user.name.is_empty() {
+                anyhow::bail!("User '{}' has empty name", user_id);
+            }
+            if user.token.is_empty() {
+                anyhow::bail!("User '{}' has empty token", user_id);
+            }
+
+            // 验证允许的模型是否存在
+            for model_name in &user.allowed_models {
+                if !self.models.contains_key(model_name) {
+                    anyhow::bail!(
+                        "User '{}' references unknown model '{}'",
+                        user_id, model_name
+                    );
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -212,5 +254,47 @@ impl Config {
             .filter(|(_, model)| model.enabled)
             .map(|(_, model)| model.name.clone())
             .collect()
+    }
+
+    /// 验证用户令牌
+    pub fn validate_user_token(&self, token: &str) -> Option<&UserToken> {
+        self.users
+            .values()
+            .find(|user| user.enabled && user.token == token)
+    }
+
+    /// 检查用户是否有权限访问指定模型
+    pub fn user_can_access_model(&self, user: &UserToken, model_name: &str) -> bool {
+        // 如果allowed_models为空，表示允许访问所有模型
+        if user.allowed_models.is_empty() {
+            return true;
+        }
+
+        // 检查模型是否在允许列表中
+        user.allowed_models.contains(&model_name.to_string())
+    }
+
+    /// 获取用户信息
+    pub fn get_user(&self, user_id: &str) -> Option<&UserToken> {
+        self.users.get(user_id)
+    }
+
+    /// 获取用户可访问的模型列表
+    pub fn get_user_available_models(&self, user: &UserToken) -> Vec<String> {
+        if user.allowed_models.is_empty() {
+            // 如果没有限制，返回所有可用模型
+            self.get_available_models()
+        } else {
+            // 返回用户允许的且系统中存在的模型
+            user.allowed_models
+                .iter()
+                .filter(|model_name| {
+                    self.models
+                        .get(*model_name)
+                        .map_or(false, |model| model.enabled)
+                })
+                .cloned()
+                .collect()
+        }
     }
 }

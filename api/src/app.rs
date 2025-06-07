@@ -2,6 +2,7 @@ use crate::config::loader::load_config;
 use crate::loadbalance::LoadBalanceService;
 use crate::relay::handler::LoadBalancedHandler;
 
+
 use anyhow::Result;
 use axum::{
     extract::{Json, State},
@@ -20,6 +21,7 @@ use tracing::{info, error};
 pub struct AppState {
     pub load_balancer: Arc<LoadBalanceService>,
     pub handler: Arc<LoadBalancedHandler>,
+    pub config: Arc<crate::config::model::Config>,
 }
 
 impl AppState {
@@ -30,8 +32,8 @@ impl AppState {
         info!("Configuration loaded successfully");
 
         // 创建负载均衡服务
-        let load_balancer = Arc::new(LoadBalanceService::new(config)?);
-        
+        let load_balancer = Arc::new(LoadBalanceService::new(config.clone())?);
+
         // 启动负载均衡服务
         load_balancer.start().await?;
         info!("Load balance service started");
@@ -42,6 +44,7 @@ impl AppState {
         Ok(Self {
             load_balancer,
             handler,
+            config: Arc::new(config),
         })
     }
 
@@ -138,8 +141,47 @@ async fn list_models(State(state): State<AppState>) -> impl IntoResponse {
 }
 
 /// V1 API: 列出可用模型
-async fn list_models_v1(State(state): State<AppState>) -> impl IntoResponse {
-    state.handler.handle_models().await
+async fn list_models_v1(
+    State(state): State<AppState>,
+    TypedHeader(authorization): TypedHeader<headers::Authorization<headers::authorization::Bearer>>,
+) -> impl IntoResponse {
+    // 认证检查
+    let token = authorization.token();
+    let user = match state.config.validate_user_token(token) {
+        Some(user) if user.enabled => user,
+        _ => {
+            return (
+                axum::http::StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "error": {
+                        "type": "invalid_token",
+                        "message": "The provided API key is invalid",
+                        "code": 401
+                    }
+                })),
+            ).into_response();
+        }
+    };
+
+    // 获取用户可访问的模型列表
+    let models = state.config.get_user_available_models(user);
+
+    let model_list: Vec<Value> = models
+        .into_iter()
+        .map(|model_name| {
+            json!({
+                "id": model_name,
+                "object": "model",
+                "created": chrono::Utc::now().timestamp(),
+                "owned_by": "berry-api"
+            })
+        })
+        .collect();
+
+    Json(json!({
+        "object": "list",
+        "data": model_list
+    })).into_response()
 }
 
 /// V1 API: 健康检查
@@ -160,6 +202,41 @@ async fn chat_completions(
     TypedHeader(content_type): TypedHeader<headers::ContentType>,
     Json(body): Json<Value>,
 ) -> axum::response::Response {
+    // 认证检查
+    let token = authorization.token();
+    let user = match state.config.validate_user_token(token) {
+        Some(user) if user.enabled => user,
+        _ => {
+            return (
+                axum::http::StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "error": {
+                        "type": "invalid_token",
+                        "message": "The provided API key is invalid",
+                        "code": 401
+                    }
+                })),
+            ).into_response();
+        }
+    };
+
+    // 检查模型访问权限
+    if let Some(model_name) = body.get("model").and_then(|m| m.as_str()) {
+        if !state.config.user_can_access_model(user, model_name) {
+            return (
+                axum::http::StatusCode::FORBIDDEN,
+                Json(json!({
+                    "error": {
+                        "type": "model_access_denied",
+                        "message": format!("Access denied for model: {}", model_name),
+                        "code": 403
+                    }
+                })),
+            ).into_response();
+        }
+    }
+
+    // 继续处理请求
     state.handler.clone().handle_completions(
         TypedHeader(authorization),
         TypedHeader(content_type),
