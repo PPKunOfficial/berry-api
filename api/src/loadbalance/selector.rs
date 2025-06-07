@@ -57,15 +57,18 @@ impl MetricsCollector {
     /// 记录请求失败
     pub fn record_failure(&self, backend_key: &str) {
         let now = Instant::now();
+        tracing::debug!("Recording failure for backend: {}", backend_key);
 
         if let Ok(mut failures) = self.failure_counts.write() {
             let count = failures.entry(backend_key.to_string()).or_insert(0);
             *count += 1;
+            tracing::debug!("Updated failure count for {}: {}", backend_key, *count);
         }
 
         // 标记为不健康
         if let Ok(mut health) = self.health_status.write() {
             health.insert(backend_key.to_string(), false);
+            tracing::debug!("Marked backend {} as unhealthy", backend_key);
         }
 
         // 添加到不健康列表
@@ -74,8 +77,11 @@ impl MetricsCollector {
                 Some(backend) => {
                     backend.last_failure_time = now;
                     backend.failure_count += 1;
+                    tracing::debug!("Updated existing unhealthy backend {}: failure_count={}",
+                                   backend_key, backend.failure_count);
                 }
                 None => {
+                    tracing::debug!("Adding new backend {} to unhealthy list", backend_key);
                     unhealthy.insert(backend_key.to_string(), UnhealthyBackend {
                         backend_key: backend_key.to_string(),
                         first_failure_time: now,
@@ -91,24 +97,32 @@ impl MetricsCollector {
 
     /// 记录请求成功
     pub fn record_success(&self, backend_key: &str) {
+        tracing::debug!("Recording success for backend: {}", backend_key);
+
         // 重置失败计数
         if let Ok(mut failures) = self.failure_counts.write() {
             failures.insert(backend_key.to_string(), 0);
+            tracing::debug!("Reset failure count for {} to 0", backend_key);
         }
 
         // 标记为健康
         if let Ok(mut health) = self.health_status.write() {
             health.insert(backend_key.to_string(), true);
+            tracing::debug!("Marked backend {} as healthy", backend_key);
         }
 
         // 从不健康列表中移除
         if let Ok(mut unhealthy) = self.unhealthy_backends.write() {
-            unhealthy.remove(backend_key);
+            if unhealthy.remove(backend_key).is_some() {
+                tracing::debug!("Removed backend {} from unhealthy list", backend_key);
+            }
         }
 
         // 重置恢复尝试计数
         if let Ok(mut recovery) = self.recovery_attempts.write() {
-            recovery.remove(backend_key);
+            if recovery.remove(backend_key).is_some() {
+                tracing::debug!("Reset recovery attempts for backend {}", backend_key);
+            }
         }
     }
 
@@ -180,17 +194,23 @@ impl MetricsCollector {
     /// 记录恢复尝试
     pub fn record_recovery_attempt(&self, backend_key: &str) {
         let now = Instant::now();
+        tracing::debug!("Recording recovery attempt for backend: {}", backend_key);
 
         if let Ok(mut unhealthy) = self.unhealthy_backends.write() {
             if let Some(backend) = unhealthy.get_mut(backend_key) {
                 backend.last_recovery_attempt = Some(now);
                 backend.recovery_attempts += 1;
+                tracing::debug!("Updated recovery attempt for {}: attempt #{}",
+                               backend_key, backend.recovery_attempts);
+            } else {
+                tracing::warn!("Attempted to record recovery for backend {} not in unhealthy list", backend_key);
             }
         }
 
         if let Ok(mut recovery) = self.recovery_attempts.write() {
             let count = recovery.entry(backend_key.to_string()).or_insert(0);
             *count += 1;
+            tracing::debug!("Updated global recovery count for {}: {}", backend_key, *count);
         }
     }
 
@@ -327,13 +347,10 @@ impl BackendSelector {
             return self.select_weighted_random(&healthy_backends);
         }
 
-        // 如果没有健康的后端，使用故障转移策略
-        // 按优先级排序，选择优先级最高的后端
-        let mut sorted = backends.to_vec();
-        sorted.sort_by_key(|b| b.priority);
-
-        // 返回优先级最高的后端（即使它可能不健康）
-        Ok(sorted[0].clone())
+        // 如果没有健康的后端，仍然使用权重选择
+        // 这样可以在所有后端都不健康时，仍然根据权重分配流量
+        tracing::warn!("No healthy backends available for weighted failover, using weights on all backends");
+        self.select_weighted_random(backends)
     }
 }
 

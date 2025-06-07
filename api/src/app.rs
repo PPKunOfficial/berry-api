@@ -15,6 +15,7 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use tower_http::trace::TraceLayer;
 use tracing::{info, error};
+use tracing_subscriber::EnvFilter;
 
 /// 应用状态，包含负载均衡服务
 #[derive(Clone)]
@@ -233,9 +234,11 @@ async fn chat_completions(
 
 /// 启动应用服务器
 pub async fn start_server() -> Result<()> {
-    // 初始化日志
+    // 初始化日志 - 支持RUST_LOG环境变量
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
+        .with_env_filter(EnvFilter::from_default_env()
+            .add_directive("berry_api_api=debug".parse().unwrap())
+            .add_directive("info".parse().unwrap()))
         .with_file(true)
         .with_line_number(true)
         .init();

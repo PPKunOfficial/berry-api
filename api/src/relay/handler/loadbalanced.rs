@@ -1,5 +1,5 @@
-use axum::response::sse::Event;
 use axum::response::Sse;
+use axum::response::sse::Event;
 use axum::{extract::Json, response::IntoResponse};
 use axum_extra::TypedHeader;
 use eventsource_stream::Eventsource;
@@ -11,7 +11,7 @@ use std::time::Instant;
 use crate::loadbalance::{LoadBalanceService, RequestResult};
 use crate::relay::client::openai::OpenAIClient;
 
-use super::types::{create_error_json, create_network_error_json};
+use super::types::create_error_json;
 
 /// 负载均衡的OpenAI兼容处理器
 pub struct LoadBalancedHandler {
@@ -26,7 +26,9 @@ impl LoadBalancedHandler {
     /// 处理聊天完成请求（支持负载均衡和智能重试）
     pub async fn handle_completions(
         self: Arc<Self>,
-        TypedHeader(authorization): TypedHeader<headers::Authorization<headers::authorization::Bearer>>,
+        TypedHeader(authorization): TypedHeader<
+            headers::Authorization<headers::authorization::Bearer>,
+        >,
         TypedHeader(content_type): TypedHeader<headers::ContentType>,
         Json(mut body): Json<Value>,
     ) -> axum::response::Response {
@@ -37,20 +39,40 @@ impl LoadBalancedHandler {
             Some(name) => name.to_string(),
             None => {
                 tracing::error!("Missing model field in request");
-                return Json(create_error_json(&crate::relay::client::ClientError::HeaderParseError(
-                    "Missing model field in request".to_string()
-                ))).into_response();
+                return Json(create_error_json(
+                    &crate::relay::client::ClientError::HeaderParseError(
+                        "Missing model field in request".to_string(),
+                    ),
+                ))
+                .into_response();
             }
         };
 
         // 尝试处理请求，带内部重试机制
-        match self.try_handle_with_retries(&model_name, &mut body, &authorization, &content_type, start_time).await {
+        match self
+            .try_handle_with_retries(
+                &model_name,
+                &mut body,
+                &authorization,
+                &content_type,
+                start_time,
+            )
+            .await
+        {
             Ok(response) => response,
             Err(e) => {
-                tracing::error!("All retry attempts failed for model '{}': {}", model_name, e);
-                Json(create_error_json(&crate::relay::client::ClientError::HeaderParseError(
-                    format!("Request failed after all retries: {}", e)
-                ))).into_response()
+                tracing::error!(
+                    "All retry attempts failed for model '{}': {}",
+                    model_name,
+                    e
+                );
+                Json(create_error_json(
+                    &crate::relay::client::ClientError::HeaderParseError(format!(
+                        "Request failed after all retries: {}",
+                        e
+                    )),
+                ))
+                .into_response()
             }
         }
     }
@@ -78,7 +100,11 @@ impl LoadBalancedHandler {
                     if attempt == max_retries - 1 {
                         return Err(anyhow::anyhow!("Failed to select backend: {}", e));
                     }
-                    tracing::warn!("Backend selection failed on attempt {}, retrying: {}", attempt + 1, e);
+                    tracing::warn!(
+                        "Backend selection failed on attempt {}, retrying: {}",
+                        attempt + 1,
+                        e
+                    );
                     continue;
                 }
             };
@@ -99,11 +125,15 @@ impl LoadBalancedHandler {
             let api_key = match selected_backend.get_api_key() {
                 Ok(key) => key,
                 Err(e) => {
-                    self.load_balancer.record_request_result(
-                        &selected_backend.backend.provider,
-                        &selected_backend.backend.model,
-                        RequestResult::Failure { error: e.to_string() },
-                    ).await;
+                    self.load_balancer
+                        .record_request_result(
+                            &selected_backend.backend.provider,
+                            &selected_backend.backend.model,
+                            RequestResult::Failure {
+                                error: e.to_string(),
+                            },
+                        )
+                        .await;
 
                     if attempt == max_retries - 1 {
                         return Err(anyhow::anyhow!("API key not found: {}", e));
@@ -120,13 +150,16 @@ impl LoadBalancedHandler {
             let headers = match client.build_request_headers(&authorization, &content_type) {
                 Ok(mut h) => {
                     // 使用选中后端的API密钥
-                    h.insert("Authorization", format!("Bearer {}", api_key).parse().unwrap());
+                    h.insert(
+                        "Authorization",
+                        format!("Bearer {}", api_key).parse().unwrap(),
+                    );
 
                     // 添加自定义头部
                     for (key, value) in selected_backend.get_headers() {
                         if let (Ok(header_name), Ok(header_value)) = (
                             key.parse::<reqwest::header::HeaderName>(),
-                            value.parse::<reqwest::header::HeaderValue>()
+                            value.parse::<reqwest::header::HeaderValue>(),
                         ) {
                             h.insert(header_name, header_value);
                         }
@@ -134,30 +167,45 @@ impl LoadBalancedHandler {
                     h
                 }
                 Err(e) => {
-                    self.load_balancer.record_request_result(
-                        &selected_backend.backend.provider,
-                        &selected_backend.backend.model,
-                        RequestResult::Failure { error: e.to_string() },
-                    ).await;
+                    self.load_balancer
+                        .record_request_result(
+                            &selected_backend.backend.provider,
+                            &selected_backend.backend.model,
+                            RequestResult::Failure {
+                                error: e.to_string(),
+                            },
+                        )
+                        .await;
 
                     if attempt == max_retries - 1 {
                         return Err(anyhow::anyhow!("Failed to build request headers: {}", e));
                     }
-                    tracing::warn!("Header build error on attempt {}, retrying: {}", attempt + 1, e);
+                    tracing::warn!(
+                        "Header build error on attempt {}, retrying: {}",
+                        attempt + 1,
+                        e
+                    );
                     continue;
                 }
             };
 
             // 尝试发送请求
-            match self.try_single_request(&client, headers, body, &selected_backend, start_time).await {
+            match self
+                .try_single_request(&client, headers, body, &selected_backend, start_time)
+                .await
+            {
                 Ok(response) => return Ok(response),
                 Err(e) => {
                     // 记录失败
-                    self.load_balancer.record_request_result(
-                        &selected_backend.backend.provider,
-                        &selected_backend.backend.model,
-                        RequestResult::Failure { error: e.to_string() },
-                    ).await;
+                    self.load_balancer
+                        .record_request_result(
+                            &selected_backend.backend.provider,
+                            &selected_backend.backend.model,
+                            RequestResult::Failure {
+                                error: e.to_string(),
+                            },
+                        )
+                        .await;
 
                     if attempt == max_retries - 1 {
                         return Err(anyhow::anyhow!("Request failed after all retries: {}", e));
@@ -188,13 +236,237 @@ impl LoadBalancedHandler {
             .unwrap_or(false);
 
         if is_stream {
-            Ok(self.handle_streaming_request(client.clone(), headers, body.clone(), selected_backend.clone(), start_time).await.into_response())
+            // 流式请求：尝试发送请求，失败时返回错误以触发重试
+            match self
+                .try_streaming_request(
+                    client.clone(),
+                    headers,
+                    body.clone(),
+                    selected_backend.clone(),
+                    start_time,
+                )
+                .await
+            {
+                Ok(response) => Ok(response.into_response()),
+                Err(e) => Err(anyhow::anyhow!("Streaming request failed: {}", e)),
+            }
         } else {
-            Ok(self.handle_non_streaming_request(client.clone(), headers, body.clone(), selected_backend.clone(), start_time).await.into_response())
+            // 非流式请求：尝试发送请求，失败时返回错误以触发重试
+            match self
+                .try_non_streaming_request(
+                    client.clone(),
+                    headers,
+                    body.clone(),
+                    selected_backend.clone(),
+                    start_time,
+                )
+                .await
+            {
+                Ok(response) => Ok(response.into_response()),
+                Err(e) => Err(anyhow::anyhow!("Non-streaming request failed: {}", e)),
+            }
         }
     }
 
-    /// 处理流式请求
+    /// 尝试流式请求（可能失败以触发重试）
+    async fn try_streaming_request(
+        &self,
+        client: OpenAIClient,
+        headers: reqwest::header::HeaderMap,
+        body: Value,
+        selected_backend: crate::loadbalance::SelectedBackend,
+        start_time: Instant,
+    ) -> Result<
+        Sse<futures::stream::BoxStream<'static, Result<Event, std::convert::Infallible>>>,
+        anyhow::Error,
+    > {
+        let provider = &selected_backend.backend.provider;
+        let model = &selected_backend.backend.model;
+
+        // 发送API请求
+        let response = match client.chat_completions(headers, &body).await {
+            Ok(resp) => resp,
+            Err(e) => {
+                tracing::debug!("Streaming request failed: {:?}", e);
+                // 记录失败但不在这里处理，让重试机制处理
+                self.load_balancer
+                    .record_request_result(
+                        provider,
+                        model,
+                        RequestResult::Failure {
+                            error: e.to_string(),
+                        },
+                    )
+                    .await;
+                return Err(anyhow::anyhow!("API request failed: {}", e));
+            }
+        };
+
+        // 检查HTTP状态
+        if !response.status().is_success() {
+            let status = response.status();
+            tracing::debug!("Streaming request failed with status: {}", status);
+            // 记录失败但不在这里处理，让重试机制处理
+            self.load_balancer
+                .record_request_result(
+                    provider,
+                    model,
+                    RequestResult::Failure {
+                        error: format!("HTTP {}", status),
+                    },
+                )
+                .await;
+            return Err(anyhow::anyhow!("HTTP error: {}", status));
+        }
+
+        // 成功情况 - 创建流式响应
+        Ok(self
+            .create_successful_stream(response, selected_backend, start_time)
+            .await)
+    }
+
+    /// 创建成功的流式响应
+    async fn create_successful_stream(
+        &self,
+        response: reqwest::Response,
+        selected_backend: crate::loadbalance::SelectedBackend,
+        start_time: Instant,
+    ) -> Sse<futures::stream::BoxStream<'static, Result<Event, std::convert::Infallible>>> {
+        let load_balancer = self.load_balancer.clone();
+        let provider = selected_backend.backend.provider.clone();
+        let model = selected_backend.backend.model.clone();
+        let latency = start_time.elapsed();
+
+        // 检查backend是否在不健康列表中
+        let backend_key = format!("{}:{}", provider, model);
+        let metrics = load_balancer.get_metrics();
+
+        if metrics.is_in_unhealthy_list(&backend_key) {
+            // 不健康的backend请求成功，主动恢复为健康状态
+            tracing::info!(
+                "Unhealthy backend {} streaming request succeeded, automatically marking as healthy",
+                backend_key
+            );
+        }
+
+        // 无论之前是否健康，都记录成功（实现自动恢复）
+        let lb_clone = load_balancer.clone();
+        let provider_clone = provider.clone();
+        let model_clone = model.clone();
+        tokio::spawn(async move {
+            lb_clone
+                .record_request_result(
+                    &provider_clone,
+                    &model_clone,
+                    RequestResult::Success { latency },
+                )
+                .await;
+        });
+
+        // 创建成功的流式响应
+        let stream = response
+            .bytes_stream()
+            .eventsource()
+            .map(|result| match result {
+                Ok(event) => {
+                    tracing::debug!("SSE event: {:?}", event.data);
+                    Ok(Event::default().data(event.data))
+                }
+                Err(err) => {
+                    tracing::error!("SSE error: {:?}", err);
+                    Ok(Event::default().data(json!({"error": err.to_string()}).to_string()))
+                }
+            })
+            .boxed();
+
+        Sse::new(stream)
+    }
+
+    /// 尝试非流式请求（可能失败以触发重试）
+    async fn try_non_streaming_request(
+        &self,
+        client: OpenAIClient,
+        headers: reqwest::header::HeaderMap,
+        body: Value,
+        selected_backend: crate::loadbalance::SelectedBackend,
+        start_time: Instant,
+    ) -> Result<Json<Value>, anyhow::Error> {
+        let provider = &selected_backend.backend.provider;
+        let model = &selected_backend.backend.model;
+
+        // 发送API请求
+        let response = match client.chat_completions(headers, &body).await {
+            Ok(resp) => resp,
+            Err(e) => {
+                tracing::debug!("Non-streaming request failed: {:?}", e);
+                // 记录失败但不在这里处理，让重试机制处理
+                self.load_balancer
+                    .record_request_result(
+                        provider,
+                        model,
+                        RequestResult::Failure {
+                            error: e.to_string(),
+                        },
+                    )
+                    .await;
+                return Err(anyhow::anyhow!("API request failed: {}", e));
+            }
+        };
+
+        let latency = start_time.elapsed();
+
+        // 处理响应
+        if response.status().is_success() {
+            // 检查backend是否在不健康列表中
+            let backend_key = format!("{}:{}", provider, model);
+            let metrics = self.load_balancer.get_metrics();
+
+            if metrics.is_in_unhealthy_list(&backend_key) {
+                // 不健康的backend请求成功，主动恢复为健康状态
+                tracing::info!(
+                    "Unhealthy backend {} request succeeded, automatically marking as healthy",
+                    backend_key
+                );
+            }
+
+            // 无论之前是否健康，都记录成功（实现自动恢复）
+            self.load_balancer
+                .record_request_result(provider, model, RequestResult::Success { latency })
+                .await;
+
+            match response.text().await {
+                Ok(text) => match serde_json::from_str::<Value>(&text) {
+                    Ok(value) => Ok(Json(value)),
+                    Err(e) => {
+                        tracing::error!("JSON parsing failed: {:?}", e);
+                        Err(anyhow::anyhow!("JSON parsing failed: {}", e))
+                    }
+                },
+                Err(e) => {
+                    tracing::error!("Failed to read response body: {:?}", e);
+                    Err(anyhow::anyhow!("Failed to read response body: {}", e))
+                }
+            }
+        } else {
+            // 记录失败
+            let status = response.status().as_u16();
+            self.load_balancer
+                .record_request_result(
+                    provider,
+                    model,
+                    RequestResult::Failure {
+                        error: format!("HTTP {}", status),
+                    },
+                )
+                .await;
+
+            tracing::debug!("Non-streaming request failed with status: {}", status);
+            Err(anyhow::anyhow!("HTTP error: {}", status))
+        }
+    }
+
+    #[allow(dead_code)]
+    /// 处理流式请求（兜底方法，当重试失败时使用）
     async fn handle_streaming_request(
         &self,
         client: OpenAIClient,
@@ -203,106 +475,34 @@ impl LoadBalancedHandler {
         selected_backend: crate::loadbalance::SelectedBackend,
         start_time: Instant,
     ) -> Sse<futures::stream::BoxStream<'static, Result<Event, std::convert::Infallible>>> {
-        let load_balancer = self.load_balancer.clone();
-        let provider = selected_backend.backend.provider.clone();
-        let model = selected_backend.backend.model.clone();
-
-        let request_result = client.chat_completions(headers, &body).await;
-
-        let stream = match request_result {
-            Ok(resp) if resp.status().is_success() => {
-                let latency = start_time.elapsed();
-
-                // 记录成功
-                let lb_clone = load_balancer.clone();
-                let provider_clone = provider.clone();
-                let model_clone = model.clone();
-                tokio::spawn(async move {
-                    lb_clone.record_request_result(
-                        &provider_clone,
-                        &model_clone,
-                        RequestResult::Success { latency },
-                    ).await;
-                });
-
-                // 成功情况
-                resp.bytes_stream()
-                    .eventsource()
-                    .map(|result| match result {
-                        Ok(event) => {
-                            tracing::debug!("SSE event: {:?}", event.data);
-                            Ok(Event::default().data(event.data))
-                        }
-                        Err(err) => {
-                            tracing::error!("SSE error: {:?}", err);
-                            Ok(Event::default().data(json!({"error": err.to_string()}).to_string()))
-                        }
-                    })
-                    .boxed()
-            }
-            Ok(resp) => {
-                // HTTP 错误
-                let status = resp.status();
-                tracing::error!("Request to upstream failed: {}", status);
-
-                // 记录失败
-                let lb_clone = load_balancer.clone();
-                let provider_clone = provider.clone();
-                let model_clone = model.clone();
-                tokio::spawn(async move {
-                    lb_clone.record_request_result(
-                        &provider_clone,
-                        &model_clone,
-                        RequestResult::Failure { error: format!("HTTP {}", status) },
-                    ).await;
-                });
-
-                futures::stream::once(async move {
-                    Ok(Event::default().data(
-                        json!({
-                            "error": {
-                                "message": "Request to upstream failed",
-                                "status": status.as_u16()
-                            }
-                        }).to_string(),
-                    ))
-                }).boxed()
-            }
+        // 尝试请求，如果失败则返回错误流
+        match self
+            .try_streaming_request(client, headers, body, selected_backend, start_time)
+            .await
+        {
+            Ok(sse) => sse,
             Err(e) => {
-                // 网络错误
-                let error_msg = e.to_string();
-                tracing::error!("Network error: {:?}", error_msg);
-
-                // 记录失败
-                let lb_clone = load_balancer.clone();
-                let provider_clone = provider.clone();
-                let model_clone = model.clone();
-                let error_msg_clone = error_msg.clone();
-                tokio::spawn(async move {
-                    lb_clone.record_request_result(
-                        &provider_clone,
-                        &model_clone,
-                        RequestResult::Failure { error: error_msg_clone },
-                    ).await;
-                });
-
-                futures::stream::once(async move {
+                // 创建错误流
+                let error_stream = futures::stream::once(async move {
                     Ok(Event::default().data(
                         json!({
                             "error": {
-                                "message": "Network error",
-                                "details": error_msg
+                                "message": "All retry attempts failed",
+                                "details": e.to_string()
                             }
-                        }).to_string(),
+                        })
+                        .to_string(),
                     ))
-                }).boxed()
-            }
-        };
+                })
+                .boxed();
 
-        Sse::new(stream)
+                Sse::new(error_stream)
+            }
+        }
     }
 
-    /// 处理非流式请求
+    #[allow(dead_code)]
+    /// 处理非流式请求（兜底方法，当重试失败时使用）
     async fn handle_non_streaming_request(
         &self,
         client: OpenAIClient,
@@ -311,77 +511,18 @@ impl LoadBalancedHandler {
         selected_backend: crate::loadbalance::SelectedBackend,
         start_time: Instant,
     ) -> Json<Value> {
-        let provider = &selected_backend.backend.provider;
-        let model = &selected_backend.backend.model;
-
-        // 发送API请求
-        let response = match client.chat_completions(headers, &body).await {
-            Ok(resp) => resp,
-            Err(e) => {
-                tracing::error!("API request failed: {:?}", e);
-                self.load_balancer.record_request_result(
-                    provider,
-                    model,
-                    RequestResult::Failure { error: e.to_string() },
-                ).await;
-                return Json(create_error_json(&crate::relay::client::ClientError::HeaderParseError(
-                    format!("API request failed: {}", e)
-                )));
-            }
-        };
-
-        let latency = start_time.elapsed();
-
-        // 处理响应
-        if response.status().is_success() {
-            // 记录成功
-            self.load_balancer.record_request_result(
-                provider,
-                model,
-                RequestResult::Success { latency },
-            ).await;
-
-            match response.text().await {
-                Ok(text) => match serde_json::from_str::<Value>(&text) {
-                    Ok(value) => Json(value),
-                    Err(e) => {
-                        tracing::error!("JSON parsing failed: {:?}", e);
-                        Json(create_network_error_json(
-                            "Upstream returned invalid JSON",
-                            Some(text),
-                        ))
-                    }
-                },
-                Err(e) => {
-                    tracing::error!("Failed to read response body: {:?}", e);
-                    Json(create_network_error_json(
-                        "Unable to read response data",
-                        Some(e.to_string()),
-                    ))
-                }
-            }
-        } else {
-            // 记录失败
-            let status = response.status().as_u16();
-            self.load_balancer.record_request_result(
-                provider,
-                model,
-                RequestResult::Failure { error: format!("HTTP {}", status) },
-            ).await;
-
-            let body = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unable to read error response".to_string());
-
-            tracing::error!("Upstream API error: status {}, response: {}", status, body);
-            Json(json!({
+        // 尝试请求，如果失败则返回错误响应
+        match self
+            .try_non_streaming_request(client, headers, body, selected_backend, start_time)
+            .await
+        {
+            Ok(response) => response,
+            Err(e) => Json(json!({
                 "error": {
-                    "message": "Upstream API returned error",
-                    "status": status,
-                    "details": body
+                    "message": "All retry attempts failed",
+                    "details": e.to_string()
                 }
-            }))
+            })),
         }
     }
 

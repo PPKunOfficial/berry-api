@@ -100,10 +100,18 @@ impl LoadBalanceService {
         debug!("Selecting backend for model: {} (max retries: {})", model_name, max_retries);
 
         for attempt in 0..=max_retries {
+            debug!("Backend selection attempt {} for model '{}'", attempt + 1, model_name);
+
             match self.manager.select_backend(model_name).await {
                 Ok(backend) => {
+                    debug!("Load balancer selected backend: {}:{}", backend.provider, backend.model);
+
                     // 检查选中的backend是否健康
-                    if self.metrics.is_healthy(&backend.provider, &backend.model) {
+                    let is_healthy = self.metrics.is_healthy(&backend.provider, &backend.model);
+                    debug!("Health check for {}:{}: {}", backend.provider, backend.model,
+                           if is_healthy { "HEALTHY" } else { "UNHEALTHY" });
+
+                    if is_healthy {
                         let selection_time = start_time.elapsed();
 
                         debug!(
@@ -120,6 +128,7 @@ impl LoadBalanceService {
                             .get_provider(&backend.provider)
                             .ok_or_else(|| anyhow::anyhow!("Provider '{}' not found", backend.provider))?;
 
+                        debug!("Successfully resolved provider config for: {}", backend.provider);
                         return Ok(SelectedBackend {
                             backend,
                             provider: provider.clone(),
@@ -133,6 +142,7 @@ impl LoadBalanceService {
                         // 最后一次尝试，即使不健康也返回
                         warn!("All retries exhausted, returning unhealthy backend {}:{}",
                               backend.provider, backend.model);
+                        debug!("No more retry attempts available, using unhealthy backend as last resort");
 
                         let selection_time = start_time.elapsed();
                         let config = self.manager.get_config();
@@ -148,11 +158,13 @@ impl LoadBalanceService {
                     }
                 }
                 Err(e) => {
+                    debug!("Backend selection failed: {}", e);
                     if attempt < max_retries {
                         debug!("Backend selection failed, retrying... (attempt {}/{}): {}",
                                attempt + 1, max_retries + 1, e);
                         continue;
                     } else {
+                        debug!("All backend selection attempts failed");
                         return Err(e);
                     }
                 }
