@@ -1,4 +1,4 @@
-name: Docker Multi-Arch Release
+name: Docker Release
 
 on:
   push:
