@@ -4,7 +4,7 @@ use anyhow::Result;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tracing::{info, error, debug};
+use tracing::{info, error, debug, warn};
 
 /// 负载均衡服务
 /// 整合负载均衡管理器和健康检查器，提供统一的服务接口
@@ -54,15 +54,30 @@ impl LoadBalanceService {
         // 启动健康检查器
         let health_checker = self.health_checker.clone();
         let is_running = self.is_running.clone();
-        
+
         tokio::spawn(async move {
             while *is_running.read().await {
                 if let Err(e) = health_checker.check_now().await {
                     error!("Health check failed: {}", e);
                 }
-                
+
                 // 等待下一次检查
                 tokio::time::sleep(Duration::from_secs(30)).await;
+            }
+        });
+
+        // 启动恢复检查器
+        let recovery_checker = self.health_checker.clone();
+        let is_running_recovery = self.is_running.clone();
+
+        tokio::spawn(async move {
+            while *is_running_recovery.read().await {
+                if let Err(e) = recovery_checker.check_recovery().await {
+                    error!("Recovery check failed: {}", e);
+                }
+
+                // 等待下一次恢复检查（通常比健康检查间隔更长）
+                tokio::time::sleep(Duration::from_secs(60)).await;
             }
         });
 
@@ -77,34 +92,74 @@ impl LoadBalanceService {
         info!("Load balance service stopped");
     }
 
-    /// 为指定模型选择后端
+    /// 为指定模型选择后端（带智能重试）
     pub async fn select_backend(&self, model_name: &str) -> Result<SelectedBackend> {
         let start_time = Instant::now();
-        
-        debug!("Selecting backend for model: {}", model_name);
-        
-        let backend = self.manager.select_backend(model_name).await?;
-        let selection_time = start_time.elapsed();
-        
-        debug!(
-            "Selected backend for model '{}': provider='{}', model='{}', selection_time={}ms",
-            model_name,
-            backend.provider,
-            backend.model,
-            selection_time.as_millis()
-        );
+        let max_retries = self.manager.get_config().settings.max_internal_retries;
 
-        // 获取provider配置
-        let config = self.manager.get_config();
-        let provider = config
-            .get_provider(&backend.provider)
-            .ok_or_else(|| anyhow::anyhow!("Provider '{}' not found", backend.provider))?;
+        debug!("Selecting backend for model: {} (max retries: {})", model_name, max_retries);
 
-        Ok(SelectedBackend {
-            backend,
-            provider: provider.clone(),
-            selection_time,
-        })
+        for attempt in 0..=max_retries {
+            match self.manager.select_backend(model_name).await {
+                Ok(backend) => {
+                    // 检查选中的backend是否健康
+                    if self.metrics.is_healthy(&backend.provider, &backend.model) {
+                        let selection_time = start_time.elapsed();
+
+                        debug!(
+                            "Selected healthy backend for model '{}': provider='{}', model='{}', selection_time={}ms",
+                            model_name,
+                            backend.provider,
+                            backend.model,
+                            selection_time.as_millis()
+                        );
+
+                        // 获取provider配置
+                        let config = self.manager.get_config();
+                        let provider = config
+                            .get_provider(&backend.provider)
+                            .ok_or_else(|| anyhow::anyhow!("Provider '{}' not found", backend.provider))?;
+
+                        return Ok(SelectedBackend {
+                            backend,
+                            provider: provider.clone(),
+                            selection_time,
+                        });
+                    } else if attempt < max_retries {
+                        debug!("Selected backend {}:{} is unhealthy, retrying... (attempt {}/{})",
+                               backend.provider, backend.model, attempt + 1, max_retries + 1);
+                        continue;
+                    } else {
+                        // 最后一次尝试，即使不健康也返回
+                        warn!("All retries exhausted, returning unhealthy backend {}:{}",
+                              backend.provider, backend.model);
+
+                        let selection_time = start_time.elapsed();
+                        let config = self.manager.get_config();
+                        let provider = config
+                            .get_provider(&backend.provider)
+                            .ok_or_else(|| anyhow::anyhow!("Provider '{}' not found", backend.provider))?;
+
+                        return Ok(SelectedBackend {
+                            backend,
+                            provider: provider.clone(),
+                            selection_time,
+                        });
+                    }
+                }
+                Err(e) => {
+                    if attempt < max_retries {
+                        debug!("Backend selection failed, retrying... (attempt {}/{}): {}",
+                               attempt + 1, max_retries + 1, e);
+                        continue;
+                    } else {
+                        return Err(e);
+                    }
+                }
+            }
+        }
+
+        anyhow::bail!("Failed to select backend after {} attempts", max_retries + 1)
     }
 
     /// 记录请求结果

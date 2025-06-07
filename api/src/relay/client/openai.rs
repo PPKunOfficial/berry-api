@@ -4,6 +4,7 @@ use super::types::{ClientError, ClientResponse};
 
 const OPENAI_API_URL: &str = "https://aigc.x-see.cn/v1";
 
+#[derive(Clone)]
 pub struct OpenAIClient {
     client: Client,
     base_url: String,

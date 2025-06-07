@@ -5,6 +5,10 @@ request_timeout_seconds = 10
 max_retries = 2
 circuit_breaker_failure_threshold = 3
 circuit_breaker_timeout_seconds = 30
+# 新增的高级健康检查配置
+recovery_check_interval_seconds = 120  # 不健康provider的恢复检查间隔
+max_internal_retries = 2               # 内部重试次数，避免直接给用户报错
+health_check_timeout_seconds = 10      # 健康检查请求超时时间
 
 # 测试用户令牌
 [users.test-user]

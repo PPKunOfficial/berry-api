@@ -19,6 +19,20 @@ pub struct MetricsCollector {
     health_status: Arc<std::sync::RwLock<HashMap<String, bool>>>,
     failure_counts: Arc<std::sync::RwLock<HashMap<String, u32>>>,
     last_health_check: Arc<std::sync::RwLock<HashMap<String, Instant>>>,
+    // 新增：不健康列表管理
+    unhealthy_backends: Arc<std::sync::RwLock<HashMap<String, UnhealthyBackend>>>,
+    recovery_attempts: Arc<std::sync::RwLock<HashMap<String, u32>>>,
+}
+
+/// 不健康后端信息
+#[derive(Debug, Clone)]
+pub struct UnhealthyBackend {
+    pub backend_key: String,
+    pub first_failure_time: Instant,
+    pub last_failure_time: Instant,
+    pub failure_count: u32,
+    pub last_recovery_attempt: Option<Instant>,
+    pub recovery_attempts: u32,
 }
 
 impl MetricsCollector {
@@ -28,6 +42,8 @@ impl MetricsCollector {
             health_status: Arc::new(std::sync::RwLock::new(HashMap::new())),
             failure_counts: Arc::new(std::sync::RwLock::new(HashMap::new())),
             last_health_check: Arc::new(std::sync::RwLock::new(HashMap::new())),
+            unhealthy_backends: Arc::new(std::sync::RwLock::new(HashMap::new())),
+            recovery_attempts: Arc::new(std::sync::RwLock::new(HashMap::new())),
         }
     }
 
@@ -40,6 +56,8 @@ impl MetricsCollector {
 
     /// 记录请求失败
     pub fn record_failure(&self, backend_key: &str) {
+        let now = Instant::now();
+
         if let Ok(mut failures) = self.failure_counts.write() {
             let count = failures.entry(backend_key.to_string()).or_insert(0);
             *count += 1;
@@ -48,6 +66,26 @@ impl MetricsCollector {
         // 标记为不健康
         if let Ok(mut health) = self.health_status.write() {
             health.insert(backend_key.to_string(), false);
+        }
+
+        // 添加到不健康列表
+        if let Ok(mut unhealthy) = self.unhealthy_backends.write() {
+            match unhealthy.get_mut(backend_key) {
+                Some(backend) => {
+                    backend.last_failure_time = now;
+                    backend.failure_count += 1;
+                }
+                None => {
+                    unhealthy.insert(backend_key.to_string(), UnhealthyBackend {
+                        backend_key: backend_key.to_string(),
+                        first_failure_time: now,
+                        last_failure_time: now,
+                        failure_count: 1,
+                        last_recovery_attempt: None,
+                        recovery_attempts: 0,
+                    });
+                }
+            }
         }
     }
 
@@ -61,6 +99,16 @@ impl MetricsCollector {
         // 标记为健康
         if let Ok(mut health) = self.health_status.write() {
             health.insert(backend_key.to_string(), true);
+        }
+
+        // 从不健康列表中移除
+        if let Ok(mut unhealthy) = self.unhealthy_backends.write() {
+            unhealthy.remove(backend_key);
+        }
+
+        // 重置恢复尝试计数
+        if let Ok(mut recovery) = self.recovery_attempts.write() {
+            recovery.remove(backend_key);
         }
     }
 
@@ -101,6 +149,57 @@ impl MetricsCollector {
     pub fn update_health_check(&self, backend_key: &str) {
         if let Ok(mut last_check) = self.last_health_check.write() {
             last_check.insert(backend_key.to_string(), Instant::now());
+        }
+    }
+
+    /// 获取所有不健康的后端
+    pub fn get_unhealthy_backends(&self) -> Vec<UnhealthyBackend> {
+        if let Ok(unhealthy) = self.unhealthy_backends.read() {
+            unhealthy.values().cloned().collect()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// 检查后端是否需要恢复检查
+    pub fn needs_recovery_check(&self, backend_key: &str, recovery_interval: Duration) -> bool {
+        if let Ok(unhealthy) = self.unhealthy_backends.read() {
+            if let Some(backend) = unhealthy.get(backend_key) {
+                match backend.last_recovery_attempt {
+                    Some(last_attempt) => last_attempt.elapsed() >= recovery_interval,
+                    None => true, // 从未尝试过恢复
+                }
+            } else {
+                false // 不在不健康列表中
+            }
+        } else {
+            false
+        }
+    }
+
+    /// 记录恢复尝试
+    pub fn record_recovery_attempt(&self, backend_key: &str) {
+        let now = Instant::now();
+
+        if let Ok(mut unhealthy) = self.unhealthy_backends.write() {
+            if let Some(backend) = unhealthy.get_mut(backend_key) {
+                backend.last_recovery_attempt = Some(now);
+                backend.recovery_attempts += 1;
+            }
+        }
+
+        if let Ok(mut recovery) = self.recovery_attempts.write() {
+            let count = recovery.entry(backend_key.to_string()).or_insert(0);
+            *count += 1;
+        }
+    }
+
+    /// 检查后端是否在不健康列表中
+    pub fn is_in_unhealthy_list(&self, backend_key: &str) -> bool {
+        if let Ok(unhealthy) = self.unhealthy_backends.read() {
+            unhealthy.contains_key(backend_key)
+        } else {
+            false
         }
     }
 }

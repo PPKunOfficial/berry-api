@@ -23,7 +23,7 @@ impl LoadBalancedHandler {
         Self { load_balancer }
     }
 
-    /// 处理聊天完成请求（支持负载均衡）
+    /// 处理聊天完成请求（支持负载均衡和智能重试）
     pub async fn handle_completions(
         self: Arc<Self>,
         TypedHeader(authorization): TypedHeader<headers::Authorization<headers::authorization::Bearer>>,
@@ -31,10 +31,10 @@ impl LoadBalancedHandler {
         Json(mut body): Json<Value>,
     ) -> axum::response::Response {
         let start_time = Instant::now();
-        
+
         // 从请求体中提取模型名称
         let model_name = match body.get("model").and_then(|m| m.as_str()) {
-            Some(name) => name,
+            Some(name) => name.to_string(),
             None => {
                 tracing::error!("Missing model field in request");
                 return Json(create_error_json(&crate::relay::client::ClientError::HeaderParseError(
@@ -43,75 +43,143 @@ impl LoadBalancedHandler {
             }
         };
 
-        // 使用负载均衡器选择后端
-        let selected_backend = match self.load_balancer.select_backend(model_name).await {
-            Ok(backend) => backend,
+        // 尝试处理请求，带内部重试机制
+        match self.try_handle_with_retries(&model_name, &mut body, &authorization, &content_type, start_time).await {
+            Ok(response) => response,
             Err(e) => {
-                tracing::error!("Failed to select backend for model '{}': {}", model_name, e);
-                return Json(create_error_json(&crate::relay::client::ClientError::HeaderParseError(
-                    format!("No available backend for model '{}': {}", model_name, e)
-                ))).into_response();
+                tracing::error!("All retry attempts failed for model '{}': {}", model_name, e);
+                Json(create_error_json(&crate::relay::client::ClientError::HeaderParseError(
+                    format!("Request failed after all retries: {}", e)
+                ))).into_response()
             }
-        };
+        }
+    }
 
-        tracing::info!(
-            "Selected backend for model '{}': provider='{}', model='{}', selection_time={}ms",
-            model_name,
-            selected_backend.backend.provider,
-            selected_backend.backend.model,
-            selected_backend.selection_time.as_millis()
-        );
+    /// 尝试处理请求，带重试机制
+    async fn try_handle_with_retries(
+        &self,
+        model_name: &str,
+        body: &mut Value,
+        authorization: &headers::Authorization<headers::authorization::Bearer>,
+        content_type: &headers::ContentType,
+        start_time: Instant,
+    ) -> Result<axum::response::Response, anyhow::Error> {
+        let max_retries = 3; // 可以从配置中读取
+        let original_model = model_name.to_string();
 
-        // 更新请求体中的模型名称为后端的真实模型名称
-        body["model"] = Value::String(selected_backend.backend.model.clone());
+        for attempt in 0..max_retries {
+            // 重置模型名称为原始请求的模型名称
+            body["model"] = Value::String(original_model.clone());
 
-        // 获取API密钥
-        let api_key = match selected_backend.get_api_key() {
-            Ok(key) => key,
-            Err(e) => {
-                tracing::error!("Failed to get API key: {}", e);
-                self.load_balancer.record_request_result(
-                    &selected_backend.backend.provider,
-                    &selected_backend.backend.model,
-                    RequestResult::Failure { error: e.to_string() },
-                ).await;
-                return Json(create_error_json(&crate::relay::client::ClientError::HeaderParseError(
-                    "API key not found".to_string()
-                ))).into_response();
-            }
-        };
-
-        // 创建客户端
-        let client = OpenAIClient::with_base_url(selected_backend.provider.base_url.clone());
-
-        // 构建请求头
-        let headers = match client.build_request_headers(&authorization, &content_type) {
-            Ok(mut h) => {
-                // 使用选中后端的API密钥
-                h.insert("Authorization", format!("Bearer {}", api_key).parse().unwrap());
-                
-                // 添加自定义头部
-                for (key, value) in selected_backend.get_headers() {
-                    if let (Ok(header_name), Ok(header_value)) = (
-                        key.parse::<reqwest::header::HeaderName>(),
-                        value.parse::<reqwest::header::HeaderValue>()
-                    ) {
-                        h.insert(header_name, header_value);
+            // 使用负载均衡器选择后端
+            let selected_backend = match self.load_balancer.select_backend(model_name).await {
+                Ok(backend) => backend,
+                Err(e) => {
+                    if attempt == max_retries - 1 {
+                        return Err(anyhow::anyhow!("Failed to select backend: {}", e));
                     }
+                    tracing::warn!("Backend selection failed on attempt {}, retrying: {}", attempt + 1, e);
+                    continue;
                 }
-                h
-            }
-            Err(e) => {
-                tracing::error!("Failed to build request headers: {:?}", e);
-                self.load_balancer.record_request_result(
-                    &selected_backend.backend.provider,
-                    &selected_backend.backend.model,
-                    RequestResult::Failure { error: e.to_string() },
-                ).await;
-                return Json(create_error_json(&e)).into_response();
-            }
-        };
+            };
 
+            tracing::info!(
+                "Selected backend for model '{}' (attempt {}): provider='{}', model='{}', selection_time={}ms",
+                model_name,
+                attempt + 1,
+                selected_backend.backend.provider,
+                selected_backend.backend.model,
+                selected_backend.selection_time.as_millis()
+            );
+
+            // 更新请求体中的模型名称为后端的真实模型名称
+            body["model"] = Value::String(selected_backend.backend.model.clone());
+
+            // 获取API密钥
+            let api_key = match selected_backend.get_api_key() {
+                Ok(key) => key,
+                Err(e) => {
+                    self.load_balancer.record_request_result(
+                        &selected_backend.backend.provider,
+                        &selected_backend.backend.model,
+                        RequestResult::Failure { error: e.to_string() },
+                    ).await;
+
+                    if attempt == max_retries - 1 {
+                        return Err(anyhow::anyhow!("API key not found: {}", e));
+                    }
+                    tracing::warn!("API key error on attempt {}, retrying: {}", attempt + 1, e);
+                    continue;
+                }
+            };
+
+            // 创建客户端
+            let client = OpenAIClient::with_base_url(selected_backend.provider.base_url.clone());
+
+            // 构建请求头
+            let headers = match client.build_request_headers(&authorization, &content_type) {
+                Ok(mut h) => {
+                    // 使用选中后端的API密钥
+                    h.insert("Authorization", format!("Bearer {}", api_key).parse().unwrap());
+
+                    // 添加自定义头部
+                    for (key, value) in selected_backend.get_headers() {
+                        if let (Ok(header_name), Ok(header_value)) = (
+                            key.parse::<reqwest::header::HeaderName>(),
+                            value.parse::<reqwest::header::HeaderValue>()
+                        ) {
+                            h.insert(header_name, header_value);
+                        }
+                    }
+                    h
+                }
+                Err(e) => {
+                    self.load_balancer.record_request_result(
+                        &selected_backend.backend.provider,
+                        &selected_backend.backend.model,
+                        RequestResult::Failure { error: e.to_string() },
+                    ).await;
+
+                    if attempt == max_retries - 1 {
+                        return Err(anyhow::anyhow!("Failed to build request headers: {}", e));
+                    }
+                    tracing::warn!("Header build error on attempt {}, retrying: {}", attempt + 1, e);
+                    continue;
+                }
+            };
+
+            // 尝试发送请求
+            match self.try_single_request(&client, headers, body, &selected_backend, start_time).await {
+                Ok(response) => return Ok(response),
+                Err(e) => {
+                    // 记录失败
+                    self.load_balancer.record_request_result(
+                        &selected_backend.backend.provider,
+                        &selected_backend.backend.model,
+                        RequestResult::Failure { error: e.to_string() },
+                    ).await;
+
+                    if attempt == max_retries - 1 {
+                        return Err(anyhow::anyhow!("Request failed after all retries: {}", e));
+                    }
+                    tracing::warn!("Request failed on attempt {}, retrying: {}", attempt + 1, e);
+                    continue;
+                }
+            }
+        }
+
+        Err(anyhow::anyhow!("Unexpected end of retry loop"))
+    }
+
+    /// 尝试单次请求
+    async fn try_single_request(
+        &self,
+        client: &OpenAIClient,
+        headers: reqwest::header::HeaderMap,
+        body: &Value,
+        selected_backend: &crate::loadbalance::SelectedBackend,
+        start_time: Instant,
+    ) -> Result<axum::response::Response, anyhow::Error> {
         // 检查是否为流式请求
         let is_stream = body
             .get("stream")
@@ -120,9 +188,9 @@ impl LoadBalancedHandler {
             .unwrap_or(false);
 
         if is_stream {
-            self.handle_streaming_request(client, headers, body, selected_backend, start_time).await.into_response()
+            Ok(self.handle_streaming_request(client.clone(), headers, body.clone(), selected_backend.clone(), start_time).await.into_response())
         } else {
-            self.handle_non_streaming_request(client, headers, body, selected_backend, start_time).await.into_response()
+            Ok(self.handle_non_streaming_request(client.clone(), headers, body.clone(), selected_backend.clone(), start_time).await.into_response())
         }
     }
 

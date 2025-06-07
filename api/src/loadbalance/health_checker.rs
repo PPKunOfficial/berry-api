@@ -1,7 +1,9 @@
 use crate::config::model::{Config, Provider};
+use crate::relay::client::openai::OpenAIClient;
 use super::MetricsCollector;
 use anyhow::Result;
 use reqwest::Client;
+use serde_json::json;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::time::interval;
@@ -90,7 +92,7 @@ impl HealthChecker {
         metrics: &MetricsCollector,
     ) {
         let start_time = Instant::now();
-        
+
         // 直接使用配置中的API密钥
         let api_key = &provider.api_key;
 
@@ -103,25 +105,25 @@ impl HealthChecker {
             return;
         }
 
-        // 简化的健康检查 - 只检查基础连接而不调用真实API
-        // 这样可以避免在没有有效API密钥时的问题
-        let health_check_url = if provider.base_url.contains("httpbin.org") {
+        // 使用真实的API检查
+        if provider.base_url.contains("httpbin.org") {
             // 对于测试服务，使用httpbin的状态端点
-            format!("{}/status/200", provider.base_url)
+            Self::check_test_provider(provider_id, provider, client, metrics, start_time).await;
         } else {
-            // 对于真实的AI服务，我们暂时标记为健康
-            // 在实际生产环境中，可以实现更复杂的健康检查逻辑
-            debug!("Skipping real API health check for provider {} (no valid API key check)", provider_id);
+            // 对于真实的AI服务，使用model list API检查
+            Self::check_real_provider(provider_id, provider, metrics, start_time).await;
+        }
+    }
 
-            // 标记所有模型为健康（假设配置正确）
-            for model in &provider.models {
-                let backend_key = format!("{}:{}", provider_id, model);
-                metrics.record_success(&backend_key);
-                metrics.update_health_check(&backend_key);
-            }
-            return;
-        };
-
+    /// 检查测试provider（httpbin等）
+    async fn check_test_provider(
+        provider_id: &str,
+        provider: &Provider,
+        client: &Client,
+        metrics: &MetricsCollector,
+        start_time: Instant,
+    ) {
+        let health_check_url = format!("{}/status/200", provider.base_url);
         let mut request = client.get(&health_check_url);
 
         // 添加自定义头部
@@ -133,10 +135,10 @@ impl HealthChecker {
         match request.send().await {
             Ok(response) => {
                 let latency = start_time.elapsed();
-                
+
                 if response.status().is_success() {
                     debug!("Provider {} health check passed ({}ms)", provider_id, latency.as_millis());
-                    
+
                     // 标记所有模型为健康
                     for model in &provider.models {
                         let backend_key = format!("{}:{}", provider_id, model);
@@ -146,7 +148,7 @@ impl HealthChecker {
                     }
                 } else {
                     warn!("Provider {} health check failed with status: {}", provider_id, response.status());
-                    
+
                     // 标记所有模型为不健康
                     for model in &provider.models {
                         metrics.record_failure(&format!("{}:{}", provider_id, model));
@@ -155,7 +157,51 @@ impl HealthChecker {
             }
             Err(e) => {
                 error!("Provider {} health check error: {}", provider_id, e);
-                
+
+                // 标记所有模型为不健康
+                for model in &provider.models {
+                    metrics.record_failure(&format!("{}:{}", provider_id, model));
+                }
+            }
+        }
+    }
+
+    /// 检查真实的AI provider
+    async fn check_real_provider(
+        provider_id: &str,
+        provider: &Provider,
+        metrics: &MetricsCollector,
+        start_time: Instant,
+    ) {
+        let openai_client = OpenAIClient::with_base_url(provider.base_url.clone());
+
+        // 使用models API检查provider健康状态
+        match openai_client.models(&provider.api_key).await {
+            Ok(response) => {
+                let latency = start_time.elapsed();
+
+                if response.is_success {
+                    debug!("Provider {} models API check passed ({}ms)", provider_id, latency.as_millis());
+
+                    // 标记所有模型为健康
+                    for model in &provider.models {
+                        let backend_key = format!("{}:{}", provider_id, model);
+                        metrics.record_latency(&backend_key, latency);
+                        metrics.record_success(&backend_key);
+                        metrics.update_health_check(&backend_key);
+                    }
+                } else {
+                    warn!("Provider {} models API check failed: {}", provider_id, response.body);
+
+                    // 标记所有模型为不健康
+                    for model in &provider.models {
+                        metrics.record_failure(&format!("{}:{}", provider_id, model));
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Provider {} models API error: {}", provider_id, e);
+
                 // 标记所有模型为不健康
                 for model in &provider.models {
                     metrics.record_failure(&format!("{}:{}", provider_id, model));
@@ -189,6 +235,107 @@ impl HealthChecker {
         }
     }
 
+    /// 检查不健康的provider是否可以恢复
+    pub async fn check_recovery(&self) -> Result<()> {
+        let recovery_interval = Duration::from_secs(self.config.settings.recovery_check_interval_seconds);
+        let unhealthy_backends = self.metrics.get_unhealthy_backends();
+
+        if unhealthy_backends.is_empty() {
+            debug!("No unhealthy backends to check for recovery");
+            return Ok(());
+        }
+
+        info!("Checking recovery for {} unhealthy backends", unhealthy_backends.len());
+
+        for unhealthy_backend in unhealthy_backends {
+            if self.metrics.needs_recovery_check(&unhealthy_backend.backend_key, recovery_interval) {
+                // 解析backend_key获取provider_id和model
+                let parts: Vec<&str> = unhealthy_backend.backend_key.split(':').collect();
+                if parts.len() != 2 {
+                    warn!("Invalid backend key format: {}", unhealthy_backend.backend_key);
+                    continue;
+                }
+
+                let provider_id = parts[0];
+                let model_name = parts[1];
+
+                if let Some(provider) = self.config.providers.get(provider_id) {
+                    if provider.enabled {
+                        info!("Attempting recovery check for {}:{}", provider_id, model_name);
+                        self.metrics.record_recovery_attempt(&unhealthy_backend.backend_key);
+
+                        // 使用chat请求进行恢复检查
+                        self.check_recovery_with_chat(provider_id, provider, model_name).await;
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 使用chat请求检查provider恢复状态
+    async fn check_recovery_with_chat(
+        &self,
+        provider_id: &str,
+        provider: &Provider,
+        model_name: &str,
+    ) {
+        let start_time = Instant::now();
+        let openai_client = OpenAIClient::with_base_url(provider.base_url.clone());
+
+        // 构建简单的chat请求
+        let test_body = json!({
+            "model": model_name,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Hello"
+                }
+            ],
+            "max_tokens": 1,
+            "stream": false
+        });
+
+        // 构建请求头
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("Authorization", format!("Bearer {}", provider.api_key).parse().unwrap());
+        headers.insert("Content-Type", "application/json".parse().unwrap());
+
+        // 添加自定义头部
+        for (key, value) in &provider.headers {
+            if let (Ok(header_name), Ok(header_value)) = (
+                key.parse::<reqwest::header::HeaderName>(),
+                value.parse::<reqwest::header::HeaderValue>()
+            ) {
+                headers.insert(header_name, header_value);
+            }
+        }
+
+        match openai_client.chat_completions(headers, &test_body).await {
+            Ok(response) => {
+                let latency = start_time.elapsed();
+                let backend_key = format!("{}:{}", provider_id, model_name);
+
+                if response.status().is_success() {
+                    info!("Recovery check passed for {}:{} ({}ms)", provider_id, model_name, latency.as_millis());
+
+                    // 恢复成功，标记为健康
+                    self.metrics.record_latency(&backend_key, latency);
+                    self.metrics.record_success(&backend_key);
+                    self.metrics.update_health_check(&backend_key);
+                } else {
+                    warn!("Recovery check failed for {}:{} with status: {}", provider_id, model_name, response.status());
+                    // 保持不健康状态
+                }
+            }
+            Err(e) => {
+                error!("Recovery check error for {}:{}: {}", provider_id, model_name, e);
+                // 保持不健康状态
+            }
+        }
+    }
+
     /// 获取健康检查统计信息
     pub fn get_health_summary(&self) -> HealthSummary {
         let mut total_providers = 0;
@@ -203,7 +350,7 @@ impl HealthChecker {
 
                 for model in &provider.models {
                     total_models += 1;
-                    
+
                     if self.metrics.is_healthy(provider_id, model) {
                         healthy_models += 1;
                     } else {
@@ -303,6 +450,9 @@ mod tests {
                 max_retries: 1,
                 circuit_breaker_failure_threshold: 3,
                 circuit_breaker_timeout_seconds: 30,
+                recovery_check_interval_seconds: 120,
+                max_internal_retries: 2,
+                health_check_timeout_seconds: 10,
             },
         }
     }

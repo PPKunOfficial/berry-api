@@ -23,6 +23,13 @@ pub struct GlobalSettings {
     pub circuit_breaker_failure_threshold: u32,
     #[serde(default = "default_circuit_breaker_timeout")]
     pub circuit_breaker_timeout_seconds: u64,
+    // 新增健康检查相关配置
+    #[serde(default = "default_recovery_check_interval")]
+    pub recovery_check_interval_seconds: u64,
+    #[serde(default = "default_max_internal_retries")]
+    pub max_internal_retries: u32,
+    #[serde(default = "default_health_check_timeout")]
+    pub health_check_timeout_seconds: u64,
 }
 
 impl Default for GlobalSettings {
@@ -33,6 +40,9 @@ impl Default for GlobalSettings {
             max_retries: default_max_retries(),
             circuit_breaker_failure_threshold: default_circuit_breaker_threshold(),
             circuit_breaker_timeout_seconds: default_circuit_breaker_timeout(),
+            recovery_check_interval_seconds: default_recovery_check_interval(),
+            max_internal_retries: default_max_internal_retries(),
+            health_check_timeout_seconds: default_health_check_timeout(),
         }
     }
 }
@@ -125,6 +135,18 @@ fn default_circuit_breaker_threshold() -> u32 {
 
 fn default_circuit_breaker_timeout() -> u64 {
     60
+}
+
+fn default_recovery_check_interval() -> u64 {
+    120 // 2分钟检查一次恢复
+}
+
+fn default_max_internal_retries() -> u32 {
+    2 // 内部最多重试2次
+}
+
+fn default_health_check_timeout() -> u64 {
+    10 // 健康检查超时10秒
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
