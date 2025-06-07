@@ -1,97 +1,25 @@
-use crate::relay::openai::OPENAI_API_URL;
 use axum::response::sse::Event;
-use axum::response::{ErrorResponse, Sse};
+use axum::response::Sse;
 use axum::{extract::Json, response::IntoResponse};
 use axum_extra::TypedHeader;
 use eventsource_stream::Eventsource;
 use futures::{Stream, StreamExt};
-use reqwest::Client;
 use serde_json::{Value, json};
-use thiserror::Error;
 
-// 定义错误类型
-#[derive(Error, Debug)]
-pub enum CompletionError {
-    #[error("请求头解析失败: {0}")]
-    HeaderParseError(String),
-    #[error("HTTP请求失败: {0}")]
-    RequestError(#[from] reqwest::Error),
-    #[error("JSON解析失败: {0}")]
-    JsonParseError(#[from] serde_json::Error),
-    #[error("上游API返回错误: 状态码 {status}")]
-    UpstreamError { status: u16, body: String },
-}
-fn build_request_headers(
-    authorization: &headers::Authorization<headers::authorization::Bearer>,
-    content_type: &headers::ContentType,
-) -> Result<reqwest::header::HeaderMap, CompletionError> {
-    let mut headers = reqwest::header::HeaderMap::new();
+use crate::relay::client::openai::OpenAIClient;
+use super::types::{create_error_event, create_error_json, create_network_error_json, create_upstream_error_json};
 
-    let auth_value = format!("Bearer {}", authorization.token())
-        .parse()
-        .map_err(|e| CompletionError::HeaderParseError(format!("Authorization header: {}", e)))?;
-
-    let content_type_value = content_type
-        .to_string()
-        .parse()
-        .map_err(|e| CompletionError::HeaderParseError(format!("Content-Type header: {}", e)))?;
-
-    headers.insert("Authorization", auth_value);
-    headers.insert("Content-Type", content_type_value);
-
-    Ok(headers)
-}
-// 统一的API请求函数
-async fn make_api_request(
-    headers: reqwest::header::HeaderMap,
-    body: &Value,
-) -> Result<reqwest::Response, CompletionError> {
-    let client = Client::new();
-    let response = client
-        .post(format!("{}/chat/completions", OPENAI_API_URL))
-        .headers(headers)
-        .json(body)
-        .send()
-        .await?;
-
-    Ok(response)
-}
-// 创建错误事件
-fn create_error_event(error: &CompletionError) -> Event {
-    let _error_response = match error {
-        CompletionError::UpstreamError { status, body } => ErrorResponse::from(
-            axum::http::Response::builder()
-                .status(*status)
-                .body(axum::body::Body::from(body.clone()))
-                .unwrap(),
-        ),
-        _ => ErrorResponse::from(
-            axum::http::Response::builder()
-                .status(axum::http::StatusCode::INTERNAL_SERVER_ERROR)
-                .body(axum::body::Body::from(error.to_string()))
-                .unwrap(),
-        ),
-    };
-
-    Event::default().data(
-        json!({
-            "error": {
-                "message": error.to_string()
-            }
-        })
-        .to_string(),
-    )
-}
+// SSE 流式响应处理
 async fn sse_completions(
     TypedHeader(authorization): TypedHeader<headers::Authorization<headers::authorization::Bearer>>,
     TypedHeader(content_type): TypedHeader<headers::ContentType>,
     Json(body): Json<Value>,
 ) -> Sse<impl Stream<Item = Result<Event, std::convert::Infallible>>> {
-    let api_client = Client::new();
+    let client = OpenAIClient::new();
 
     let event_stream = async move {
         // 构建请求头
-        let headers = match build_request_headers(&authorization, &content_type) {
+        let headers = match client.build_request_headers(&authorization, &content_type) {
             Ok(h) => h,
             Err(e) => {
                 tracing::error!("构建请求头失败: {:?}", e);
@@ -99,12 +27,7 @@ async fn sse_completions(
             }
         };
 
-        let request_result = api_client
-            .post(format!("{}/chat/completions", OPENAI_API_URL))
-            .headers(headers)
-            .json(&body)
-            .send()
-            .await;
+        let request_result = client.chat_completions(headers, &body).await;
         match request_result {
             Ok(resp) if resp.status().is_success() => {
                 // 成功情况
@@ -163,39 +86,29 @@ async fn sse_completions(
     Sse::new(event_stream)
 }
 
+// 非流式响应处理
 async fn no_sse_completions(
-    // 提取 Bearer Token 类型的 Authorization 头
     TypedHeader(authorization): TypedHeader<headers::Authorization<headers::authorization::Bearer>>,
     TypedHeader(content_type): TypedHeader<headers::ContentType>,
-    // 接收 JSON 格式的请求体
     Json(body): Json<Value>,
 ) -> Json<Value> {
+    let client = OpenAIClient::new();
 
     // 构建请求头
-    let headers = match build_request_headers(&authorization, &content_type) {
+    let headers = match client.build_request_headers(&authorization, &content_type) {
         Ok(h) => h,
         Err(e) => {
             tracing::error!("构建请求头失败: {:?}", e);
-            return Json(json!({
-                "error": {
-                    "message": e.to_string()
-                }
-            }));
+            return Json(create_error_json(&e));
         }
     };
 
     // 发送API请求
-    let response = match make_api_request(headers, &body).await {
+    let response = match client.chat_completions(headers, &body).await {
         Ok(resp) => resp,
         Err(e) => {
             tracing::error!("API请求失败: {:?}", e);
-            return Json(json!({
-                "error":  {
-                    "message": e.to_string(),
-                    "status": Option::<u16>::None,
-                    "details": Option::<String>::None,
-                }
-            }));
+            return Json(create_error_json(&e));
         }
     };
 
@@ -206,24 +119,18 @@ async fn no_sse_completions(
                 Ok(value) => Json(value),
                 Err(e) => {
                     tracing::error!("JSON解析失败: {:?}", e);
-                    Json(json!( {
-                        "error":  {
-                            "message": "上游返回数据格式错误".to_string(),
-                            "status": Option::<u16>::None,
-                            "details": Some(text),
-                        }
-                    }))
+                    Json(create_network_error_json(
+                        "上游返回数据格式错误",
+                        Some(text),
+                    ))
                 }
             },
             Err(e) => {
                 tracing::error!("读取响应体失败: {:?}", e);
-                Json(json!( {
-                    "error":  {
-                        "message": "无法读取响应数据".to_string(),
-                        "status": Option::<u16>::None,
-                        "details": Some(e.to_string()),
-                    }
-                }))
+                Json(create_network_error_json(
+                    "无法读取响应数据",
+                    Some(e.to_string()),
+                ))
             }
         }
     } else {
@@ -234,15 +141,15 @@ async fn no_sse_completions(
             .unwrap_or_else(|_| "无法读取错误响应".to_string());
 
         tracing::error!("上游API错误: 状态码 {}, 响应: {}", status, body);
-        Json(json!( {
-            "error": {
-                "message": "上游API返回错误".to_string(),
-                "status": Some(status),
-                "details": Some(body),
-            }
-        }))
+        Json(create_upstream_error_json(
+            "上游API返回错误",
+            Some(status),
+            Some(body),
+        ))
     }
 }
+
+// 主要的聊天完成处理函数
 pub async fn handle_completions(
     TypedHeader(authorization): TypedHeader<headers::Authorization<headers::authorization::Bearer>>,
     TypedHeader(content_type): TypedHeader<headers::ContentType>,
@@ -270,5 +177,29 @@ pub async fn handle_completions(
         )
         .await
         .into_response()
+    }
+}
+
+// 模型列表处理函数
+pub async fn handle_model(
+    TypedHeader(authorization): TypedHeader<headers::Authorization<headers::authorization::Bearer>>,
+) -> Json<Value> {
+    let client = OpenAIClient::new();
+    let token = authorization.token();
+    
+    match client.models(token).await {
+        Ok(response) => {
+            if response.is_success {
+                match serde_json::from_str(&response.body) {
+                    Ok(val) => Json(val),
+                    Err(_) => Json(
+                        json!({"berry-api-error": response.body,"错误信息": "上游返回数据格式错误，解析失败"}),
+                    ),
+                }
+            } else {
+                Json(json!({"berry-api-error": response.body,"错误信息": "请求上游失败"}))
+            }
+        }
+        Err(e) => Json(json!({"berry-api-error": e.to_string(),"错误信息": "请求上游失败"})),
     }
 }

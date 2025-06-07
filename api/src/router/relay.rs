@@ -12,7 +12,7 @@ fn set_relay_v1_router() -> Router {
     Router::new()
         .route(
             "/chat/completions",
-            post(relay::openai::completions::handle_completions),
+            post(relay::handler::openai::handle_completions),
         )
-        .route("/models", get(relay::openai::model::handle_model))
+        .route("/models", get(relay::handler::openai::handle_model))
 }
