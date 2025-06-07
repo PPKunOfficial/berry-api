@@ -36,4 +36,5 @@ jobs:
           context: .
           push: true
           platforms: ${{ matrix.arch }}
-          tags: ppkun00/berry-api:${{ github.ref_name }}-${{ matrix.arch }}
+          tags: ppkun00/berry-api:${{ github.ref_name }}-${{ matrix.arch == 'linux/amd64' && 'amd64' || 'arm64' }}
+
