@@ -12,6 +12,8 @@ chrono = { version = "0.4.41", features = ["serde"] }
 eventsource-stream = "0.2.3"
 futures = "0.3.31"
 headers = "0.4.0"
+include_dir = "0.7"
+mime_guess = "2.0"
 rand = "0.8"
 reqwest = { version = "0.12.15", features = [
     "stream",
