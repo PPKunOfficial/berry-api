@@ -7,26 +7,26 @@ Berry API 是一个高性能的AI服务负载均衡网关，支持多种AI服务
 ## 📚 文档导航
 
 ### 核心文档
-- **[📋 文档索引](user_guide/DOCUMENTATION_INDEX.md)** - 所有文档的导航页面
-- **[📖 使用指南](user_guide/USAGE_GUIDE.md)** - 基础使用和最佳实践
-- **[🔌 API参考](user_guide/API_REFERENCE.md)** - 完整的API文档
-- **[🔑 认证指南](user_guide/AUTH_GUIDE.md)** - 用户认证和权限管理
-- **[🔄 API密钥更新](user_guide/API_KEY_UPDATE.md)** - 如何更新API密钥
+- **[📋 文档索引](docs/DOCUMENTATION_INDEX.md)** - 所有文档的导航页面
+- **[📖 使用指南](docs/USAGE_GUIDE.md)** - 基础使用和最佳实践
+- **[🔌 API参考](docs/API_REFERENCE.md)** - 完整的API文档
+- **[🔑 认证指南](docs/AUTH_GUIDE.md)** - 用户认证和权限管理
+- **[🔄 API密钥更新](docs/API_KEY_UPDATE.md)** - 如何更新API密钥
 
 ### 配置指南
-- **[⚙️ 配置示例](user_guide/CONFIGURATION_EXAMPLES.md)** - 各种场景的配置示例
-- **[🛠️ 调试日志](user_guide/DEBUG_LOGGING_GUIDE.md)** - 调试和日志配置
-- **[🆙 健康检查升级](user_guide/HEALTH_CHECK_UPGRADE.md)** - 智能健康检查功能
+- **[⚙️ 配置示例](docs/CONFIGURATION_EXAMPLES.md)** - 各种场景的配置示例
+- **[🛠️ 调试日志](docs/DEBUG_LOGGING_GUIDE.md)** - 调试和日志配置
+- **[🆙 健康检查升级](docs/HEALTH_CHECK_UPGRADE.md)** - 智能健康检查功能
 
 ### Docker部署
-- **[🐳 Docker指南](user_guide/DOCKER_README.md)** - Docker容器化部署
+- **[🐳 Docker指南](docs/DOCKER_README.md)** - Docker容器化部署
 - **[📦 容器编排](docker-compose.yml)** - Docker Compose配置
 
 ### 实现细节
-- **[🧠 智能健康检查](user_guide/SMART_HEALTH_CHECK.md)** - 健康检查算法详解
-- **[🏗️ 实现总结](user_guide/IMPLEMENTATION_SUMMARY.md)** - 架构设计概述
-- **[✅ 最终实现](user_guide/FINAL_IMPLEMENTATION.md)** - 完整实现细节
-- **[📝 项目总结](user_guide/FINAL_SUMMARY.md)** - 项目回顾与总结
+- **[🧠 智能健康检查](docs/SMART_HEALTH_CHECK.md)** - 健康检查算法详解
+- **[🏗️ 实现总结](docs/IMPLEMENTATION_SUMMARY.md)** - 架构设计概述
+- **[✅ 最终实现](docs/FINAL_IMPLEMENTATION.md)** - 完整实现细节
+- **[📝 项目总结](docs/FINAL_SUMMARY.md)** - 项目回顾与总结
 
 ## 🚀 特性
 
