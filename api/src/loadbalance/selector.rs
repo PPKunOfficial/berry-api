@@ -8,6 +8,37 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
+/// 后端选择错误类型
+#[derive(Debug, Clone)]
+pub struct BackendSelectionError {
+    pub model_name: String,
+    pub total_backends: usize,
+    pub healthy_backends: usize,
+    pub enabled_backends: usize,
+    pub failed_attempts: Vec<FailedAttempt>,
+    pub error_message: String,
+}
+
+/// 失败尝试记录
+#[derive(Debug, Clone)]
+pub struct FailedAttempt {
+    pub backend_key: String,
+    pub provider: String,
+    pub model: String,
+    pub reason: String,
+    pub is_healthy: bool,
+    pub failure_count: u32,
+    pub last_failure_time: Option<Instant>,
+}
+
+impl std::fmt::Display for BackendSelectionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Backend selection failed for model '{}': {}", self.model_name, self.error_message)
+    }
+}
+
+impl std::error::Error for BackendSelectionError {}
+
 pub struct BackendSelector {
     mapping: ModelMapping,
     round_robin_counter: AtomicUsize,
@@ -439,10 +470,14 @@ impl BackendSelector {
             .collect();
 
         if enabled_backends.is_empty() {
-            anyhow::bail!("No enabled backends for model {}", self.mapping.name);
+            return Err(self.create_detailed_error(
+                "No enabled backends available",
+                &self.mapping.backends,
+                &[],
+            ).into());
         }
 
-        match self.mapping.strategy {
+        let result = match self.mapping.strategy {
             LoadBalanceStrategy::WeightedRandom => self.select_weighted_random(&enabled_backends),
             LoadBalanceStrategy::RoundRobin => self.select_round_robin(&enabled_backends),
             LoadBalanceStrategy::LeastLatency => self.select_least_latency(&enabled_backends),
@@ -454,7 +489,19 @@ impl BackendSelector {
             LoadBalanceStrategy::SmartWeightedFailover => {
                 self.select_smart_weighted_failover(&enabled_backends)
             }
+        };
+
+        // 如果选择失败，创建详细的错误信息
+        if let Err(e) = &result {
+            tracing::error!(
+                "Backend selection failed for model '{}' using strategy '{:?}': {}",
+                self.mapping.name,
+                self.mapping.strategy,
+                e
+            );
         }
+
+        result
     }
 
     fn select_weighted_random(&self, backends: &[Backend]) -> Result<Backend> {
@@ -497,14 +544,39 @@ impl BackendSelector {
         let mut sorted = backends.to_vec();
         sorted.sort_by_key(|b| b.priority);
 
+        // 尝试找到第一个健康的后端
         for backend in &sorted {
             if self.metrics.is_healthy(&backend.provider, &backend.model) {
+                tracing::debug!(
+                    "Failover selected healthy backend {}:{} (priority: {}) for model '{}'",
+                    backend.provider,
+                    backend.model,
+                    backend.priority,
+                    self.mapping.name
+                );
                 return Ok(backend.clone());
             }
         }
 
-        // 如果都不健康，返回优先级最高的
-        Ok(sorted[0].clone())
+        // 如果都不健康，返回优先级最高的作为最后尝试
+        if !sorted.is_empty() {
+            let fallback_backend = &sorted[0];
+            tracing::warn!(
+                "Failover: no healthy backends available for model '{}', using highest priority backend {}:{} as fallback",
+                self.mapping.name,
+                fallback_backend.provider,
+                fallback_backend.model
+            );
+            return Ok(fallback_backend.clone());
+        }
+
+        // 如果没有任何后端，返回详细错误
+        let failed_attempts = self.collect_backend_status(backends);
+        Err(self.create_detailed_error(
+            "Failover selection failed - no backends available",
+            backends,
+            &failed_attempts,
+        ).into())
     }
 
     fn select_random(&self, backends: &[Backend]) -> Result<Backend> {
@@ -526,17 +598,41 @@ impl BackendSelector {
             return self.select_weighted_random(&healthy_backends);
         }
 
-        // 如果没有健康的后端，仍然使用权重选择
-        // 这样可以在所有后端都不健康时，仍然根据权重分配流量
+        // 如果没有健康的后端，记录详细信息并仍然尝试选择
         tracing::warn!(
-            "No healthy backends available for weighted failover, using weights on all backends"
+            "No healthy backends available for weighted failover on model '{}', attempting selection from all backends",
+            self.mapping.name
         );
-        self.select_weighted_random(backends)
+
+        // 收集失败信息
+        let failed_attempts = self.collect_backend_status(backends);
+
+        // 尝试从所有后端中选择（作为最后的尝试）
+        match self.select_weighted_random(backends) {
+            Ok(backend) => {
+                tracing::warn!(
+                    "Selected unhealthy backend {}:{} as last resort for model '{}'",
+                    backend.provider,
+                    backend.model,
+                    self.mapping.name
+                );
+                Ok(backend)
+            }
+            Err(_) => {
+                // 如果连选择都失败了，返回详细错误
+                Err(self.create_detailed_error(
+                    "Weighted failover selection failed - no healthy backends available and fallback selection failed",
+                    backends,
+                    &failed_attempts,
+                ).into())
+            }
+        }
     }
 
     fn select_smart_weighted_failover(&self, backends: &[Backend]) -> Result<Backend> {
         // 智能权重故障转移：考虑权重恢复状态
         let mut adjusted_backends = Vec::new();
+        let mut total_effective_weight = 0.0;
 
         for backend in backends {
             let backend_key = format!("{}:{}", backend.provider, backend.model);
@@ -548,6 +644,7 @@ impl BackendSelector {
             let mut adjusted_backend = backend.clone();
             adjusted_backend.weight = effective_weight;
             adjusted_backends.push(adjusted_backend);
+            total_effective_weight += effective_weight;
 
             tracing::debug!(
                 "Backend {} effective weight: {:.3} (original: {:.3})",
@@ -564,11 +661,154 @@ impl BackendSelector {
             .collect();
 
         if valid_backends.is_empty() {
-            anyhow::bail!("No backends with positive weight available for smart weighted failover");
+            // 收集详细的失败信息
+            let failed_attempts = self.collect_backend_status(backends);
+
+            tracing::error!(
+                "Smart weighted failover failed for model '{}': no backends with positive weight (total effective weight: {:.3})",
+                self.mapping.name,
+                total_effective_weight
+            );
+
+            return Err(self.create_detailed_error(
+                "Smart weighted failover failed - no backends with positive effective weight available",
+                backends,
+                &failed_attempts,
+            ).into());
         }
 
         // 使用调整后的权重进行选择
-        self.select_weighted_random(&valid_backends)
+        match self.select_weighted_random(&valid_backends) {
+            Ok(backend) => {
+                tracing::debug!(
+                    "Smart weighted failover selected backend {}:{} for model '{}'",
+                    backend.provider,
+                    backend.model,
+                    self.mapping.name
+                );
+                Ok(backend)
+            }
+            Err(e) => {
+                let failed_attempts = self.collect_backend_status(backends);
+                tracing::error!(
+                    "Smart weighted failover selection failed for model '{}': {}",
+                    self.mapping.name,
+                    e
+                );
+
+                Err(self.create_detailed_error(
+                    &format!("Smart weighted failover selection failed: {}", e),
+                    backends,
+                    &failed_attempts,
+                ).into())
+            }
+        }
+    }
+
+    /// 创建详细的错误信息
+    fn create_detailed_error(
+        &self,
+        base_message: &str,
+        all_backends: &[Backend],
+        failed_attempts: &[FailedAttempt],
+    ) -> BackendSelectionError {
+        let total_backends = all_backends.len();
+        let enabled_backends = all_backends.iter().filter(|b| b.enabled).count();
+        let mut healthy_backends = 0;
+
+        // 统计健康的后端数量
+        for backend in all_backends {
+            if backend.enabled && self.metrics.is_healthy(&backend.provider, &backend.model) {
+                healthy_backends += 1;
+            }
+        }
+
+        // 构建详细的错误消息
+        let mut error_message = format!("{} for model '{}'", base_message, self.mapping.name);
+
+        if total_backends == 0 {
+            error_message.push_str(". No backends configured for this model.");
+        } else if enabled_backends == 0 {
+            error_message.push_str(&format!(
+                ". All {} configured backends are disabled.",
+                total_backends
+            ));
+        } else if healthy_backends == 0 {
+            error_message.push_str(&format!(
+                ". All {} enabled backends are currently unhealthy.",
+                enabled_backends
+            ));
+
+            // 添加恢复建议
+            error_message.push_str(" Please check backend health status and wait for automatic recovery, or contact system administrator.");
+        } else {
+            error_message.push_str(&format!(
+                ". {} total backends, {} enabled, {} healthy.",
+                total_backends, enabled_backends, healthy_backends
+            ));
+        }
+
+        // 添加策略信息
+        error_message.push_str(&format!(
+            " Load balance strategy: {:?}.",
+            self.mapping.strategy
+        ));
+
+        // 如果有失败尝试，添加详细信息
+        if !failed_attempts.is_empty() {
+            error_message.push_str(" Recent failures: ");
+            for (i, attempt) in failed_attempts.iter().enumerate() {
+                if i > 0 {
+                    error_message.push_str(", ");
+                }
+                error_message.push_str(&format!(
+                    "{}:{} ({})",
+                    attempt.provider,
+                    attempt.model,
+                    attempt.reason
+                ));
+            }
+        }
+
+        BackendSelectionError {
+            model_name: self.mapping.name.clone(),
+            total_backends,
+            healthy_backends,
+            enabled_backends,
+            failed_attempts: failed_attempts.to_vec(),
+            error_message,
+        }
+    }
+
+    /// 收集后端状态信息用于错误报告
+    fn collect_backend_status(&self, backends: &[Backend]) -> Vec<FailedAttempt> {
+        let mut attempts = Vec::new();
+
+        for backend in backends {
+            let backend_key = format!("{}:{}", backend.provider, backend.model);
+            let is_healthy = self.metrics.is_healthy(&backend.provider, &backend.model);
+            let failure_count = self.metrics.get_failure_count(&backend.provider, &backend.model);
+
+            let reason = if !backend.enabled {
+                "Backend disabled".to_string()
+            } else if !is_healthy {
+                format!("Unhealthy (failures: {})", failure_count)
+            } else {
+                "Available".to_string()
+            };
+
+            attempts.push(FailedAttempt {
+                backend_key,
+                provider: backend.provider.clone(),
+                model: backend.model.clone(),
+                reason,
+                is_healthy,
+                failure_count,
+                last_failure_time: None, // 可以从metrics中获取，但这里简化处理
+            });
+        }
+
+        attempts
     }
 }
 

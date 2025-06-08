@@ -66,11 +66,32 @@ impl LoadBalancedHandler {
                     model_name,
                     e
                 );
-                Json(create_error_json(
-                    &crate::relay::client::ClientError::HeaderParseError(format!(
-                        "Request failed after all retries: {}",
+
+                // 创建更详细的错误响应
+                let error_message = if e.to_string().contains("Backend selection failed after") {
+                    // 这是来自负载均衡器的详细错误
+                    format!(
+                        "Service temporarily unavailable for model '{}'. {}",
+                        model_name,
                         e
-                    )),
+                    )
+                } else if e.to_string().contains("Failed to select backend") {
+                    // 后端选择失败
+                    format!(
+                        "No available backends for model '{}'. Please try again later or contact support. Details: {}",
+                        model_name,
+                        e
+                    )
+                } else {
+                    // 其他类型的错误
+                    format!(
+                        "Request processing failed for model '{}' after multiple attempts. Please try again later. If the problem persists, contact support.",
+                        model_name
+                    )
+                };
+
+                Json(create_error_json(
+                    &crate::relay::client::ClientError::HeaderParseError(error_message),
                 ))
                 .into_response()
             }
@@ -98,7 +119,19 @@ impl LoadBalancedHandler {
                 Ok(backend) => backend,
                 Err(e) => {
                     if attempt == max_retries - 1 {
-                        return Err(anyhow::anyhow!("Failed to select backend: {}", e));
+                        // 最后一次尝试失败，提供详细错误信息
+                        tracing::error!(
+                            "Failed to select backend for model '{}' after {} attempts: {}",
+                            model_name,
+                            max_retries,
+                            e
+                        );
+                        return Err(anyhow::anyhow!(
+                            "Backend selection failed for model '{}' after {} attempts. {}",
+                            model_name,
+                            max_retries,
+                            e
+                        ));
                     }
                     tracing::warn!(
                         "Backend selection failed on attempt {}, retrying: {}",
@@ -136,7 +169,11 @@ impl LoadBalancedHandler {
                         .await;
 
                     if attempt == max_retries - 1 {
-                        return Err(anyhow::anyhow!("API key not found: {}", e));
+                        return Err(anyhow::anyhow!(
+                            "API key configuration error for model '{}': {}. Please check provider configuration.",
+                            model_name,
+                            e
+                        ));
                     }
                     tracing::warn!("API key error on attempt {}, retrying: {}", attempt + 1, e);
                     continue;
@@ -178,7 +215,11 @@ impl LoadBalancedHandler {
                         .await;
 
                     if attempt == max_retries - 1 {
-                        return Err(anyhow::anyhow!("Failed to build request headers: {}", e));
+                        return Err(anyhow::anyhow!(
+                            "Request header configuration error for model '{}': {}. Please check provider configuration.",
+                            model_name,
+                            e
+                        ));
                     }
                     tracing::warn!(
                         "Header build error on attempt {}, retrying: {}",
@@ -208,7 +249,12 @@ impl LoadBalancedHandler {
                         .await;
 
                     if attempt == max_retries - 1 {
-                        return Err(anyhow::anyhow!("Request failed after all retries: {}", e));
+                        return Err(anyhow::anyhow!(
+                            "Request to backend failed for model '{}' after {} attempts: {}. All available backends may be experiencing issues.",
+                            model_name,
+                            max_retries,
+                            e
+                        ));
                     }
                     tracing::warn!("Request failed on attempt {}, retrying: {}", attempt + 1, e);
                     continue;

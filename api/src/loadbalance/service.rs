@@ -164,14 +164,46 @@ impl LoadBalanceService {
                                attempt + 1, max_retries + 1, e);
                         continue;
                     } else {
-                        debug!("All backend selection attempts failed");
-                        return Err(e);
+                        // 最后一次尝试失败，提供详细的错误信息
+                        error!(
+                            "All {} backend selection attempts failed for model '{}'. Final error: {}",
+                            max_retries + 1,
+                            model_name,
+                            e
+                        );
+
+                        // 检查是否是我们的详细错误类型
+                        if let Some(detailed_error) = e.downcast_ref::<crate::loadbalance::selector::BackendSelectionError>() {
+                            // 如果是详细错误，直接返回
+                            return Err(anyhow::anyhow!(
+                                "Backend selection failed after {} internal retries for model '{}': {}. Total backends: {}, Enabled: {}, Healthy: {}. Please check backend health status or contact system administrator.",
+                                max_retries + 1,
+                                detailed_error.model_name,
+                                detailed_error.error_message,
+                                detailed_error.total_backends,
+                                detailed_error.enabled_backends,
+                                detailed_error.healthy_backends
+                            ));
+                        } else {
+                            // 如果是其他类型的错误，包装成详细错误
+                            return Err(anyhow::anyhow!(
+                                "Backend selection failed after {} internal retries for model '{}': {}. This error occurred during the load balancing process. Please check your configuration and backend health status.",
+                                max_retries + 1,
+                                model_name,
+                                e
+                            ));
+                        }
                     }
                 }
             }
         }
 
-        anyhow::bail!("Failed to select backend after {} attempts", max_retries + 1)
+        // 这行代码理论上不应该被执行到，但为了安全起见保留
+        anyhow::bail!(
+            "Unexpected error: Failed to select backend after {} attempts for model '{}'. This indicates a logic error in the retry mechanism.",
+            max_retries + 1,
+            model_name
+        )
     }
 
     /// 记录请求结果
