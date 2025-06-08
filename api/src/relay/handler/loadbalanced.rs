@@ -185,8 +185,13 @@ impl LoadBalancedHandler {
                 }
             };
 
-            // 创建客户端
-            let client = OpenAIClient::with_base_url(selected_backend.provider.base_url.clone());
+            // 创建客户端，设置连接超时和首字节超时，但不限制总请求时间
+            // 这样可以防止连接问题，同时允许长内容生成
+            let connect_timeout = std::time::Duration::from_secs(selected_backend.provider.timeout_seconds);
+            let client = OpenAIClient::with_base_url_and_timeout(
+                selected_backend.provider.base_url.clone(),
+                connect_timeout,
+            );
 
             // 构建请求头
             let headers = match client.build_request_headers(&authorization, &content_type) {
