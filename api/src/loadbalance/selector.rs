@@ -529,7 +529,7 @@ impl BackendSelector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::model::{ModelMapping, LoadBalanceStrategy};
+    use crate::config::model::{ModelMapping, LoadBalanceStrategy, BillingMode};
 
     fn create_test_backends() -> Vec<Backend> {
         vec![
@@ -540,6 +540,7 @@ mod tests {
                 priority: 1,
                 enabled: true,
                 tags: vec![],
+                billing_mode: BillingMode::PerToken,
             },
             Backend {
                 provider: "provider2".to_string(),
@@ -548,6 +549,7 @@ mod tests {
                 priority: 2,
                 enabled: true,
                 tags: vec![],
+                billing_mode: BillingMode::PerRequest,
             },
             Backend {
                 provider: "provider3".to_string(),
@@ -556,6 +558,7 @@ mod tests {
                 priority: 3,
                 enabled: true,
                 tags: vec![],
+                billing_mode: BillingMode::PerToken,
             },
         ]
     }

@@ -2,21 +2,21 @@
 
 ## 概述
 
-Berry API 现在支持基于计费模式的智能健康检查机制，能够根据不同的计费模式采用不同的健康检查策略，有效降低成本并提高系统可靠性。
+Berry API 现在支持基于Backend级别计费模式的智能健康检查机制，能够根据不同模型的计费模式采用不同的健康检查策略，有效降低成本并提高系统可靠性。
 
 ## 核心特性
 
-### 1. 计费模式区分
+### 1. Backend级别计费模式区分
 
 #### 按Token计费 (PerToken)
 - **主动健康检查**: 定期执行models API检查和chat请求验证
 - **恢复机制**: 使用chat请求进行主动恢复验证
-- **适用场景**: OpenAI、Anthropic等按token计费的服务
+- **适用场景**: OpenAI GPT-4、Anthropic Claude等按token计费的模型
 
 #### 按请求计费 (PerRequest)
 - **被动验证**: 跳过主动健康检查，依赖实际请求结果
 - **权重恢复**: 不健康时降至10%权重，成功请求后逐步恢复
-- **适用场景**: 按请求次数计费的昂贵服务
+- **适用场景**: 按请求次数计费的昂贵专有模型
 
 ### 2. 权重恢复机制
 
@@ -38,21 +38,20 @@ Berry API 现在支持基于计费模式的智能健康检查机制，能够根�
 ### Provider配置
 
 ```toml
-# 按token计费的provider
+# Provider配置不再包含计费模式，计费模式现在在Backend级别配置
 [providers.openai]
 name = "OpenAI"
 base_url = "https://api.openai.com/v1"
 api_key = "sk-your-key"
-models = ["gpt-4", "gpt-3.5-turbo"]
-billing_mode = "per_token"  # 执行主动健康检查
+models = ["gpt-4", "gpt-3.5-turbo", "premium-gpt-4"]
+enabled = true
 
-# 按请求计费的provider
-[providers.expensive_api]
-name = "Expensive API"
-base_url = "https://api.expensive.com/v1"
+[providers.custom_provider]
+name = "Custom Provider"
+base_url = "https://api.custom.com/v1"
 api_key = "your-key"
-models = ["premium-model"]
-billing_mode = "per_request"  # 跳过主动检查
+models = ["custom-model", "expensive-model"]
+enabled = true
 ```
 
 ### 模型映射配置
@@ -66,16 +65,26 @@ enabled = true
 [[models.smart_gpt4.backends]]
 provider = "openai"
 model = "gpt-4"
-weight = 0.7  # 主要provider
+weight = 0.5  # 主要backend
 priority = 1
 enabled = true
+billing_mode = "per_token"  # 按token计费 - 执行主动健康检查
 
 [[models.smart_gpt4.backends]]
-provider = "expensive_api"
-model = "premium-model"
-weight = 0.3  # 备用provider，支持权重恢复
+provider = "openai"
+model = "premium-gpt-4"
+weight = 0.3  # 昂贵模型，按请求计费
 priority = 2
 enabled = true
+billing_mode = "per_request"  # 按请求计费 - 跳过主动检查，使用被动验证
+
+[[models.smart_gpt4.backends]]
+provider = "custom_provider"
+model = "expensive-model"
+weight = 0.2  # 备用backend，支持权重恢复
+priority = 3
+enabled = true
+billing_mode = "per_request"  # 按请求计费 - 跳过主动检查，使用被动验证
 ```
 
 ## 工作流程
@@ -184,20 +193,22 @@ RUST_LOG=debug cargo run
 
 ### 1. 计费模式选择
 
-- **按token计费**: 适用于OpenAI、Anthropic等主流AI服务
-- **按请求计费**: 适用于昂贵的专有API或按调用次数计费的服务
+- **按token计费**: 适用于OpenAI GPT-4、Anthropic Claude等按token计费的模型
+- **按请求计费**: 适用于昂贵的专有模型或按调用次数计费的服务
 
-### 2. 权重配置
+### 2. Backend配置
 
-- 主要provider设置较高权重(0.5-0.8)
-- 按请求计费的备用provider设置较低权重(0.2-0.4)
-- 确保权重总和为1.0
+- 主要backend设置较高权重(0.5-0.8)
+- 按请求计费的备用backend设置较低权重(0.2-0.4)
+- 确保同一模型下所有backend权重总和为1.0
+- 同一Provider可以同时支持不同计费模式的模型
 
 ### 3. 监控建议
 
 - 监控权重恢复过程
 - 跟踪被动验证成功率
 - 观察不同计费模式的健康检查行为
+- 关注同一Provider下不同模型的健康状态
 
 ## 故障排除
 

@@ -77,18 +77,19 @@ impl HealthChecker {
         let mut tasks = Vec::new();
 
         for (provider_id, provider) in enabled_providers {
-            debug!("Scheduling health check for provider: {} ({}) - billing_mode: {:?}",
-                   provider_id, provider.name, provider.billing_mode);
+            debug!("Scheduling health check for provider: {} ({})",
+                   provider_id, provider.name);
 
             let provider_id_clone = provider_id.clone();
             let provider_clone = provider.clone();
             let client = self.client.clone();
             let metrics = self.metrics.clone();
+            let config = self.config.clone();
             let is_initial = is_initial_check;
 
             let task = tokio::spawn(async move {
                 debug!("Starting health check task for provider: {}", provider_id_clone);
-                Self::check_provider_health(&provider_id_clone, &provider_clone, &client, &metrics, is_initial).await;
+                Self::check_provider_health(&provider_id_clone, &provider_clone, &client, &metrics, &config, is_initial).await;
                 debug!("Completed health check task for provider: {}", provider_id_clone);
             });
 
@@ -122,6 +123,7 @@ impl HealthChecker {
         provider: &Provider,
         client: &Client,
         metrics: &MetricsCollector,
+        config: &Config,
         is_initial_check: bool,
     ) {
         let start_time = Instant::now();
@@ -144,39 +146,65 @@ impl HealthChecker {
 
         debug!("API key present for provider {}, proceeding with health check", provider_id);
 
-        // 根据计费模式决定健康检查策略
-        match provider.billing_mode {
-            BillingMode::PerToken => {
-                debug!("Provider {} uses per-token billing, performing active health check", provider_id);
-                // 按token计费：执行主动健康检查
-                if provider.base_url.contains("httpbin.org") {
-                    debug!("Detected test provider (httpbin), using HTTP status check for {}", provider_id);
-                    Self::check_test_provider(provider_id, provider, client, metrics, start_time, is_initial_check).await;
-                } else {
-                    debug!("Detected real AI provider, using models API check for {}", provider_id);
-                    Self::check_real_provider(provider_id, provider, metrics, start_time, is_initial_check).await;
+        // 检查该provider下每个模型的计费模式
+        let mut has_per_token_models = false;
+        let mut per_request_models = Vec::new();
+
+        // 遍历所有模型映射，找到使用此provider的backends
+        for (_, model_mapping) in &config.models {
+            for backend in &model_mapping.backends {
+                if backend.provider == provider_id && provider.models.contains(&backend.model) {
+                    match backend.billing_mode {
+                        BillingMode::PerToken => {
+                            has_per_token_models = true;
+                        }
+                        BillingMode::PerRequest => {
+                            per_request_models.push(backend.model.clone());
+                        }
+                    }
                 }
             }
-            BillingMode::PerRequest => {
-                debug!("Provider {} uses per-request billing, skipping active health check", provider_id);
-                // 按请求计费：跳过主动检查，只在初始检查时标记为健康
+        }
+
+        debug!("Provider {} has per-token models: {}, per-request models: {:?}",
+               provider_id, has_per_token_models, per_request_models);
+
+        // 如果有按token计费的模型，执行主动健康检查
+        if has_per_token_models {
+            debug!("Provider {} has per-token models, performing active health check", provider_id);
+            if provider.base_url.contains("httpbin.org") {
+                debug!("Detected test provider (httpbin), using HTTP status check for {}", provider_id);
+                Self::check_test_provider(provider_id, provider, client, metrics, start_time, is_initial_check).await;
+            } else {
+                debug!("Detected real AI provider, using models API check for {}", provider_id);
+                Self::check_real_provider(provider_id, provider, metrics, start_time, is_initial_check).await;
+            }
+        }
+
+        // 处理按请求计费的模型
+        if !per_request_models.is_empty() {
+            debug!("Processing {} per-request models for provider {}", per_request_models.len(), provider_id);
+            for model in &per_request_models {
+                let backend_key = format!("{}:{}", provider_id, model);
+
                 if is_initial_check {
-                    debug!("Initial check for per-request provider {}, marking models as healthy", provider_id);
-                    for model in &provider.models {
-                        let backend_key = format!("{}:{}", provider_id, model);
-                        debug!("Initial check: Marking per-request backend {} as healthy", backend_key);
-                        metrics.record_success(&backend_key);
-                        metrics.update_health_check(&backend_key);
-                    }
+                    debug!("Initial check: Marking per-request backend {} as healthy", backend_key);
+                    metrics.record_success(&backend_key);
+                    metrics.update_health_check(&backend_key);
                 } else {
-                    debug!("Routine check for per-request provider {}, skipping active check", provider_id);
-                    // 后续检查：跳过主动检查，依赖被动验证
-                    for model in &provider.models {
-                        let backend_key = format!("{}:{}", provider_id, model);
-                        debug!("Routine check: Skipping active check for per-request backend {}", backend_key);
-                        metrics.update_health_check(&backend_key);
-                    }
+                    debug!("Routine check: Skipping active check for per-request backend {}", backend_key);
+                    metrics.update_health_check(&backend_key);
                 }
+            }
+        }
+
+        // 如果既没有按token计费的模型，也没有按请求计费的模型，使用默认行为
+        if !has_per_token_models && per_request_models.is_empty() {
+            debug!("Provider {} has no configured backends, using default health check", provider_id);
+            if provider.base_url.contains("httpbin.org") {
+                Self::check_test_provider(provider_id, provider, client, metrics, start_time, is_initial_check).await;
+            } else {
+                Self::check_real_provider(provider_id, provider, metrics, start_time, is_initial_check).await;
             }
         }
 
@@ -366,6 +394,7 @@ impl HealthChecker {
                     provider,
                     &self.client,
                     &self.metrics,
+                    &self.config,
                     false, // 手动触发的检查不是初始检查
                 ).await;
                 Ok(())
@@ -415,9 +444,30 @@ impl HealthChecker {
 
                 if let Some(provider) = self.config.providers.get(provider_id) {
                     if provider.enabled {
-                        match provider.billing_mode {
+                        // 查找对应的backend配置来确定计费模式
+                        let mut backend_billing_mode = BillingMode::PerToken; // 默认值
+                        let mut found_backend = false;
+
+                        for (_, model_mapping) in &self.config.models {
+                            for backend in &model_mapping.backends {
+                                if backend.provider == provider_id && backend.model == model_name {
+                                    backend_billing_mode = backend.billing_mode.clone();
+                                    found_backend = true;
+                                    break;
+                                }
+                            }
+                            if found_backend {
+                                break;
+                            }
+                        }
+
+                        if !found_backend {
+                            warn!("Backend configuration not found for {}:{}, using default per-token billing", provider_id, model_name);
+                        }
+
+                        match backend_billing_mode {
                             BillingMode::PerToken => {
-                                info!("Attempting chat recovery check for per-token provider {}:{}", provider_id, model_name);
+                                info!("Attempting chat recovery check for per-token backend {}:{}", provider_id, model_name);
                                 debug!("Recording recovery attempt for backend: {}", unhealthy_backend.backend_key);
                                 self.metrics.record_recovery_attempt(&unhealthy_backend.backend_key);
 
@@ -425,7 +475,7 @@ impl HealthChecker {
                                 self.check_recovery_with_chat(provider_id, provider, model_name).await;
                             }
                             BillingMode::PerRequest => {
-                                debug!("Skipping active recovery check for per-request provider {}:{} (relies on passive validation)",
+                                debug!("Skipping active recovery check for per-request backend {}:{} (relies on passive validation)",
                                        provider_id, model_name);
                                 // 按请求计费：跳过主动恢复检查，依赖被动验证
                                 // 只更新恢复尝试时间，不执行实际的chat请求
@@ -621,7 +671,6 @@ mod tests {
             enabled: true,
             timeout_seconds: 5,
             max_retries: 1,
-            billing_mode: crate::config::model::BillingMode::PerToken,
         });
 
         let mut models = HashMap::new();
@@ -634,6 +683,7 @@ mod tests {
                 priority: 1,
                 enabled: true,
                 tags: vec![],
+                billing_mode: BillingMode::PerToken,
             }],
             strategy: LoadBalanceStrategy::WeightedRandom,
             enabled: true,

@@ -8,43 +8,16 @@ use tracing::{info, warn};
 fn create_smart_demo_config() -> Config {
     let mut providers = HashMap::new();
     
-    // 按token计费的provider（执行主动健康检查）
-    providers.insert("per_token_provider".to_string(), Provider {
-        name: "Per-Token Provider (Active Health Check)".to_string(),
+    // 通用provider（支持多种模型，计费模式在Backend级别配置）
+    providers.insert("test_provider".to_string(), Provider {
+        name: "Test Provider (Mixed Billing)".to_string(),
         base_url: "https://httpbin.org".to_string(),
-        api_key: "per-token-key".to_string(),
-        models: vec!["token-model".to_string()],
+        api_key: "test-key".to_string(),
+        models: vec!["token-model".to_string(), "request-model".to_string(), "backup-model".to_string()],
         headers: HashMap::new(),
         enabled: true,
         timeout_seconds: 10,
         max_retries: 2,
-        billing_mode: BillingMode::PerToken,
-    });
-
-    // 按请求计费的provider（跳过主动检查，使用被动验证）
-    providers.insert("per_request_provider".to_string(), Provider {
-        name: "Per-Request Provider (Passive Validation)".to_string(),
-        base_url: "https://httpbin.org".to_string(),
-        api_key: "per-request-key".to_string(),
-        models: vec!["request-model".to_string()],
-        headers: HashMap::new(),
-        enabled: true,
-        timeout_seconds: 10,
-        max_retries: 2,
-        billing_mode: BillingMode::PerRequest,
-    });
-
-    // 另一个按请求计费的provider
-    providers.insert("per_request_backup".to_string(), Provider {
-        name: "Per-Request Backup Provider".to_string(),
-        base_url: "https://httpbin.org".to_string(),
-        api_key: "backup-key".to_string(),
-        models: vec!["backup-model".to_string()],
-        headers: HashMap::new(),
-        enabled: true,
-        timeout_seconds: 10,
-        max_retries: 2,
-        billing_mode: BillingMode::PerRequest,
     });
 
     let mut models = HashMap::new();
@@ -52,28 +25,31 @@ fn create_smart_demo_config() -> Config {
         name: "smart-model".to_string(),
         backends: vec![
             Backend {
-                provider: "per_token_provider".to_string(),
+                provider: "test_provider".to_string(),
                 model: "token-model".to_string(),
                 weight: 0.5,  // 50%权重
                 priority: 1,
                 enabled: true,
                 tags: vec!["per-token".to_string()],
+                billing_mode: BillingMode::PerToken,  // 按token计费 - 执行主动健康检查
             },
             Backend {
-                provider: "per_request_provider".to_string(),
+                provider: "test_provider".to_string(),
                 model: "request-model".to_string(),
                 weight: 0.3,  // 30%权重，不健康时降至10%
                 priority: 2,
                 enabled: true,
                 tags: vec!["per-request".to_string()],
+                billing_mode: BillingMode::PerRequest,  // 按请求计费 - 跳过主动检查，使用被动验证
             },
             Backend {
-                provider: "per_request_backup".to_string(),
+                provider: "test_provider".to_string(),
                 model: "backup-model".to_string(),
                 weight: 0.2,  // 20%权重，不健康时降至10%
                 priority: 3,
                 enabled: true,
                 tags: vec!["per-request".to_string(), "backup".to_string()],
+                billing_mode: BillingMode::PerRequest,  // 按请求计费 - 跳过主动检查，使用被动验证
             },
         ],
         strategy: LoadBalanceStrategy::SmartWeightedFailover,
@@ -113,9 +89,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let service = LoadBalanceService::new(config)?;
 
     info!("📋 配置加载完成：");
-    info!("  - per_token_provider: 按token计费，执行主动健康检查");
-    info!("  - per_request_provider: 按请求计费，使用被动验证");
-    info!("  - per_request_backup: 按请求计费，备用provider");
+    info!("  - test_provider:token-model: 按token计费，执行主动健康检查");
+    info!("  - test_provider:request-model: 按请求计费，使用被动验证");
+    info!("  - test_provider:backup-model: 按请求计费，备用模型");
 
     // 启动服务
     info!("🔄 启动负载均衡服务...");
@@ -128,24 +104,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let metrics = service.get_metrics();
 
     info!("📊 初始健康检查结果：");
-    info!("  - per_token_provider:token-model = {}", 
-          metrics.is_healthy("per_token_provider", "token-model"));
-    info!("  - per_request_provider:request-model = {}", 
-          metrics.is_healthy("per_request_provider", "request-model"));
-    info!("  - per_request_backup:backup-model = {}", 
-          metrics.is_healthy("per_request_backup", "backup-model"));
+    info!("  - test_provider:token-model = {}",
+          metrics.is_healthy("test_provider", "token-model"));
+    info!("  - test_provider:request-model = {}",
+          metrics.is_healthy("test_provider", "request-model"));
+    info!("  - test_provider:backup-model = {}",
+          metrics.is_healthy("test_provider", "backup-model"));
 
-    // 演示1: 模拟按请求计费provider失败
-    info!("\n=== 演示1: 按请求计费provider失败 ===");
-    info!("🔥 模拟per_request_provider失败...");
-    metrics.record_failure("per_request_provider:request-model");
+    // 演示1: 模拟按请求计费backend失败
+    info!("\n=== 演示1: 按请求计费backend失败 ===");
+    info!("🔥 模拟test_provider:request-model失败...");
+    metrics.record_failure("test_provider:request-model");
 
     info!("📊 失败后状态：");
-    info!("  - per_request_provider:request-model = {}", 
-          metrics.is_healthy("per_request_provider", "request-model"));
-    
+    info!("  - test_provider:request-model = {}",
+          metrics.is_healthy("test_provider", "request-model"));
+
     // 检查权重
-    let effective_weight = metrics.get_effective_weight("per_request_provider:request-model", 0.3);
+    let effective_weight = metrics.get_effective_weight("test_provider:request-model", 0.3);
     info!("  - 有效权重: {:.3} (原始权重: 0.3)", effective_weight);
 
     // 演示2: 被动验证和权重恢复
@@ -153,30 +129,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("💬 模拟成功请求（被动验证）...");
     
     // 第一次成功 - 应该进入30%权重阶段
-    metrics.record_passive_success("per_request_provider:request-model", 0.3);
-    let weight_after_1st = metrics.get_effective_weight("per_request_provider:request-model", 0.3);
+    metrics.record_passive_success("test_provider:request-model", 0.3);
+    let weight_after_1st = metrics.get_effective_weight("test_provider:request-model", 0.3);
     info!("  - 第1次成功后权重: {:.3}", weight_after_1st);
 
     // 第二次成功 - 仍在30%权重阶段
-    metrics.record_passive_success("per_request_provider:request-model", 0.3);
-    let weight_after_2nd = metrics.get_effective_weight("per_request_provider:request-model", 0.3);
+    metrics.record_passive_success("test_provider:request-model", 0.3);
+    let weight_after_2nd = metrics.get_effective_weight("test_provider:request-model", 0.3);
     info!("  - 第2次成功后权重: {:.3}", weight_after_2nd);
 
     // 第三次成功 - 应该进入50%权重阶段
-    metrics.record_passive_success("per_request_provider:request-model", 0.3);
-    let weight_after_3rd = metrics.get_effective_weight("per_request_provider:request-model", 0.3);
+    metrics.record_passive_success("test_provider:request-model", 0.3);
+    let weight_after_3rd = metrics.get_effective_weight("test_provider:request-model", 0.3);
     info!("  - 第3次成功后权重: {:.3}", weight_after_3rd);
 
     // 第四次成功 - 仍在50%权重阶段
-    metrics.record_passive_success("per_request_provider:request-model", 0.3);
-    let weight_after_4th = metrics.get_effective_weight("per_request_provider:request-model", 0.3);
+    metrics.record_passive_success("test_provider:request-model", 0.3);
+    let weight_after_4th = metrics.get_effective_weight("test_provider:request-model", 0.3);
     info!("  - 第4次成功后权重: {:.3}", weight_after_4th);
 
     // 第五次成功 - 应该完全恢复到100%权重
-    metrics.record_passive_success("per_request_provider:request-model", 0.3);
-    let weight_after_5th = metrics.get_effective_weight("per_request_provider:request-model", 0.3);
+    metrics.record_passive_success("test_provider:request-model", 0.3);
+    let weight_after_5th = metrics.get_effective_weight("test_provider:request-model", 0.3);
     info!("  - 第5次成功后权重: {:.3}", weight_after_5th);
-    info!("  - 健康状态: {}", metrics.is_healthy("per_request_provider", "request-model"));
+    info!("  - 健康状态: {}", metrics.is_healthy("test_provider", "request-model"));
 
     // 演示3: 智能权重故障转移
     info!("\n=== 演示3: 智能权重故障转移 ===");
@@ -203,9 +179,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     sleep(Duration::from_secs(2)).await;
 
     info!("📝 健康检查说明：");
-    info!("  - per_token_provider: 执行了主动API检查");
-    info!("  - per_request_provider: 跳过了主动检查（依赖被动验证）");
-    info!("  - per_request_backup: 跳过了主动检查（依赖被动验证）");
+    info!("  - test_provider:token-model: 执行了主动API检查（按token计费）");
+    info!("  - test_provider:request-model: 跳过了主动检查（按请求计费，依赖被动验证）");
+    info!("  - test_provider:backup-model: 跳过了主动检查（按请求计费，依赖被动验证）");
 
     // 获取最终状态
     info!("\n=== 最终状态 ===");
@@ -222,11 +198,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("\n🎉 演示完成！");
     info!("📋 总结：");
-    info!("  1. ✅ 按计费模式区分健康检查策略");
-    info!("  2. ✅ 按请求计费provider的被动验证机制");
+    info!("  1. ✅ 按Backend级别的计费模式区分健康检查策略");
+    info!("  2. ✅ 按请求计费模型的被动验证机制");
     info!("  3. ✅ 权重恢复机制 (10% → 30% → 50% → 100%)");
     info!("  4. ✅ 智能权重故障转移策略");
-    info!("  5. ✅ 混合计费模式的负载均衡");
+    info!("  5. ✅ 同一Provider下混合计费模式的负载均衡");
 
     Ok(())
 }

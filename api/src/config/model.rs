@@ -61,8 +61,6 @@ pub struct Provider {
     pub timeout_seconds: u64,
     #[serde(default = "default_max_retries")]
     pub max_retries: u32,
-    #[serde(default)]
-    pub billing_mode: BillingMode,
 }
 
 /// 计费模式
@@ -103,6 +101,8 @@ pub struct Backend {
     pub enabled: bool,
     #[serde(default)]
     pub tags: Vec<String>,
+    #[serde(default)]
+    pub billing_mode: BillingMode,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

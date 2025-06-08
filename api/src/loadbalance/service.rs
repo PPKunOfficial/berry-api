@@ -185,46 +185,61 @@ impl LoadBalanceService {
             RequestResult::Success { latency } => {
                 let backend_key = format!("{}:{}", provider, model);
 
-                // 检查provider的计费模式
+                // 检查backend的计费模式
                 let config = self.manager.get_config();
-                if let Some(provider_config) = config.providers.get(provider) {
-                    match provider_config.billing_mode {
-                        crate::config::model::BillingMode::PerToken => {
-                            // 按token计费：正常记录成功
+                let mut backend_billing_mode = crate::config::model::BillingMode::PerToken; // 默认值
+                let mut found_backend = false;
+
+                // 查找对应的backend配置
+                for (_, model_mapping) in &config.models {
+                    for backend in &model_mapping.backends {
+                        if backend.provider == provider && backend.model == model {
+                            backend_billing_mode = backend.billing_mode.clone();
+                            found_backend = true;
+                            break;
+                        }
+                    }
+                    if found_backend {
+                        break;
+                    }
+                }
+
+                if !found_backend {
+                    warn!("Backend configuration not found for {}:{}, using default per-token billing", provider, model);
+                }
+
+                match backend_billing_mode {
+                    crate::config::model::BillingMode::PerToken => {
+                        // 按token计费：正常记录成功
+                        self.manager.record_success(provider, model, latency);
+                        debug!(
+                            "Recorded success for per-token backend {}:{} with latency {}ms",
+                            provider,
+                            model,
+                            latency.as_millis()
+                        );
+                    }
+                    crate::config::model::BillingMode::PerRequest => {
+                        // 按请求计费：检查是否在不健康列表中
+                        if self.metrics.is_in_unhealthy_list(&backend_key) {
+                            // 不健康的按请求计费backend：使用被动验证
+                            self.metrics.record_passive_success(&backend_key,
+                                self.get_backend_original_weight(provider, model).unwrap_or(1.0));
+                            debug!(
+                                "Recorded passive success for per-request backend {}:{} (weight recovery)",
+                                provider, model
+                            );
+                        } else {
+                            // 健康的按请求计费backend：正常记录
                             self.manager.record_success(provider, model, latency);
                             debug!(
-                                "Recorded success for per-token provider {}:{} with latency {}ms",
+                                "Recorded success for healthy per-request backend {}:{} with latency {}ms",
                                 provider,
                                 model,
                                 latency.as_millis()
                             );
                         }
-                        crate::config::model::BillingMode::PerRequest => {
-                            // 按请求计费：检查是否在不健康列表中
-                            if self.metrics.is_in_unhealthy_list(&backend_key) {
-                                // 不健康的按请求计费provider：使用被动验证
-                                self.metrics.record_passive_success(&backend_key,
-                                    self.get_backend_original_weight(provider, model).unwrap_or(1.0));
-                                debug!(
-                                    "Recorded passive success for per-request provider {}:{} (weight recovery)",
-                                    provider, model
-                                );
-                            } else {
-                                // 健康的按请求计费provider：正常记录
-                                self.manager.record_success(provider, model, latency);
-                                debug!(
-                                    "Recorded success for healthy per-request provider {}:{} with latency {}ms",
-                                    provider,
-                                    model,
-                                    latency.as_millis()
-                                );
-                            }
-                        }
                     }
-                } else {
-                    // 找不到provider配置，使用默认处理
-                    self.manager.record_success(provider, model, latency);
-                    warn!("Provider {} not found in config, using default success recording", provider);
                 }
             }
             RequestResult::Failure { error } => {
@@ -236,15 +251,30 @@ impl LoadBalanceService {
                     error
                 );
 
-                // 对于按请求计费的provider，失败时需要初始化权重恢复状态
+                // 对于按请求计费的backend，失败时需要初始化权重恢复状态
                 let config = self.manager.get_config();
-                if let Some(provider_config) = config.providers.get(provider) {
-                    if provider_config.billing_mode == crate::config::model::BillingMode::PerRequest {
-                        let backend_key = format!("{}:{}", provider, model);
-                        let original_weight = self.get_backend_original_weight(provider, model).unwrap_or(1.0);
-                        self.metrics.initialize_per_request_recovery(&backend_key, original_weight);
-                        debug!("Initialized per-request recovery for {}:{} with 10% weight", provider, model);
+                let mut backend_billing_mode = crate::config::model::BillingMode::PerToken; // 默认值
+                let mut found_backend = false;
+
+                // 查找对应的backend配置
+                for (_, model_mapping) in &config.models {
+                    for backend in &model_mapping.backends {
+                        if backend.provider == provider && backend.model == model {
+                            backend_billing_mode = backend.billing_mode.clone();
+                            found_backend = true;
+                            break;
+                        }
                     }
+                    if found_backend {
+                        break;
+                    }
+                }
+
+                if found_backend && backend_billing_mode == crate::config::model::BillingMode::PerRequest {
+                    let backend_key = format!("{}:{}", provider, model);
+                    let original_weight = self.get_backend_original_weight(provider, model).unwrap_or(1.0);
+                    self.metrics.initialize_per_request_recovery(&backend_key, original_weight);
+                    debug!("Initialized per-request recovery for {}:{} with 10% weight", provider, model);
                 }
             }
         }
@@ -385,7 +415,7 @@ impl ServiceHealth {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::model::{Provider, ModelMapping, LoadBalanceStrategy, GlobalSettings};
+    use crate::config::model::{Provider, ModelMapping, LoadBalanceStrategy, GlobalSettings, BillingMode};
     use std::collections::HashMap;
 
     fn create_test_config() -> Config {
@@ -399,7 +429,6 @@ mod tests {
             enabled: true,
             timeout_seconds: 30,
             max_retries: 3,
-            billing_mode: crate::config::model::BillingMode::PerToken,
         });
 
         let mut models = HashMap::new();
@@ -412,6 +441,7 @@ mod tests {
                 priority: 1,
                 enabled: true,
                 tags: vec![],
+                billing_mode: BillingMode::PerToken,
             }],
             strategy: LoadBalanceStrategy::WeightedRandom,
             enabled: true,
