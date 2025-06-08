@@ -34,8 +34,7 @@ impl OpenAIClient {
 
     pub fn with_base_url_and_timeout(base_url: String, connect_timeout: Duration) -> Self {
         let client = Client::builder()
-            .connect_timeout(connect_timeout)  // 只设置连接超时
-            .read_timeout(connect_timeout)     // 设置读取超时（首字节超时）
+            .connect_timeout(connect_timeout)  // 只设置连接超时，不限制总请求时间
             .build()
             .expect("Failed to create HTTP client");
 

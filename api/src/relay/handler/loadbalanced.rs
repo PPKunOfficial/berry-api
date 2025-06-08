@@ -185,8 +185,8 @@ impl LoadBalancedHandler {
                 }
             };
 
-            // 创建客户端，设置连接超时和首字节超时，但不限制总请求时间
-            // 这样可以防止连接问题，同时允许长内容生成
+            // 创建客户端，只设置连接超时，不限制总请求时间
+            // 连接成功后允许无限时间生成内容，直到客户端断开连接
             let connect_timeout = std::time::Duration::from_secs(selected_backend.provider.timeout_seconds);
             let client = OpenAIClient::with_base_url_and_timeout(
                 selected_backend.provider.base_url.clone(),
