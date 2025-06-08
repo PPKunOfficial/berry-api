@@ -1,11 +1,12 @@
 use crate::config::model::{Backend, LoadBalanceStrategy, ModelMapping};
 use anyhow::Result;
-use rand::distributions::{Distribution, WeightedIndex};
-use rand::{thread_rng, Rng};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use rand::Rng;
+use rand::distr::Distribution;
+use rand::distr::weighted::WeightedIndex;
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 pub struct BackendSelector {
     mapping: ModelMapping,
@@ -104,19 +105,25 @@ impl MetricsCollector {
                 Some(backend) => {
                     backend.last_failure_time = now;
                     backend.failure_count += 1;
-                    tracing::debug!("Updated existing unhealthy backend {}: failure_count={}",
-                                   backend_key, backend.failure_count);
+                    tracing::debug!(
+                        "Updated existing unhealthy backend {}: failure_count={}",
+                        backend_key,
+                        backend.failure_count
+                    );
                 }
                 None => {
                     tracing::debug!("Adding new backend {} to unhealthy list", backend_key);
-                    unhealthy.insert(backend_key.to_string(), UnhealthyBackend {
-                        backend_key: backend_key.to_string(),
-                        first_failure_time: now,
-                        last_failure_time: now,
-                        failure_count: 1,
-                        last_recovery_attempt: None,
-                        recovery_attempts: 0,
-                    });
+                    unhealthy.insert(
+                        backend_key.to_string(),
+                        UnhealthyBackend {
+                            backend_key: backend_key.to_string(),
+                            first_failure_time: now,
+                            last_failure_time: now,
+                            failure_count: 1,
+                            last_recovery_attempt: None,
+                            recovery_attempts: 0,
+                        },
+                    );
                 }
             }
         }
@@ -124,7 +131,10 @@ impl MetricsCollector {
         // 清理权重恢复状态（如果存在）
         if let Ok(mut recovery_states) = self.weight_recovery_states.write() {
             if recovery_states.remove(backend_key).is_some() {
-                tracing::debug!("Cleared weight recovery state for failed backend {}", backend_key);
+                tracing::debug!(
+                    "Cleared weight recovery state for failed backend {}",
+                    backend_key
+                );
             }
         }
     }
@@ -162,7 +172,10 @@ impl MetricsCollector {
         // 清理权重恢复状态
         if let Ok(mut recovery_states) = self.weight_recovery_states.write() {
             if recovery_states.remove(backend_key).is_some() {
-                tracing::debug!("Cleared weight recovery state for recovered backend {}", backend_key);
+                tracing::debug!(
+                    "Cleared weight recovery state for recovered backend {}",
+                    backend_key
+                );
             }
         }
     }
@@ -241,17 +254,27 @@ impl MetricsCollector {
             if let Some(backend) = unhealthy.get_mut(backend_key) {
                 backend.last_recovery_attempt = Some(now);
                 backend.recovery_attempts += 1;
-                tracing::debug!("Updated recovery attempt for {}: attempt #{}",
-                               backend_key, backend.recovery_attempts);
+                tracing::debug!(
+                    "Updated recovery attempt for {}: attempt #{}",
+                    backend_key,
+                    backend.recovery_attempts
+                );
             } else {
-                tracing::warn!("Attempted to record recovery for backend {} not in unhealthy list", backend_key);
+                tracing::warn!(
+                    "Attempted to record recovery for backend {} not in unhealthy list",
+                    backend_key
+                );
             }
         }
 
         if let Ok(mut recovery) = self.recovery_attempts.write() {
             let count = recovery.entry(backend_key.to_string()).or_insert(0);
             *count += 1;
-            tracing::debug!("Updated global recovery count for {}: {}", backend_key, *count);
+            tracing::debug!(
+                "Updated global recovery count for {}: {}",
+                backend_key,
+                *count
+            );
         }
     }
 
@@ -266,7 +289,10 @@ impl MetricsCollector {
 
     /// 记录按请求计费provider的被动验证成功
     pub fn record_passive_success(&self, backend_key: &str, original_weight: f64) {
-        tracing::debug!("Recording passive success for per-request backend: {}", backend_key);
+        tracing::debug!(
+            "Recording passive success for per-request backend: {}",
+            backend_key
+        );
 
         if let Ok(mut recovery_states) = self.weight_recovery_states.write() {
             match recovery_states.get_mut(backend_key) {
@@ -290,19 +316,29 @@ impl MetricsCollector {
                             _ => state.current_weight,
                         };
 
-                        tracing::debug!("Backend {} advanced to stage {:?} with weight {:.2}",
-                                       backend_key, new_stage, state.current_weight);
+                        tracing::debug!(
+                            "Backend {} advanced to stage {:?} with weight {:.2}",
+                            backend_key,
+                            new_stage,
+                            state.current_weight
+                        );
 
                         // 如果完全恢复，从不健康列表中移除并标记为健康
                         if new_stage == RecoveryStage::FullyRecovered {
                             if let Ok(mut unhealthy) = self.unhealthy_backends.write() {
                                 unhealthy.remove(backend_key);
-                                tracing::debug!("Removed fully recovered backend {} from unhealthy list", backend_key);
+                                tracing::debug!(
+                                    "Removed fully recovered backend {} from unhealthy list",
+                                    backend_key
+                                );
                             }
 
                             if let Ok(mut health) = self.health_status.write() {
                                 health.insert(backend_key.to_string(), true);
-                                tracing::debug!("Marked fully recovered backend {} as healthy", backend_key);
+                                tracing::debug!(
+                                    "Marked fully recovered backend {} as healthy",
+                                    backend_key
+                                );
                             }
                         }
                     }
@@ -319,7 +355,10 @@ impl MetricsCollector {
                     };
 
                     recovery_states.insert(backend_key.to_string(), recovery_state);
-                    tracing::debug!("Created recovery state for backend {} starting at 30% weight", backend_key);
+                    tracing::debug!(
+                        "Created recovery state for backend {} starting at 30% weight",
+                        backend_key
+                    );
                 }
             }
         }
@@ -345,7 +384,10 @@ impl MetricsCollector {
 
     /// 初始化按请求计费provider的权重恢复状态
     pub fn initialize_per_request_recovery(&self, backend_key: &str, original_weight: f64) {
-        tracing::debug!("Initializing per-request recovery for backend: {} with 10% weight", backend_key);
+        tracing::debug!(
+            "Initializing per-request recovery for backend: {} with 10% weight",
+            backend_key
+        );
 
         if let Ok(mut recovery_states) = self.weight_recovery_states.write() {
             let recovery_state = WeightRecoveryState {
@@ -388,7 +430,9 @@ impl BackendSelector {
     }
 
     pub fn select(&self) -> Result<Backend> {
-        let enabled_backends: Vec<Backend> = self.mapping.backends
+        let enabled_backends: Vec<Backend> = self
+            .mapping
+            .backends
             .iter()
             .filter(|b| b.enabled)
             .cloned()
@@ -399,21 +443,11 @@ impl BackendSelector {
         }
 
         match self.mapping.strategy {
-            LoadBalanceStrategy::WeightedRandom => {
-                self.select_weighted_random(&enabled_backends)
-            }
-            LoadBalanceStrategy::RoundRobin => {
-                self.select_round_robin(&enabled_backends)
-            }
-            LoadBalanceStrategy::LeastLatency => {
-                self.select_least_latency(&enabled_backends)
-            }
-            LoadBalanceStrategy::Failover => {
-                self.select_failover(&enabled_backends)
-            }
-            LoadBalanceStrategy::Random => {
-                self.select_random(&enabled_backends)
-            }
+            LoadBalanceStrategy::WeightedRandom => self.select_weighted_random(&enabled_backends),
+            LoadBalanceStrategy::RoundRobin => self.select_round_robin(&enabled_backends),
+            LoadBalanceStrategy::LeastLatency => self.select_least_latency(&enabled_backends),
+            LoadBalanceStrategy::Failover => self.select_failover(&enabled_backends),
+            LoadBalanceStrategy::Random => self.select_random(&enabled_backends),
             LoadBalanceStrategy::WeightedFailover => {
                 self.select_weighted_failover(&enabled_backends)
             }
@@ -426,7 +460,7 @@ impl BackendSelector {
     fn select_weighted_random(&self, backends: &[Backend]) -> Result<Backend> {
         let weights: Vec<f64> = backends.iter().map(|b| b.weight).collect();
         let dist = WeightedIndex::new(&weights)?;
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         Ok(backends[dist.sample(&mut rng)].clone())
     }
 
@@ -438,11 +472,15 @@ impl BackendSelector {
     fn select_least_latency(&self, backends: &[Backend]) -> Result<Backend> {
         // 根据metrics选择延迟最低的后端
         let mut best_backend = &backends[0];
-        let mut best_latency = self.metrics.get_latency(&best_backend.provider, &best_backend.model)
+        let mut best_latency = self
+            .metrics
+            .get_latency(&best_backend.provider, &best_backend.model)
             .unwrap_or(Duration::from_secs(999)); // 默认很高的延迟
 
         for backend in backends.iter().skip(1) {
-            let latency = self.metrics.get_latency(&backend.provider, &backend.model)
+            let latency = self
+                .metrics
+                .get_latency(&backend.provider, &backend.model)
                 .unwrap_or(Duration::from_secs(999));
 
             if latency < best_latency {
@@ -470,8 +508,8 @@ impl BackendSelector {
     }
 
     fn select_random(&self, backends: &[Backend]) -> Result<Backend> {
-        let mut rng = thread_rng();
-        let index = rng.gen_range(0..backends.len());
+        let mut rng = rand::rng();
+        let index = rng.random_range(0..backends.len());
         Ok(backends[index].clone())
     }
 
@@ -490,7 +528,9 @@ impl BackendSelector {
 
         // 如果没有健康的后端，仍然使用权重选择
         // 这样可以在所有后端都不健康时，仍然根据权重分配流量
-        tracing::warn!("No healthy backends available for weighted failover, using weights on all backends");
+        tracing::warn!(
+            "No healthy backends available for weighted failover, using weights on all backends"
+        );
         self.select_weighted_random(backends)
     }
 
@@ -500,15 +540,21 @@ impl BackendSelector {
 
         for backend in backends {
             let backend_key = format!("{}:{}", backend.provider, backend.model);
-            let effective_weight = self.metrics.get_effective_weight(&backend_key, backend.weight);
+            let effective_weight = self
+                .metrics
+                .get_effective_weight(&backend_key, backend.weight);
 
             // 创建调整权重后的backend副本
             let mut adjusted_backend = backend.clone();
             adjusted_backend.weight = effective_weight;
             adjusted_backends.push(adjusted_backend);
 
-            tracing::debug!("Backend {} effective weight: {:.3} (original: {:.3})",
-                           backend_key, effective_weight, backend.weight);
+            tracing::debug!(
+                "Backend {} effective weight: {:.3} (original: {:.3})",
+                backend_key,
+                effective_weight,
+                backend.weight
+            );
         }
 
         // 过滤出权重大于0的后端
@@ -529,7 +575,7 @@ impl BackendSelector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::model::{ModelMapping, LoadBalanceStrategy, BillingMode};
+    use crate::config::model::{BillingMode, LoadBalanceStrategy, ModelMapping};
 
     fn create_test_backends() -> Vec<Backend> {
         vec![

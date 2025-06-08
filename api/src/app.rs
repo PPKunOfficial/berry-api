@@ -64,6 +64,8 @@ pub async fn start_server() -> Result<()> {
         .init();
 
     info!("Starting Berry API server...");
+    info!("Build Time: {}", env!("VERGEN_BUILD_TIMESTAMP"));
+    info!("Git Commit: {}", env!("VERGEN_GIT_SHA"));
 
     // 创建应用状态
     let app_state = match AppState::new().await {
