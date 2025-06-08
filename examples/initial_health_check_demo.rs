@@ -18,7 +18,6 @@ fn create_demo_config() -> Config {
         enabled: true,
         timeout_seconds: 10,
         max_retries: 2,
-        billing_mode: BillingMode::PerToken,
     });
 
     // 会失败的provider
@@ -31,7 +30,6 @@ fn create_demo_config() -> Config {
         enabled: true,
         timeout_seconds: 5,
         max_retries: 1,
-        billing_mode: BillingMode::PerToken,
     });
 
     let mut models = HashMap::new();
@@ -45,6 +43,7 @@ fn create_demo_config() -> Config {
                 priority: 1,
                 enabled: true,
                 tags: vec![],
+                billing_mode: BillingMode::PerToken,
             },
         ],
         strategy: LoadBalanceStrategy::WeightedFailover,
@@ -61,6 +60,7 @@ fn create_demo_config() -> Config {
                 priority: 1,
                 enabled: true,
                 tags: vec![],
+                billing_mode: BillingMode::PerToken,
             },
         ],
         strategy: LoadBalanceStrategy::WeightedFailover,
