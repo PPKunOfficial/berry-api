@@ -1,12 +1,15 @@
-use axum::{Router, routing::{get, post}};
-use tower_http::trace::TraceLayer;
 use crate::app::AppState;
+use axum::{
+    Router,
+    routing::{get, post},
+};
+use tower_http::{services::ServeDir, trace::TraceLayer};
 
 use super::{
-    health::{detailed_health_check, simple_health_check},
-    models::{list_models, list_models_v1},
-    metrics::metrics,
     chat::chat_completions,
+    health::{detailed_health_check, simple_health_check},
+    metrics::metrics,
+    models::{list_models, list_models_v1},
 };
 
 /// 创建应用路由
@@ -17,6 +20,7 @@ pub fn create_app_router() -> Router<AppState> {
         .route("/metrics", get(metrics))
         .route("/models", get(list_models))
         .nest("/v1", create_v1_routes())
+        .nest_service("/status", ServeDir::new("public"))
         .layer(TraceLayer::new_for_http())
 }
 
