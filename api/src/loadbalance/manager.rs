@@ -198,6 +198,7 @@ mod tests {
             enabled: true,
             timeout_seconds: 30,
             max_retries: 3,
+            billing_mode: crate::config::model::BillingMode::PerToken,
         });
 
         let mut models = HashMap::new();

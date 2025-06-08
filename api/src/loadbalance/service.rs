@@ -183,13 +183,49 @@ impl LoadBalanceService {
     ) {
         match result {
             RequestResult::Success { latency } => {
-                self.manager.record_success(provider, model, latency);
-                debug!(
-                    "Recorded success for {}:{} with latency {}ms",
-                    provider,
-                    model,
-                    latency.as_millis()
-                );
+                let backend_key = format!("{}:{}", provider, model);
+
+                // 检查provider的计费模式
+                let config = self.manager.get_config();
+                if let Some(provider_config) = config.providers.get(provider) {
+                    match provider_config.billing_mode {
+                        crate::config::model::BillingMode::PerToken => {
+                            // 按token计费：正常记录成功
+                            self.manager.record_success(provider, model, latency);
+                            debug!(
+                                "Recorded success for per-token provider {}:{} with latency {}ms",
+                                provider,
+                                model,
+                                latency.as_millis()
+                            );
+                        }
+                        crate::config::model::BillingMode::PerRequest => {
+                            // 按请求计费：检查是否在不健康列表中
+                            if self.metrics.is_in_unhealthy_list(&backend_key) {
+                                // 不健康的按请求计费provider：使用被动验证
+                                self.metrics.record_passive_success(&backend_key,
+                                    self.get_backend_original_weight(provider, model).unwrap_or(1.0));
+                                debug!(
+                                    "Recorded passive success for per-request provider {}:{} (weight recovery)",
+                                    provider, model
+                                );
+                            } else {
+                                // 健康的按请求计费provider：正常记录
+                                self.manager.record_success(provider, model, latency);
+                                debug!(
+                                    "Recorded success for healthy per-request provider {}:{} with latency {}ms",
+                                    provider,
+                                    model,
+                                    latency.as_millis()
+                                );
+                            }
+                        }
+                    }
+                } else {
+                    // 找不到provider配置，使用默认处理
+                    self.manager.record_success(provider, model, latency);
+                    warn!("Provider {} not found in config, using default success recording", provider);
+                }
             }
             RequestResult::Failure { error } => {
                 self.manager.record_failure(provider, model);
@@ -199,6 +235,17 @@ impl LoadBalanceService {
                     model,
                     error
                 );
+
+                // 对于按请求计费的provider，失败时需要初始化权重恢复状态
+                let config = self.manager.get_config();
+                if let Some(provider_config) = config.providers.get(provider) {
+                    if provider_config.billing_mode == crate::config::model::BillingMode::PerRequest {
+                        let backend_key = format!("{}:{}", provider, model);
+                        let original_weight = self.get_backend_original_weight(provider, model).unwrap_or(1.0);
+                        self.metrics.initialize_per_request_recovery(&backend_key, original_weight);
+                        debug!("Initialized per-request recovery for {}:{} with 10% weight", provider, model);
+                    }
+                }
             }
         }
     }
@@ -250,6 +297,22 @@ impl LoadBalanceService {
     /// 检查服务是否正在运行
     pub async fn is_running(&self) -> bool {
         *self.is_running.read().await
+    }
+
+    /// 获取backend的原始权重
+    fn get_backend_original_weight(&self, provider: &str, model: &str) -> Option<f64> {
+        let config = self.manager.get_config();
+
+        // 遍历所有模型映射，找到匹配的backend
+        for (_, model_mapping) in &config.models {
+            for backend in &model_mapping.backends {
+                if backend.provider == provider && backend.model == model {
+                    return Some(backend.weight);
+                }
+            }
+        }
+
+        None
     }
 }
 
@@ -336,6 +399,7 @@ mod tests {
             enabled: true,
             timeout_seconds: 30,
             max_retries: 3,
+            billing_mode: crate::config::model::BillingMode::PerToken,
         });
 
         let mut models = HashMap::new();

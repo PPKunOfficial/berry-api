@@ -22,6 +22,8 @@ pub struct MetricsCollector {
     // 新增：不健康列表管理
     unhealthy_backends: Arc<std::sync::RwLock<HashMap<String, UnhealthyBackend>>>,
     recovery_attempts: Arc<std::sync::RwLock<HashMap<String, u32>>>,
+    // 新增：权重恢复状态管理
+    weight_recovery_states: Arc<std::sync::RwLock<HashMap<String, WeightRecoveryState>>>,
 }
 
 /// 不健康后端信息
@@ -35,6 +37,30 @@ pub struct UnhealthyBackend {
     pub recovery_attempts: u32,
 }
 
+/// 权重恢复状态
+#[derive(Debug, Clone)]
+pub struct WeightRecoveryState {
+    pub backend_key: String,
+    pub original_weight: f64,
+    pub current_weight: f64,
+    pub recovery_stage: RecoveryStage,
+    pub last_success_time: Instant,
+    pub success_count: u32,
+}
+
+/// 恢复阶段
+#[derive(Debug, Clone, PartialEq)]
+pub enum RecoveryStage {
+    /// 不健康状态，使用10%权重
+    Unhealthy,
+    /// 恢复中第一阶段，使用30%权重
+    RecoveryStage1,
+    /// 恢复中第二阶段，使用50%权重
+    RecoveryStage2,
+    /// 完全恢复，使用100%权重
+    FullyRecovered,
+}
+
 impl MetricsCollector {
     pub fn new() -> Self {
         Self {
@@ -44,6 +70,7 @@ impl MetricsCollector {
             last_health_check: Arc::new(std::sync::RwLock::new(HashMap::new())),
             unhealthy_backends: Arc::new(std::sync::RwLock::new(HashMap::new())),
             recovery_attempts: Arc::new(std::sync::RwLock::new(HashMap::new())),
+            weight_recovery_states: Arc::new(std::sync::RwLock::new(HashMap::new())),
         }
     }
 
@@ -93,6 +120,13 @@ impl MetricsCollector {
                 }
             }
         }
+
+        // 清理权重恢复状态（如果存在）
+        if let Ok(mut recovery_states) = self.weight_recovery_states.write() {
+            if recovery_states.remove(backend_key).is_some() {
+                tracing::debug!("Cleared weight recovery state for failed backend {}", backend_key);
+            }
+        }
     }
 
     /// 记录请求成功
@@ -122,6 +156,13 @@ impl MetricsCollector {
         if let Ok(mut recovery) = self.recovery_attempts.write() {
             if recovery.remove(backend_key).is_some() {
                 tracing::debug!("Reset recovery attempts for backend {}", backend_key);
+            }
+        }
+
+        // 清理权重恢复状态
+        if let Ok(mut recovery_states) = self.weight_recovery_states.write() {
+            if recovery_states.remove(backend_key).is_some() {
+                tracing::debug!("Cleared weight recovery state for recovered backend {}", backend_key);
             }
         }
     }
@@ -222,6 +263,103 @@ impl MetricsCollector {
             false
         }
     }
+
+    /// 记录按请求计费provider的被动验证成功
+    pub fn record_passive_success(&self, backend_key: &str, original_weight: f64) {
+        tracing::debug!("Recording passive success for per-request backend: {}", backend_key);
+
+        if let Ok(mut recovery_states) = self.weight_recovery_states.write() {
+            match recovery_states.get_mut(backend_key) {
+                Some(state) => {
+                    state.last_success_time = Instant::now();
+                    state.success_count += 1;
+
+                    // 根据成功次数逐步提高权重
+                    let new_stage = match state.success_count {
+                        1..=2 => RecoveryStage::RecoveryStage1, // 30%权重
+                        3..=4 => RecoveryStage::RecoveryStage2, // 50%权重
+                        _ => RecoveryStage::FullyRecovered,     // 100%权重
+                    };
+
+                    if new_stage != state.recovery_stage {
+                        state.recovery_stage = new_stage.clone();
+                        state.current_weight = match new_stage {
+                            RecoveryStage::RecoveryStage1 => original_weight * 0.3,
+                            RecoveryStage::RecoveryStage2 => original_weight * 0.5,
+                            RecoveryStage::FullyRecovered => original_weight,
+                            _ => state.current_weight,
+                        };
+
+                        tracing::debug!("Backend {} advanced to stage {:?} with weight {:.2}",
+                                       backend_key, new_stage, state.current_weight);
+
+                        // 如果完全恢复，从不健康列表中移除并标记为健康
+                        if new_stage == RecoveryStage::FullyRecovered {
+                            if let Ok(mut unhealthy) = self.unhealthy_backends.write() {
+                                unhealthy.remove(backend_key);
+                                tracing::debug!("Removed fully recovered backend {} from unhealthy list", backend_key);
+                            }
+
+                            if let Ok(mut health) = self.health_status.write() {
+                                health.insert(backend_key.to_string(), true);
+                                tracing::debug!("Marked fully recovered backend {} as healthy", backend_key);
+                            }
+                        }
+                    }
+                }
+                None => {
+                    // 首次被动成功，创建恢复状态
+                    let recovery_state = WeightRecoveryState {
+                        backend_key: backend_key.to_string(),
+                        original_weight,
+                        current_weight: original_weight * 0.3, // 从30%开始
+                        recovery_stage: RecoveryStage::RecoveryStage1,
+                        last_success_time: Instant::now(),
+                        success_count: 1,
+                    };
+
+                    recovery_states.insert(backend_key.to_string(), recovery_state);
+                    tracing::debug!("Created recovery state for backend {} starting at 30% weight", backend_key);
+                }
+            }
+        }
+    }
+
+    /// 获取backend的当前权重（考虑恢复状态）
+    pub fn get_effective_weight(&self, backend_key: &str, original_weight: f64) -> f64 {
+        if let Ok(recovery_states) = self.weight_recovery_states.read() {
+            if let Some(state) = recovery_states.get(backend_key) {
+                return state.current_weight;
+            }
+        }
+
+        // 检查是否在不健康列表中
+        if self.is_in_unhealthy_list(backend_key) {
+            // 不健康的按请求计费provider使用10%权重
+            return original_weight * 0.1;
+        }
+
+        // 默认使用原始权重
+        original_weight
+    }
+
+    /// 初始化按请求计费provider的权重恢复状态
+    pub fn initialize_per_request_recovery(&self, backend_key: &str, original_weight: f64) {
+        tracing::debug!("Initializing per-request recovery for backend: {} with 10% weight", backend_key);
+
+        if let Ok(mut recovery_states) = self.weight_recovery_states.write() {
+            let recovery_state = WeightRecoveryState {
+                backend_key: backend_key.to_string(),
+                original_weight,
+                current_weight: original_weight * 0.1, // 从10%开始
+                recovery_stage: RecoveryStage::Unhealthy,
+                last_success_time: Instant::now(),
+                success_count: 0,
+            };
+
+            recovery_states.insert(backend_key.to_string(), recovery_state);
+        }
+    }
 }
 
 impl Default for MetricsCollector {
@@ -278,6 +416,9 @@ impl BackendSelector {
             }
             LoadBalanceStrategy::WeightedFailover => {
                 self.select_weighted_failover(&enabled_backends)
+            }
+            LoadBalanceStrategy::SmartWeightedFailover => {
+                self.select_smart_weighted_failover(&enabled_backends)
             }
         }
     }
@@ -351,6 +492,37 @@ impl BackendSelector {
         // 这样可以在所有后端都不健康时，仍然根据权重分配流量
         tracing::warn!("No healthy backends available for weighted failover, using weights on all backends");
         self.select_weighted_random(backends)
+    }
+
+    fn select_smart_weighted_failover(&self, backends: &[Backend]) -> Result<Backend> {
+        // 智能权重故障转移：考虑权重恢复状态
+        let mut adjusted_backends = Vec::new();
+
+        for backend in backends {
+            let backend_key = format!("{}:{}", backend.provider, backend.model);
+            let effective_weight = self.metrics.get_effective_weight(&backend_key, backend.weight);
+
+            // 创建调整权重后的backend副本
+            let mut adjusted_backend = backend.clone();
+            adjusted_backend.weight = effective_weight;
+            adjusted_backends.push(adjusted_backend);
+
+            tracing::debug!("Backend {} effective weight: {:.3} (original: {:.3})",
+                           backend_key, effective_weight, backend.weight);
+        }
+
+        // 过滤出权重大于0的后端
+        let valid_backends: Vec<Backend> = adjusted_backends
+            .into_iter()
+            .filter(|b| b.weight > 0.0)
+            .collect();
+
+        if valid_backends.is_empty() {
+            anyhow::bail!("No backends with positive weight available for smart weighted failover");
+        }
+
+        // 使用调整后的权重进行选择
+        self.select_weighted_random(&valid_backends)
     }
 }
 

@@ -61,6 +61,24 @@ pub struct Provider {
     pub timeout_seconds: u64,
     #[serde(default = "default_max_retries")]
     pub max_retries: u32,
+    #[serde(default)]
+    pub billing_mode: BillingMode,
+}
+
+/// 计费模式
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum BillingMode {
+    /// 按token计费 - 执行主动健康检查
+    PerToken,
+    /// 按请求计费 - 跳过主动检查，使用被动验证
+    PerRequest,
+}
+
+impl Default for BillingMode {
+    fn default() -> Self {
+        BillingMode::PerToken
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -158,6 +176,8 @@ pub enum LoadBalanceStrategy {
     Failover,
     Random,
     WeightedFailover,
+    /// 智能权重恢复策略 - 支持按请求计费的渐进式权重恢复
+    SmartWeightedFailover,
 }
 
 impl Default for LoadBalanceStrategy {

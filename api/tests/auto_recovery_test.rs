@@ -1,4 +1,4 @@
-use berry_api_api::config::model::{Config, Provider, ModelMapping, Backend, LoadBalanceStrategy, GlobalSettings};
+use berry_api_api::config::model::{Config, Provider, ModelMapping, Backend, LoadBalanceStrategy, GlobalSettings, BillingMode};
 use berry_api_api::loadbalance::{LoadBalanceService, RequestResult};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -17,6 +17,7 @@ fn create_auto_recovery_test_config() -> Config {
         enabled: true,
         timeout_seconds: 10,
         max_retries: 2,
+        billing_mode: BillingMode::PerToken,
     });
 
     providers.insert("backup-provider".to_string(), Provider {
@@ -28,6 +29,7 @@ fn create_auto_recovery_test_config() -> Config {
         enabled: true,
         timeout_seconds: 10,
         max_retries: 2,
+        billing_mode: BillingMode::PerToken,
     });
 
     let mut models = HashMap::new();

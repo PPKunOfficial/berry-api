@@ -1,4 +1,4 @@
-use berry_api_api::config::model::{Config, Provider, ModelMapping, Backend, LoadBalanceStrategy, GlobalSettings};
+use berry_api_api::config::model::{Config, Provider, ModelMapping, Backend, LoadBalanceStrategy, GlobalSettings, BillingMode};
 use berry_api_api::loadbalance::{LoadBalanceService, MetricsCollector};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -19,6 +19,7 @@ fn create_test_config() -> Config {
         enabled: true,
         timeout_seconds: 10,
         max_retries: 2,
+        billing_mode: BillingMode::PerToken,
     });
 
     // 添加一个模拟的OpenAI provider
@@ -31,6 +32,7 @@ fn create_test_config() -> Config {
         enabled: true,
         timeout_seconds: 10,
         max_retries: 2,
+        billing_mode: BillingMode::PerToken,
     });
 
     let mut models = HashMap::new();
