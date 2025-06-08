@@ -11,7 +11,7 @@ use std::time::Instant;
 use crate::loadbalance::{LoadBalanceService, RequestResult};
 use crate::relay::client::openai::OpenAIClient;
 
-use super::types::create_error_json;
+use super::types::{create_service_unavailable_response, create_internal_error_response, create_gateway_timeout_response, ErrorType, create_error_response};
 
 /// 负载均衡的OpenAI兼容处理器
 pub struct LoadBalancedHandler {
@@ -39,12 +39,11 @@ impl LoadBalancedHandler {
             Some(name) => name.to_string(),
             None => {
                 tracing::error!("Missing model field in request");
-                return Json(create_error_json(
-                    &crate::relay::client::ClientError::HeaderParseError(
-                        "Missing model field in request".to_string(),
-                    ),
-                ))
-                .into_response();
+                return create_error_response(
+                    ErrorType::BadRequest,
+                    "Missing model field in request",
+                    Some("The 'model' field is required in the request body".to_string()),
+                ).into_response();
             }
         };
 
@@ -67,33 +66,39 @@ impl LoadBalancedHandler {
                     e
                 );
 
-                // 创建更详细的错误响应
-                let error_message = if e.to_string().contains("Backend selection failed after") {
-                    // 这是来自负载均衡器的详细错误
-                    format!(
-                        "Service temporarily unavailable for model '{}'. {}",
-                        model_name,
-                        e
-                    )
-                } else if e.to_string().contains("Failed to select backend") {
-                    // 后端选择失败
-                    format!(
-                        "No available backends for model '{}'. Please try again later or contact support. Details: {}",
-                        model_name,
-                        e
-                    )
+                // 创建更详细的错误响应，使用正确的HTTP状态码
+                let error_str = e.to_string();
+                if error_str.contains("Backend selection failed after") || error_str.contains("no available backends") {
+                    // 服务不可用 - 503
+                    create_service_unavailable_response(
+                        &format!("Service temporarily unavailable for model '{}'", model_name),
+                        Some(format!("All backends are currently unhealthy or unavailable. Details: {}", e)),
+                    ).into_response()
+                } else if error_str.contains("Failed to select backend") {
+                    // 服务不可用 - 503
+                    create_service_unavailable_response(
+                        &format!("No available backends for model '{}'", model_name),
+                        Some(format!("Backend selection failed. Please try again later. Details: {}", e)),
+                    ).into_response()
+                } else if error_str.contains("timeout") || error_str.contains("timed out") {
+                    // 网关超时 - 504
+                    create_gateway_timeout_response(
+                        &format!("Request timeout for model '{}'", model_name),
+                        Some(format!("Request processing timed out after multiple attempts. Details: {}", e)),
+                    ).into_response()
+                } else if error_str.contains("API key") || error_str.contains("configuration error") {
+                    // 内部服务器错误 - 500
+                    create_internal_error_response(
+                        &format!("Configuration error for model '{}'", model_name),
+                        Some("Please contact system administrator to check backend configuration".to_string()),
+                    ).into_response()
                 } else {
-                    // 其他类型的错误
-                    format!(
-                        "Request processing failed for model '{}' after multiple attempts. Please try again later. If the problem persists, contact support.",
-                        model_name
-                    )
-                };
-
-                Json(create_error_json(
-                    &crate::relay::client::ClientError::HeaderParseError(error_message),
-                ))
-                .into_response()
+                    // 通用内部服务器错误 - 500
+                    create_internal_error_response(
+                        &format!("Request processing failed for model '{}'", model_name),
+                        Some(format!("Request failed after multiple attempts. If the problem persists, contact support. Details: {}", e)),
+                    ).into_response()
+                }
             }
         }
     }
