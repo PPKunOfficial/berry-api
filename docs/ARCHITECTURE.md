@@ -296,7 +296,6 @@ sequenceDiagram
             Client-->>Handler: 成功响应
             Handler->>Metrics: record_success()
             Handler->>Metrics: record_latency()
-            break 退出重试循环
         end
 
         alt 未达到最大重试次数
