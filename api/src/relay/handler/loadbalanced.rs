@@ -434,15 +434,38 @@ impl LoadBalancedHandler {
                 }
             });
 
-        // 创建保活定时器流，每30秒发送一次SSE keep-alive注释
-        // 这可以防止代理服务器或负载均衡器因超时而断开连接
-        let keepalive_interval = tokio_stream::wrappers::IntervalStream::new(
-            tokio::time::interval(std::time::Duration::from_secs(30))
-        ).map(|_| Ok(Event::default().comment("keep-alive")));
-
-        // 合并数据流和保活流，优先处理数据流
+        // 创建智能保活流，当数据流结束时自动停止
         use futures::StreamExt;
-        let stream = futures::stream::select(data_stream, keepalive_interval).boxed();
+        let stream = futures::stream::unfold(
+            (data_stream, tokio::time::interval(std::time::Duration::from_secs(30)), false),
+            move |(mut data_stream, mut keepalive_interval, data_ended)| async move {
+                if data_ended {
+                    return None;
+                }
+
+                tokio::select! {
+                    // 优先处理数据流
+                    data_result = data_stream.next() => {
+                        match data_result {
+                            Some(event) => {
+                                // 有数据，继续处理
+                                Some((event, (data_stream, keepalive_interval, false)))
+                            }
+                            None => {
+                                // 数据流结束，不再发送保活信号
+                                tracing::debug!("Data stream ended, stopping keep-alive");
+                                None
+                            }
+                        }
+                    }
+                    // 发送保活信号
+                    _ = keepalive_interval.tick() => {
+                        tracing::debug!("Sending keep-alive comment");
+                        Some((Ok(Event::default().comment("keep-alive")), (data_stream, keepalive_interval, false)))
+                    }
+                }
+            }
+        ).boxed();
 
         Sse::new(stream)
     }
