@@ -3,7 +3,6 @@ use axum::response::sse::Event;
 use axum::{extract::Json, response::IntoResponse};
 use axum_extra::TypedHeader;
 use eventsource_stream::Eventsource;
-use futures::StreamExt;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use std::time::Instant;
@@ -429,8 +428,10 @@ impl LoadBalancedHandler {
                     Ok(Event::default().data(event.data))
                 }
                 Err(err) => {
-                    tracing::error!("SSE error: {:?}", err);
-                    Ok(Event::default().data(json!({"error": err.to_string()}).to_string()))
+                    // SSE解析错误，记录日志但继续传递原始数据
+                    // 不在流中包含错误信息，让连接自然断开
+                    tracing::error!("SSE parsing error: {:?}", err);
+                    Ok(Event::default().data(""))
                 }
             });
 
@@ -707,41 +708,7 @@ impl LoadBalancedHandler {
         Ok(response)
     }
 
-    #[allow(dead_code)]
-    /// 处理流式请求（兜底方法，当重试失败时使用）
-    async fn handle_streaming_request(
-        &self,
-        client: OpenAIClient,
-        headers: reqwest::header::HeaderMap,
-        body: Value,
-        selected_backend: crate::loadbalance::SelectedBackend,
-        start_time: Instant,
-    ) -> Sse<futures::stream::BoxStream<'static, Result<Event, std::convert::Infallible>>> {
-        // 尝试请求，如果失败则返回错误流
-        match self
-            .try_streaming_request(client, headers, body, selected_backend, start_time)
-            .await
-        {
-            Ok(sse) => sse,
-            Err(e) => {
-                // 创建错误流
-                let error_stream = futures::stream::once(async move {
-                    Ok(Event::default().data(
-                        json!({
-                            "error": {
-                                "message": "All retry attempts failed",
-                                "details": e.to_string()
-                            }
-                        })
-                        .to_string(),
-                    ))
-                })
-                .boxed();
 
-                Sse::new(error_stream)
-            }
-        }
-    }
 
     #[allow(dead_code)]
     /// 处理非流式请求（兜底方法，当重试失败时使用）
