@@ -114,35 +114,70 @@ impl LoadBalancedHandler {
         let max_retries = 3; // 可以从配置中读取
         let original_model = model_name.to_string();
 
+        // 检查是否指定了特定的后端
+        let backend_param = body.get("backend")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        // 如果指定了backend参数，移除它（不传递给上游API）
+        if backend_param.is_some() {
+            if let Some(obj) = body.as_object_mut() {
+                obj.remove("backend");
+            }
+        }
+
         for attempt in 0..max_retries {
             // 重置模型名称为原始请求的模型名称
             body["model"] = Value::String(original_model.clone());
 
-            // 使用负载均衡器选择后端
-            let selected_backend = match self.load_balancer.select_backend(model_name).await {
-                Ok(backend) => backend,
-                Err(e) => {
-                    if attempt == max_retries - 1 {
-                        // 最后一次尝试失败，提供详细错误信息
+            // 根据是否指定了backend参数选择后端
+            let selected_backend = if let Some(ref provider_name) = backend_param {
+                // 直接选择指定的后端
+                tracing::info!("Using specified backend '{}' for model '{}'", provider_name, model_name);
+                match self.load_balancer.select_specific_backend(model_name, provider_name).await {
+                    Ok(backend) => backend,
+                    Err(e) => {
                         tracing::error!(
-                            "Failed to select backend for model '{}' after {} attempts: {}",
+                            "Failed to select specified backend '{}' for model '{}': {}",
+                            provider_name,
                             model_name,
-                            max_retries,
                             e
                         );
                         return Err(anyhow::anyhow!(
-                            "Backend selection failed for model '{}' after {} attempts. {}",
+                            "Specified backend '{}' is not available for model '{}': {}",
+                            provider_name,
                             model_name,
-                            max_retries,
                             e
                         ));
                     }
-                    tracing::warn!(
-                        "Backend selection failed on attempt {}, retrying: {}",
-                        attempt + 1,
-                        e
-                    );
-                    continue;
+                }
+            } else {
+                // 使用负载均衡器选择后端
+                match self.load_balancer.select_backend(model_name).await {
+                    Ok(backend) => backend,
+                    Err(e) => {
+                        if attempt == max_retries - 1 {
+                            // 最后一次尝试失败，提供详细错误信息
+                            tracing::error!(
+                                "Failed to select backend for model '{}' after {} attempts: {}",
+                                model_name,
+                                max_retries,
+                                e
+                            );
+                            return Err(anyhow::anyhow!(
+                                "Backend selection failed for model '{}' after {} attempts. {}",
+                                model_name,
+                                max_retries,
+                                e
+                            ));
+                        }
+                        tracing::warn!(
+                            "Backend selection failed on attempt {}, retrying: {}",
+                            attempt + 1,
+                            e
+                        );
+                        continue;
+                    }
                 }
             };
 

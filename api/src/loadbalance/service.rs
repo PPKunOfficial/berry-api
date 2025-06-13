@@ -93,6 +93,53 @@ impl LoadBalanceService {
         info!("Load balance service stopped");
     }
 
+    /// 直接选择指定的后端（用于调试和健康检查）
+    pub async fn select_specific_backend(&self, model_name: &str, provider_name: &str) -> Result<SelectedBackend> {
+        let start_time = Instant::now();
+
+        debug!("Selecting specific backend for model: {} from provider: {}", model_name, provider_name);
+
+        // 获取配置
+        let config = self.manager.get_config();
+
+        // 查找模型配置（支持键名和显示名称）
+        let (_found_key, model_mapping) = self.find_model_by_name(&config, model_name)
+            .ok_or_else(|| anyhow::anyhow!("Model '{}' not found", model_name))?;
+
+        if !model_mapping.enabled {
+            anyhow::bail!("Model '{}' is disabled", model_name);
+        }
+
+        // 查找指定的后端
+        let backend = model_mapping.backends.iter()
+            .find(|b| b.provider == provider_name && b.enabled)
+            .ok_or_else(|| anyhow::anyhow!(
+                "Backend '{}' not found or disabled for model '{}'",
+                provider_name,
+                model_name
+            ))?;
+
+        // 获取provider配置
+        let provider = config.get_provider(&backend.provider)
+            .ok_or_else(|| anyhow::anyhow!("Provider '{}' not found", backend.provider))?;
+
+        let selection_time = start_time.elapsed();
+
+        debug!(
+            "Selected specific backend for model '{}': provider='{}', model='{}', selection_time={}ms",
+            model_name,
+            backend.provider,
+            backend.model,
+            selection_time.as_millis()
+        );
+
+        Ok(SelectedBackend {
+            backend: backend.clone(),
+            provider: provider.clone(),
+            selection_time,
+        })
+    }
+
     /// 为指定模型选择后端（带智能重试）
     pub async fn select_backend(&self, model_name: &str) -> Result<SelectedBackend> {
         let start_time = Instant::now();
@@ -401,6 +448,27 @@ impl LoadBalanceService {
                 if backend.provider == provider && backend.model == model {
                     return Some(backend.weight);
                 }
+            }
+        }
+
+        None
+    }
+
+    /// 通过模型名称查找模型（支持键名和显示名称）
+    fn find_model_by_name<'a>(
+        &self,
+        config: &'a crate::config::model::Config,
+        model_name: &str,
+    ) -> Option<(String, &'a crate::config::model::ModelMapping)> {
+        // 首先尝试直接通过键名查找
+        if let Some(mapping) = config.models.get(model_name) {
+            return Some((model_name.to_string(), mapping));
+        }
+
+        // 然后尝试通过显示名称查找
+        for (key, mapping) in &config.models {
+            if mapping.name == model_name {
+                return Some((key.clone(), mapping));
             }
         }
 
