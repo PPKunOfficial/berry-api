@@ -5,3 +5,4 @@ pub mod health;
 pub mod models;
 pub mod metrics;
 pub mod chat;
+pub mod smart_ai;

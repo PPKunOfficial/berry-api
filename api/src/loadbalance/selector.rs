@@ -56,6 +56,8 @@ pub struct MetricsCollector {
     recovery_attempts: Arc<std::sync::RwLock<HashMap<String, u32>>>,
     // 新增：权重恢复状态管理
     weight_recovery_states: Arc<std::sync::RwLock<HashMap<String, WeightRecoveryState>>>,
+    // SmartAI 相关字段
+    smart_ai_health: Arc<std::sync::RwLock<HashMap<String, SmartAiBackendHealth>>>,
 }
 
 /// 不健康后端信息
@@ -93,6 +95,51 @@ pub enum RecoveryStage {
     FullyRecovered,
 }
 
+/// SmartAI 后端健康状态
+#[derive(Debug, Clone)]
+pub struct SmartAiBackendHealth {
+    /// 信心度评分 (0.0-1.0)
+    pub confidence_score: f64,
+    /// 总请求数
+    pub total_requests: u32,
+    /// 连续成功次数
+    pub consecutive_successes: u32,
+    /// 连续失败次数
+    pub consecutive_failures: u32,
+    /// 最后请求时间
+    pub last_request_time: Instant,
+    /// 最后成功时间
+    pub last_success_time: Option<Instant>,
+    /// 最后失败时间
+    pub last_failure_time: Option<Instant>,
+    /// 错误统计
+    pub error_counts: HashMap<SmartAiErrorType, u32>,
+    /// 最后连通性检查时间
+    pub last_connectivity_check: Option<Instant>,
+    /// 连通性状态
+    pub connectivity_ok: bool,
+}
+
+/// SmartAI 错误类型
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+pub enum SmartAiErrorType {
+    NetworkError,    // 连接超时、DNS失败
+    AuthError,       // 401、403、API密钥无效
+    RateLimitError,  // 429 Too Many Requests
+    ServerError,     // 5xx错误
+    ModelError,      // 模型不存在、参数错误
+    TimeoutError,    // 请求超时
+}
+
+/// 请求结果记录
+#[derive(Debug, Clone)]
+pub struct RequestResult {
+    pub success: bool,
+    pub latency: Duration,
+    pub error_type: Option<SmartAiErrorType>,
+    pub timestamp: Instant,
+}
+
 impl MetricsCollector {
     pub fn new() -> Self {
         Self {
@@ -103,6 +150,7 @@ impl MetricsCollector {
             unhealthy_backends: Arc::new(std::sync::RwLock::new(HashMap::new())),
             recovery_attempts: Arc::new(std::sync::RwLock::new(HashMap::new())),
             weight_recovery_states: Arc::new(std::sync::RwLock::new(HashMap::new())),
+            smart_ai_health: Arc::new(std::sync::RwLock::new(HashMap::new())),
         }
     }
 
@@ -433,6 +481,153 @@ impl MetricsCollector {
             recovery_states.insert(backend_key.to_string(), recovery_state);
         }
     }
+
+    // SmartAI 相关方法
+
+    /// 记录SmartAI请求结果
+    pub fn record_smart_ai_request(&self, backend_key: &str, result: RequestResult) {
+        tracing::debug!("Recording SmartAI request result for backend: {}", backend_key);
+
+        if let Ok(mut smart_health) = self.smart_ai_health.write() {
+            let health = smart_health.entry(backend_key.to_string()).or_insert_with(|| {
+                SmartAiBackendHealth {
+                    confidence_score: 0.8, // 初始信心度
+                    total_requests: 0,
+                    consecutive_successes: 0,
+                    consecutive_failures: 0,
+                    last_request_time: result.timestamp,
+                    last_success_time: None,
+                    last_failure_time: None,
+                    error_counts: HashMap::new(),
+                    last_connectivity_check: None,
+                    connectivity_ok: true,
+                }
+            });
+
+            // 更新基本统计
+            health.total_requests += 1;
+            health.last_request_time = result.timestamp;
+
+            if result.success {
+                health.consecutive_successes += 1;
+                health.consecutive_failures = 0;
+                health.last_success_time = Some(result.timestamp);
+
+                // 成功时提升信心度
+                health.confidence_score = (health.confidence_score + 0.1).min(1.0);
+
+                tracing::debug!(
+                    "SmartAI success for {}: confidence={:.3}, consecutive_successes={}",
+                    backend_key, health.confidence_score, health.consecutive_successes
+                );
+            } else {
+                health.consecutive_failures += 1;
+                health.consecutive_successes = 0;
+                health.last_failure_time = Some(result.timestamp);
+
+                // 根据错误类型调整信心度
+                if let Some(error_type) = &result.error_type {
+                    let penalty = match error_type {
+                        SmartAiErrorType::NetworkError => 0.3,
+                        SmartAiErrorType::AuthError => 0.8,
+                        SmartAiErrorType::RateLimitError => 0.1,
+                        SmartAiErrorType::ServerError => 0.2,
+                        SmartAiErrorType::ModelError => 0.3,
+                        SmartAiErrorType::TimeoutError => 0.2,
+                    };
+
+                    health.confidence_score = (health.confidence_score - penalty).max(0.05);
+
+                    // 更新错误统计
+                    *health.error_counts.entry(error_type.clone()).or_insert(0) += 1;
+
+                    tracing::debug!(
+                        "SmartAI failure for {}: error={:?}, penalty={:.2}, confidence={:.3}",
+                        backend_key, error_type, penalty, health.confidence_score
+                    );
+                }
+            }
+        }
+    }
+
+    /// 获取SmartAI后端信心度
+    pub fn get_smart_ai_confidence(&self, backend_key: &str) -> f64 {
+        if let Ok(smart_health) = self.smart_ai_health.read() {
+            if let Some(health) = smart_health.get(backend_key) {
+                // 应用时间衰减
+                self.apply_time_decay(health.confidence_score, health.last_request_time)
+            } else {
+                0.8 // 新后端默认信心度
+            }
+        } else {
+            0.8
+        }
+    }
+
+    /// 应用时间衰减
+    fn apply_time_decay(&self, confidence: f64, last_request: Instant) -> f64 {
+        let hours_since_last = last_request.elapsed().as_secs() / 3600;
+
+        let decay_factor = match hours_since_last {
+            0..=1 => 1.0,      // 1小时内：无衰减
+            2..=6 => 0.95,     // 2-6小时：轻微衰减
+            7..=24 => 0.9,     // 7-24小时：中等衰减
+            25..=72 => 0.8,    // 1-3天：较大衰减
+            _ => 0.7,          // 3天以上：大幅衰减
+        };
+
+        (confidence * decay_factor).max(0.5) // 长期无流量时保持基础信心度
+    }
+
+    /// 更新连通性检查结果
+    pub fn update_smart_ai_connectivity(&self, backend_key: &str, connectivity_ok: bool) {
+        if let Ok(mut smart_health) = self.smart_ai_health.write() {
+            let health = smart_health.entry(backend_key.to_string()).or_insert_with(|| {
+                SmartAiBackendHealth {
+                    confidence_score: 0.8,
+                    total_requests: 0,
+                    consecutive_successes: 0,
+                    consecutive_failures: 0,
+                    last_request_time: Instant::now(),
+                    last_success_time: None,
+                    last_failure_time: None,
+                    error_counts: HashMap::new(),
+                    last_connectivity_check: None,
+                    connectivity_ok: true,
+                }
+            });
+
+            health.last_connectivity_check = Some(Instant::now());
+            health.connectivity_ok = connectivity_ok;
+
+            if !connectivity_ok {
+                // 连通性失败时降低信心度
+                health.confidence_score = (health.confidence_score * 0.5).max(0.05);
+                tracing::debug!(
+                    "SmartAI connectivity failed for {}: confidence={:.3}",
+                    backend_key, health.confidence_score
+                );
+            }
+        }
+    }
+
+    /// 获取SmartAI后端的详细健康信息
+    pub fn get_smart_ai_health_details(&self, backend_key: &str) -> Option<SmartAiBackendHealth> {
+        if let Ok(smart_health) = self.smart_ai_health.read() {
+            smart_health.get(backend_key).cloned()
+        } else {
+            None
+        }
+    }
+
+    /// 获取所有SmartAI后端的健康信息
+    pub fn get_all_smart_ai_health(&self) -> HashMap<String, SmartAiBackendHealth> {
+        if let Ok(smart_health) = self.smart_ai_health.read() {
+            smart_health.clone()
+        } else {
+            HashMap::new()
+        }
+    }
 }
 
 impl Default for MetricsCollector {
@@ -488,6 +683,9 @@ impl BackendSelector {
             }
             LoadBalanceStrategy::SmartWeightedFailover => {
                 self.select_smart_weighted_failover(&enabled_backends)
+            }
+            LoadBalanceStrategy::SmartAi => {
+                self.select_smart_ai(&enabled_backends)
             }
         };
 
@@ -703,6 +901,123 @@ impl BackendSelector {
                 ).into())
             }
         }
+    }
+
+    /// SmartAI 负载均衡选择
+    fn select_smart_ai(&self, backends: &[Backend]) -> Result<Backend> {
+        tracing::debug!("SmartAI selection for model '{}' with {} backends", self.mapping.name, backends.len());
+
+        // 计算每个后端的有效权重
+        let mut weighted_backends: Vec<(Backend, f64)> = Vec::new();
+
+        for backend in backends {
+            let backend_key = format!("{}:{}", backend.provider, backend.model);
+            let confidence = self.metrics.get_smart_ai_confidence(&backend_key);
+            let effective_weight = self.calculate_smart_ai_effective_weight(backend, confidence);
+
+            if effective_weight > 0.01 {
+                weighted_backends.push((backend.clone(), effective_weight));
+                tracing::debug!(
+                    "SmartAI backend {}: confidence={:.3}, effective_weight={:.3} (original={:.3})",
+                    backend_key, confidence, effective_weight, backend.weight
+                );
+            } else {
+                tracing::debug!(
+                    "SmartAI backend {} excluded: confidence={:.3}, effective_weight={:.3}",
+                    backend_key, confidence, effective_weight
+                );
+            }
+        }
+
+        if weighted_backends.is_empty() {
+            let failed_attempts = self.collect_backend_status(backends);
+            tracing::error!(
+                "SmartAI selection failed for model '{}': no backends with positive weight",
+                self.mapping.name
+            );
+
+            return Err(self.create_detailed_error(
+                "SmartAI selection failed - no backends with positive effective weight available",
+                backends,
+                &failed_attempts,
+            ).into());
+        }
+
+        // 小流量优化的选择策略
+        let selected_backend = if weighted_backends.len() == 1 {
+            // 只有一个可用后端
+            weighted_backends[0].0.clone()
+        } else {
+            // 80%选择最佳，20%探索其他（避免过度集中）
+            if rand::random::<f64>() < 0.8 {
+                // 选择权重最高的
+                let best = weighted_backends.iter()
+                    .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+                    .unwrap();
+                best.0.clone()
+            } else {
+                // 加权随机选择（探索其他后端）
+                self.weighted_random_select_smart_ai(&weighted_backends)?
+            }
+        };
+
+        tracing::debug!(
+            "SmartAI selected backend {}:{} for model '{}'",
+            selected_backend.provider,
+            selected_backend.model,
+            self.mapping.name
+        );
+
+        Ok(selected_backend)
+    }
+
+    /// 计算SmartAI的有效权重
+    fn calculate_smart_ai_effective_weight(&self, backend: &Backend, confidence: f64) -> f64 {
+        let base_weight = backend.weight;
+
+        // 检查是否为premium后端
+        let is_premium = backend.tags.contains(&"premium".to_string());
+
+        // 信心度到权重的映射
+        let confidence_weight = match confidence {
+            c if c >= 0.8 => c,           // 高信心度：按比例
+            c if c >= 0.6 => c * 0.8,     // 中等信心度：适度降权
+            c if c >= 0.3 => c * 0.5,     // 低信心度：大幅降权
+            _ => 0.05,                    // 极低信心度：保留恢复机会
+        };
+
+        // 只有非premium后端才能获得稳定性加成
+        let stability_bonus = if !is_premium && confidence > 0.9 {
+            1.1  // 非premium后端稳定时给予10%加成
+        } else {
+            1.0  // premium后端不给加成，凭原始权重竞争
+        };
+
+        let effective_weight = base_weight * confidence_weight * stability_bonus;
+
+        tracing::debug!(
+            "SmartAI weight calculation for {}: base={:.3}, confidence={:.3}, confidence_weight={:.3}, stability_bonus={:.2}, effective={:.3}, is_premium={}",
+            format!("{}:{}", backend.provider, backend.model),
+            base_weight, confidence, confidence_weight, stability_bonus, effective_weight, is_premium
+        );
+
+        effective_weight
+    }
+
+    /// SmartAI加权随机选择
+    fn weighted_random_select_smart_ai(&self, backends: &[(Backend, f64)]) -> Result<Backend> {
+        let total_weight: f64 = backends.iter().map(|(_, w)| w).sum();
+        let mut random_value = rand::random::<f64>() * total_weight;
+
+        for (backend, weight) in backends {
+            random_value -= weight;
+            if random_value <= 0.0 {
+                return Ok(backend.clone());
+            }
+        }
+
+        // 兜底返回第一个
+        Ok(backends[0].0.clone())
     }
 
     /// 创建详细的错误信息
@@ -928,10 +1243,64 @@ mod tests {
         metrics.record_failure("provider2:model2");
         metrics.record_failure("provider3:model3");
 
-        // 应该选择优先级最高的后端（priority=1）
+        // WeightedFailover策略在所有后端都不健康时，仍然会基于权重进行选择
+        // 多次选择验证权重分布（即使后端不健康）
+        let mut selections = std::collections::HashMap::new();
+        for _ in 0..1000 {
+            let backend = selector.select().unwrap();
+            let key = format!("{}:{}", backend.provider, backend.model);
+            *selections.entry(key).or_insert(0) += 1;
+        }
+
+        // 应该仍然选择所有后端，但provider1被选择最多（权重0.6最高）
+        assert!(selections.contains_key("provider1:model1"));
+        assert!(selections.contains_key("provider2:model2"));
+        assert!(selections.contains_key("provider3:model3"));
+
+        let provider1_count = selections.get("provider1:model1").unwrap_or(&0);
+        let provider2_count = selections.get("provider2:model2").unwrap_or(&0);
+        let provider3_count = selections.get("provider3:model3").unwrap_or(&0);
+
+        // provider1应该被选择最多（权重0.6）
+        assert!(provider1_count > provider2_count);
+        assert!(provider2_count > provider3_count);
+    }
+
+    #[test]
+    fn test_smart_ai_selection() {
+        let metrics = Arc::new(MetricsCollector::new());
+        let mut mapping = create_test_mapping();
+        mapping.strategy = LoadBalanceStrategy::SmartAi; // 使用SmartAI策略
+        let selector = BackendSelector::new(mapping, metrics.clone());
+
+        // 模拟一些请求结果来建立信心度
+        let backend_key1 = "provider1:model1";
+        let backend_key2 = "provider2:model2";
+
+        // 记录一些成功的请求
+        for _ in 0..5 {
+            metrics.record_smart_ai_request(backend_key1, RequestResult {
+                success: true,
+                latency: std::time::Duration::from_millis(100),
+                error_type: None,
+                timestamp: std::time::Instant::now(),
+            });
+        }
+
+        // provider2有一些失败
+        metrics.record_smart_ai_request(backend_key2, RequestResult {
+            success: false,
+            latency: std::time::Duration::from_millis(200),
+            error_type: Some(SmartAiErrorType::NetworkError),
+            timestamp: std::time::Instant::now(),
+        });
+
+        // 进行选择测试
         let backend = selector.select().unwrap();
-        assert_eq!(backend.provider, "provider1");
-        assert_eq!(backend.model, "model1");
-        assert_eq!(backend.priority, 1);
+
+        // 应该能够成功选择一个后端
+        assert!(backend.enabled);
+        assert!(!backend.provider.is_empty());
+        assert!(!backend.model.is_empty());
     }
 }

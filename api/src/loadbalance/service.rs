@@ -1,5 +1,6 @@
 use crate::config::model::{Config, Backend};
 use super::{LoadBalanceManager, HealthChecker, MetricsCollector};
+use super::selector::{RequestResult as SmartAiRequestResult, SmartAiErrorType};
 use anyhow::Result;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -204,6 +205,35 @@ impl LoadBalanceService {
             max_retries + 1,
             model_name
         )
+    }
+
+    /// 记录SmartAI请求结果
+    pub async fn record_smart_ai_request_result(
+        &self,
+        provider: &str,
+        model: &str,
+        success: bool,
+        latency: Duration,
+        error: Option<&anyhow::Error>,
+    ) {
+        let smart_ai_result = SmartAiRequestResult {
+            success,
+            latency,
+            error_type: error.map(|e| self.classify_smart_ai_error(e)),
+            timestamp: Instant::now(),
+        };
+
+        self.manager.record_smart_ai_request(provider, model, smart_ai_result);
+
+        debug!(
+            "Recorded SmartAI request for {}:{}: success={}, latency={}ms",
+            provider, model, success, latency.as_millis()
+        );
+    }
+
+    /// 分类SmartAI错误类型
+    fn classify_smart_ai_error(&self, error: &anyhow::Error) -> SmartAiErrorType {
+        LoadBalanceManager::classify_error(error)
     }
 
     /// 记录请求结果

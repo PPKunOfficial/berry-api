@@ -30,6 +30,54 @@ pub struct GlobalSettings {
     pub max_internal_retries: u32,
     #[serde(default = "default_health_check_timeout")]
     pub health_check_timeout_seconds: u64,
+    // SmartAI 相关配置
+    #[serde(default)]
+    pub smart_ai: SmartAiSettings,
+}
+
+/// SmartAI 负载均衡配置
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct SmartAiSettings {
+    /// 初始信心度
+    #[serde(default = "default_smart_ai_initial_confidence")]
+    pub initial_confidence: f64,
+    /// 最小信心度（保留恢复机会）
+    #[serde(default = "default_smart_ai_min_confidence")]
+    pub min_confidence: f64,
+    /// 启用时间衰减
+    #[serde(default = "default_true")]
+    pub enable_time_decay: bool,
+    /// 轻量级检查间隔（秒）
+    #[serde(default = "default_smart_ai_lightweight_check_interval")]
+    pub lightweight_check_interval_seconds: u64,
+    /// 探索流量比例（用于测试其他后端）
+    #[serde(default = "default_smart_ai_exploration_ratio")]
+    pub exploration_ratio: f64,
+    /// 非premium后端稳定性加成
+    #[serde(default = "default_smart_ai_non_premium_stability_bonus")]
+    pub non_premium_stability_bonus: f64,
+    /// 信心度调整参数
+    #[serde(default)]
+    pub confidence_adjustments: SmartAiConfidenceAdjustments,
+}
+
+/// SmartAI 信心度调整参数
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct SmartAiConfidenceAdjustments {
+    #[serde(default = "default_smart_ai_success_boost")]
+    pub success_boost: f64,
+    #[serde(default = "default_smart_ai_network_error_penalty")]
+    pub network_error_penalty: f64,
+    #[serde(default = "default_smart_ai_auth_error_penalty")]
+    pub auth_error_penalty: f64,
+    #[serde(default = "default_smart_ai_rate_limit_penalty")]
+    pub rate_limit_penalty: f64,
+    #[serde(default = "default_smart_ai_server_error_penalty")]
+    pub server_error_penalty: f64,
+    #[serde(default = "default_smart_ai_model_error_penalty")]
+    pub model_error_penalty: f64,
+    #[serde(default = "default_smart_ai_timeout_penalty")]
+    pub timeout_penalty: f64,
 }
 
 impl Default for GlobalSettings {
@@ -43,6 +91,35 @@ impl Default for GlobalSettings {
             recovery_check_interval_seconds: default_recovery_check_interval(),
             max_internal_retries: default_max_internal_retries(),
             health_check_timeout_seconds: default_health_check_timeout(),
+            smart_ai: SmartAiSettings::default(),
+        }
+    }
+}
+
+impl Default for SmartAiSettings {
+    fn default() -> Self {
+        Self {
+            initial_confidence: default_smart_ai_initial_confidence(),
+            min_confidence: default_smart_ai_min_confidence(),
+            enable_time_decay: true,
+            lightweight_check_interval_seconds: default_smart_ai_lightweight_check_interval(),
+            exploration_ratio: default_smart_ai_exploration_ratio(),
+            non_premium_stability_bonus: default_smart_ai_non_premium_stability_bonus(),
+            confidence_adjustments: SmartAiConfidenceAdjustments::default(),
+        }
+    }
+}
+
+impl Default for SmartAiConfidenceAdjustments {
+    fn default() -> Self {
+        Self {
+            success_boost: default_smart_ai_success_boost(),
+            network_error_penalty: default_smart_ai_network_error_penalty(),
+            auth_error_penalty: default_smart_ai_auth_error_penalty(),
+            rate_limit_penalty: default_smart_ai_rate_limit_penalty(),
+            server_error_penalty: default_smart_ai_server_error_penalty(),
+            model_error_penalty: default_smart_ai_model_error_penalty(),
+            timeout_penalty: default_smart_ai_timeout_penalty(),
         }
     }
 }
@@ -167,6 +244,55 @@ fn default_health_check_timeout() -> u64 {
     10 // 健康检查超时10秒
 }
 
+// SmartAI 默认值函数
+fn default_smart_ai_initial_confidence() -> f64 {
+    0.8
+}
+
+fn default_smart_ai_min_confidence() -> f64 {
+    0.05
+}
+
+fn default_smart_ai_lightweight_check_interval() -> u64 {
+    600 // 10分钟
+}
+
+fn default_smart_ai_exploration_ratio() -> f64 {
+    0.2
+}
+
+fn default_smart_ai_non_premium_stability_bonus() -> f64 {
+    1.1
+}
+
+fn default_smart_ai_success_boost() -> f64 {
+    0.1
+}
+
+fn default_smart_ai_network_error_penalty() -> f64 {
+    0.3
+}
+
+fn default_smart_ai_auth_error_penalty() -> f64 {
+    0.8
+}
+
+fn default_smart_ai_rate_limit_penalty() -> f64 {
+    0.1
+}
+
+fn default_smart_ai_server_error_penalty() -> f64 {
+    0.2
+}
+
+fn default_smart_ai_model_error_penalty() -> f64 {
+    0.3
+}
+
+fn default_smart_ai_timeout_penalty() -> f64 {
+    0.2
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum LoadBalanceStrategy {
@@ -178,6 +304,8 @@ pub enum LoadBalanceStrategy {
     WeightedFailover,
     /// 智能权重恢复策略 - 支持按请求计费的渐进式权重恢复
     SmartWeightedFailover,
+    /// 智能AI负载均衡 - 基于客户流量的小流量健康检查，成本感知
+    SmartAi,
 }
 
 impl Default for LoadBalanceStrategy {

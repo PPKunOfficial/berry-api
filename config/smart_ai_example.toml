@@ -1,0 +1,99 @@
+# SmartAI 负载均衡示例配置
+# 展示如何使用 smart_ai 策略进行成本感知的负载均衡
+
+[settings]
+# 基础设置
+health_check_interval_seconds = 30
+request_timeout_seconds = 30
+max_retries = 3
+max_internal_retries = 2
+
+# SmartAI 特定配置
+[settings.smart_ai]
+# 初始信心度 (0.0-1.0)
+initial_confidence = 0.8
+# 最小信心度，保留恢复机会
+min_confidence = 0.05
+# 启用时间衰减
+enable_time_decay = true
+# 轻量级连通性检查间隔（秒）
+lightweight_check_interval_seconds = 600
+# 探索流量比例（20%用于测试其他后端）
+exploration_ratio = 0.2
+# 非premium后端稳定性加成
+non_premium_stability_bonus = 1.1
+
+# 信心度调整参数
+[settings.smart_ai.confidence_adjustments]
+success_boost = 0.1
+network_error_penalty = 0.3
+auth_error_penalty = 0.8
+rate_limit_penalty = 0.1
+server_error_penalty = 0.2
+model_error_penalty = 0.3
+timeout_penalty = 0.2
+
+# 提供商配置
+[providers.cheap_provider]
+name = "便宜的AI提供商"
+base_url = "https://api.cheap-ai.com/v1"
+api_key = "your-cheap-api-key"
+models = ["gpt-3.5-turbo", "claude-3-haiku"]
+enabled = true
+timeout_seconds = 30
+
+[providers.premium_provider]
+name = "正价AI提供商"
+base_url = "https://api.openai.com/v1"
+api_key = "your-openai-api-key"
+models = ["gpt-4", "gpt-4-turbo"]
+enabled = true
+timeout_seconds = 30
+
+# 模型配置 - 使用 SmartAI 策略
+[models.gpt-4-smart]
+name = "gpt-4-smart"
+strategy = "smart_ai"  # 使用 SmartAI 负载均衡
+enabled = true
+
+# 后端配置：便宜的优先，正价的作为备选
+[[models.gpt-4-smart.backends]]
+provider = "cheap_provider"
+model = "gpt-3.5-turbo"
+weight = 1.0
+enabled = true
+tags = []  # 非premium后端，可以获得稳定性加成
+
+[[models.gpt-4-smart.backends]]
+provider = "premium_provider"
+model = "gpt-4"
+weight = 1.0
+enabled = true
+tags = ["premium"]  # premium后端，不会因稳定性获得额外权重
+
+# 另一个模型示例
+[models.claude-smart]
+name = "claude-smart"
+strategy = "smart_ai"
+enabled = true
+
+[[models.claude-smart.backends]]
+provider = "cheap_provider"
+model = "claude-3-haiku"
+weight = 1.0
+enabled = true
+tags = []
+
+[[models.claude-smart.backends]]
+provider = "premium_provider"
+model = "gpt-4-turbo"
+weight = 0.5  # 较低权重，作为备选
+enabled = true
+tags = ["premium"]
+
+# 用户配置
+[users.test_user]
+name = "测试用户"
+token = "test-token-123"
+enabled = true
+allowed_models = []  # 空表示允许所有模型

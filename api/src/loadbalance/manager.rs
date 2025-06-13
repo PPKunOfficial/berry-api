@@ -1,5 +1,6 @@
 use crate::config::model::{Config, Backend, ModelMapping};
 use super::{BackendSelector, MetricsCollector};
+use super::selector::{RequestResult, SmartAiErrorType};
 use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -88,6 +89,37 @@ impl LoadBalanceManager {
     /// 获取指标收集器的引用
     pub fn get_metrics(&self) -> Arc<MetricsCollector> {
         self.metrics.clone()
+    }
+
+    /// 记录SmartAI请求结果
+    pub fn record_smart_ai_request(&self, provider: &str, model: &str, result: RequestResult) {
+        let backend_key = format!("{}:{}", provider, model);
+        self.metrics.record_smart_ai_request(&backend_key, result);
+    }
+
+    /// 分类错误类型（用于SmartAI）
+    pub fn classify_error(error: &anyhow::Error) -> SmartAiErrorType {
+        let error_str = error.to_string().to_lowercase();
+
+        if error_str.contains("timeout") || error_str.contains("timed out") {
+            SmartAiErrorType::TimeoutError
+        } else if error_str.contains("401") || error_str.contains("403") || error_str.contains("unauthorized") {
+            SmartAiErrorType::AuthError
+        } else if error_str.contains("429") || error_str.contains("rate limit") {
+            SmartAiErrorType::RateLimitError
+        } else if error_str.contains("5") && (error_str.contains("500") || error_str.contains("502") || error_str.contains("503")) {
+            SmartAiErrorType::ServerError
+        } else if error_str.contains("model") && error_str.contains("not found") {
+            SmartAiErrorType::ModelError
+        } else {
+            SmartAiErrorType::NetworkError
+        }
+    }
+
+    /// 更新SmartAI连通性检查结果
+    pub fn update_smart_ai_connectivity(&self, provider: &str, model: &str, connectivity_ok: bool) {
+        let backend_key = format!("{}:{}", provider, model);
+        self.metrics.update_smart_ai_connectivity(&backend_key, connectivity_ok);
     }
 
     /// 重新加载配置

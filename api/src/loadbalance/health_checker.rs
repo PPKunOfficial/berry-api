@@ -702,6 +702,7 @@ mod tests {
                 recovery_check_interval_seconds: 120,
                 max_internal_retries: 2,
                 health_check_timeout_seconds: 10,
+                smart_ai: crate::config::model::SmartAiSettings::default(),
             },
         }
     }

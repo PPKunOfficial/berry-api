@@ -11,6 +11,7 @@ use super::{
     health::{detailed_health_check, simple_health_check},
     metrics::metrics,
     models::{list_models, list_models_v1},
+    smart_ai::{get_smart_ai_weights, get_model_smart_ai_weights},
 };
 
 /// 创建应用路由
@@ -20,6 +21,8 @@ pub fn create_app_router() -> Router<AppState> {
         .route("/health", get(detailed_health_check))
         .route("/metrics", get(metrics))
         .route("/models", get(list_models))
+        .route("/smart-ai/weights", get(get_smart_ai_weights))
+        .route("/smart-ai/models/{model}/weights", get(get_model_smart_ai_weights))
         .nest("/v1", create_v1_routes())
         // 静态文件路由 - 使用嵌入的文件
         .route("/status", get(serve_index))
