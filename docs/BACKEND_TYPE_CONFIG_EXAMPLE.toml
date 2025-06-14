@@ -1,0 +1,161 @@
+# Berry API 配置示例 - 展示如何使用 backend_type 字段
+
+[global]
+host = "0.0.0.0"
+port = 8080
+log_level = "info"
+health_check_interval = 30
+request_timeout = 30
+max_retries = 3
+
+# ===== 提供商配置 =====
+# 现在每个提供商都需要明确指定 backend_type
+
+[providers.openai_official]
+name = "OpenAI Official"
+base_url = "https://api.openai.com/v1"
+api_key = "sk-your-openai-key"
+models = ["gpt-4", "gpt-4-turbo", "gpt-3.5-turbo"]
+enabled = true
+timeout_seconds = 30
+max_retries = 3
+# 明确指定使用 OpenAI 格式
+backend_type = "openai"
+
+[providers.claude_official]
+name = "Anthropic Claude"
+base_url = "https://api.anthropic.com"
+api_key = "sk-ant-your-claude-key"
+models = ["claude-3-opus-20240229", "claude-3-sonnet-20240229", "claude-3-haiku-20240307"]
+enabled = true
+timeout_seconds = 30
+max_retries = 3
+# 明确指定使用 Claude 格式，系统会自动转换 OpenAI 格式请求到 Claude 格式
+backend_type = "claude"
+
+[providers.openai_proxy]
+name = "OpenAI Proxy Service"
+base_url = "https://your-proxy.com/v1"
+api_key = "your-proxy-key"
+models = ["gpt-4", "gpt-3.5-turbo"]
+enabled = true
+timeout_seconds = 30
+max_retries = 3
+# 代理服务通常使用 OpenAI 兼容格式
+backend_type = "openai"
+
+[providers.custom_service]
+name = "Custom AI Service"
+base_url = "https://custom-ai-service.com/api/v1"
+api_key = "custom-service-key"
+models = ["custom-model-1", "custom-model-2"]
+enabled = true
+timeout_seconds = 30
+max_retries = 3
+# 自定义服务如果兼容 OpenAI 格式，使用 openai
+backend_type = "openai"
+
+[providers.another_claude_proxy]
+name = "Claude Proxy Service"
+base_url = "https://claude-proxy.com/v1"
+api_key = "claude-proxy-key"
+models = ["claude-3-sonnet-20240229"]
+enabled = true
+timeout_seconds = 30
+max_retries = 3
+# 即使是代理服务，如果后端是 Claude，也要指定 claude 类型
+backend_type = "claude"
+
+# 未来支持 Gemini 时的配置示例
+[providers.gemini_official]
+name = "Google Gemini"
+base_url = "https://generativelanguage.googleapis.com/v1beta"
+api_key = "your-gemini-key"
+models = ["gemini-pro", "gemini-pro-vision"]
+enabled = false  # 暂未实现，设为 false
+timeout_seconds = 30
+max_retries = 3
+# 指定 Gemini 格式
+backend_type = "gemini"
+
+# ===== 模型映射配置 =====
+
+[models.gpt-4-smart]
+name = "gpt-4-smart"
+strategy = "smart_ai"
+enabled = true
+
+# 混合使用不同后端类型的提供商
+[[models.gpt-4-smart.backends]]
+provider = "openai_official"
+model = "gpt-4"
+weight = 0.4
+enabled = true
+
+[[models.gpt-4-smart.backends]]
+provider = "openai_proxy"
+model = "gpt-4"
+weight = 0.3
+enabled = true
+
+[[models.gpt-4-smart.backends]]
+provider = "claude_official"
+model = "claude-3-opus-20240229"
+weight = 0.3
+enabled = true
+
+[models.claude-smart]
+name = "claude-smart"
+strategy = "weighted_random"
+enabled = true
+
+# 只使用 Claude 后端
+[[models.claude-smart.backends]]
+provider = "claude_official"
+model = "claude-3-sonnet-20240229"
+weight = 0.7
+enabled = true
+
+[[models.claude-smart.backends]]
+provider = "another_claude_proxy"
+model = "claude-3-sonnet-20240229"
+weight = 0.3
+enabled = true
+
+[models.budget-model]
+name = "budget-model"
+strategy = "weighted_random"
+enabled = true
+
+# 使用便宜的模型和提供商
+[[models.budget-model.backends]]
+provider = "openai_proxy"
+model = "gpt-3.5-turbo"
+weight = 0.6
+enabled = true
+
+[[models.budget-model.backends]]
+provider = "custom_service"
+model = "custom-model-1"
+weight = 0.4
+enabled = true
+
+# ===== 用户配置 =====
+
+[users.admin]
+name = "Admin User"
+token = "admin-token-12345"
+allowed_models = []  # 空数组表示允许所有模型
+enabled = true
+
+[users.regular_user]
+name = "Regular User"
+token = "user-token-67890"
+allowed_models = ["gpt-4-smart", "budget-model"]  # 只能使用指定模型
+enabled = true
+
+[users.claude_user]
+name = "Claude User"
+token = "claude-token-abcde"
+allowed_models = ["claude-smart"]  # 只能使用 Claude 模型
+enabled = true

@@ -14,6 +14,7 @@ mod tests {
             enabled: true,
             timeout_seconds: 30,
             max_retries: 3,
+            backend_type: crate::config::model::ProviderBackendType::OpenAI,
         });
 
         let mut models = HashMap::new();

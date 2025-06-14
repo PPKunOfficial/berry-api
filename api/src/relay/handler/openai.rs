@@ -6,6 +6,9 @@ use eventsource_stream::Eventsource;
 use futures::{Stream, StreamExt};
 use serde_json::{Value, json};
 
+// 这个处理器已经被废弃，请使用 LoadBalancedHandler
+#[deprecated(note = "Use LoadBalancedHandler instead")]
+
 use crate::relay::client::openai::OpenAIClient;
 use super::types::{create_error_event, create_error_json, create_network_error_json, create_upstream_error_json};
 
@@ -15,7 +18,7 @@ async fn sse_completions(
     TypedHeader(content_type): TypedHeader<headers::ContentType>,
     Json(body): Json<Value>,
 ) -> Sse<impl Stream<Item = Result<Event, std::convert::Infallible>>> {
-    let client = OpenAIClient::new();
+    let client = OpenAIClient::new("https://api.openai.com/v1".to_string());
 
     let event_stream = async move {
         // 构建请求头
@@ -92,7 +95,7 @@ async fn no_sse_completions(
     TypedHeader(content_type): TypedHeader<headers::ContentType>,
     Json(body): Json<Value>,
 ) -> Json<Value> {
-    let client = OpenAIClient::new();
+    let client = OpenAIClient::new("https://api.openai.com/v1".to_string());
 
     // 构建请求头
     let headers = match client.build_request_headers(&authorization, &content_type) {
@@ -184,7 +187,7 @@ pub async fn handle_completions(
 pub async fn handle_model(
     TypedHeader(authorization): TypedHeader<headers::Authorization<headers::authorization::Bearer>>,
 ) -> Json<Value> {
-    let client = OpenAIClient::new();
+    let client = OpenAIClient::new("https://api.openai.com/v1".to_string());
     let token = authorization.token();
     
     match client.models(token).await {

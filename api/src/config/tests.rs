@@ -13,6 +13,7 @@ mod tests {
             enabled: true,
             timeout_seconds: 30,
             max_retries: 3,
+            backend_type: ProviderBackendType::OpenAI,
         }
     }
 

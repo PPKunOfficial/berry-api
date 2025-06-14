@@ -14,6 +14,7 @@ mod tests {
             enabled: true,
             timeout_seconds: 30,
             max_retries: 3,
+            backend_type: crate::config::model::ProviderBackendType::OpenAI,
         }
     }
 
@@ -128,6 +129,7 @@ mod tests {
             enabled: true,
             timeout_seconds: 30,
             max_retries: 3,
+            backend_type: crate::config::model::ProviderBackendType::OpenAI,
         };
         
         assert_eq!(provider.headers.len(), 2);

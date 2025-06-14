@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::loadbalance::{LoadBalanceService, RequestResult};
-use crate::relay::client::openai::OpenAIClient;
+use crate::relay::client::{ClientFactory, UnifiedClient, AIBackendClient};
 
 use super::types::{create_service_unavailable_response, create_internal_error_response, create_gateway_timeout_response, ErrorType, create_error_response};
 
@@ -222,10 +222,38 @@ impl LoadBalancedHandler {
             // 创建客户端，只设置连接超时，不限制总请求时间
             // 连接成功后允许无限时间生成内容，直到客户端断开连接
             let connect_timeout = std::time::Duration::from_secs(selected_backend.provider.timeout_seconds);
-            let client = OpenAIClient::with_base_url_and_timeout(
+            let client = match ClientFactory::create_client_from_provider_type(
+                selected_backend.provider.backend_type.clone(),
                 selected_backend.provider.base_url.clone(),
                 connect_timeout,
-            );
+            ) {
+                Ok(c) => c,
+                Err(e) => {
+                    self.load_balancer
+                        .record_request_result(
+                            &selected_backend.backend.provider,
+                            &selected_backend.backend.model,
+                            RequestResult::Failure {
+                                error: e.to_string(),
+                            },
+                        )
+                        .await;
+
+                    if attempt == max_retries - 1 {
+                        return Err(anyhow::anyhow!(
+                            "Failed to create client for model '{}': {}. Please check provider configuration.",
+                            model_name,
+                            e
+                        ));
+                    }
+                    tracing::warn!(
+                        "Client creation error on attempt {}, retrying: {}",
+                        attempt + 1,
+                        e
+                    );
+                    continue;
+                }
+            };
 
             // 构建请求头
             let headers = match client.build_request_headers(&authorization, &content_type) {
@@ -312,7 +340,7 @@ impl LoadBalancedHandler {
     /// 尝试单次请求
     async fn try_single_request(
         &self,
-        client: &OpenAIClient,
+        client: &UnifiedClient,
         headers: reqwest::header::HeaderMap,
         body: &Value,
         selected_backend: &crate::loadbalance::SelectedBackend,
@@ -361,7 +389,7 @@ impl LoadBalancedHandler {
     /// 尝试流式请求（可能失败以触发重试）
     async fn try_streaming_request(
         &self,
-        client: OpenAIClient,
+        client: UnifiedClient,
         headers: reqwest::header::HeaderMap,
         body: Value,
         selected_backend: crate::loadbalance::SelectedBackend,
@@ -374,7 +402,7 @@ impl LoadBalancedHandler {
         let model = &selected_backend.backend.model;
 
         // 发送API请求
-        let response = match client.chat_completions(headers, &body).await {
+        let response = match client.chat_completions_raw(headers, &body).await {
             Ok(resp) => resp,
             Err(e) => {
                 tracing::debug!("Streaming request failed: {:?}", e);
@@ -509,7 +537,7 @@ impl LoadBalancedHandler {
     /// 尝试非流式请求（可能失败以触发重试）
     async fn try_non_streaming_request(
         &self,
-        client: OpenAIClient,
+        client: UnifiedClient,
         headers: reqwest::header::HeaderMap,
         body: Value,
         selected_backend: crate::loadbalance::SelectedBackend,
@@ -519,7 +547,7 @@ impl LoadBalancedHandler {
         let model = &selected_backend.backend.model;
 
         // 发送API请求
-        let response = match client.chat_completions(headers, &body).await {
+        let response = match client.chat_completions_raw(headers, &body).await {
             Ok(resp) => resp,
             Err(e) => {
                 tracing::debug!("Non-streaming request failed: {:?}", e);
@@ -592,7 +620,7 @@ impl LoadBalancedHandler {
     /// 尝试非流式请求（带保活机制）
     async fn try_non_streaming_request_with_keepalive(
         &self,
-        client: OpenAIClient,
+        client: UnifiedClient,
         headers: reqwest::header::HeaderMap,
         body: Value,
         selected_backend: crate::loadbalance::SelectedBackend,
@@ -614,7 +642,7 @@ impl LoadBalancedHandler {
         let start_time_clone = start_time.clone();
 
         tokio::spawn(async move {
-            let response = match client_clone.chat_completions(headers_clone, &body_clone).await {
+            let response = match client_clone.chat_completions_raw(headers_clone, &body_clone).await {
                 Ok(resp) => resp,
                 Err(e) => {
                     tracing::debug!("Non-streaming request failed: {:?}", e);
@@ -749,7 +777,7 @@ impl LoadBalancedHandler {
     /// 处理非流式请求（兜底方法，当重试失败时使用）
     async fn handle_non_streaming_request(
         &self,
-        client: OpenAIClient,
+        client: UnifiedClient,
         headers: reqwest::header::HeaderMap,
         body: Value,
         selected_backend: crate::loadbalance::SelectedBackend,

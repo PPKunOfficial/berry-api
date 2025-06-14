@@ -138,6 +138,27 @@ pub struct Provider {
     pub timeout_seconds: u64,
     #[serde(default = "default_max_retries")]
     pub max_retries: u32,
+    /// 后端类型，明确指定使用什么API格式
+    #[serde(default)]
+    pub backend_type: ProviderBackendType,
+}
+
+/// Provider的后端类型
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderBackendType {
+    /// OpenAI兼容格式（默认）
+    OpenAI,
+    /// Anthropic Claude格式
+    Claude,
+    /// Google Gemini格式
+    Gemini,
+}
+
+impl Default for ProviderBackendType {
+    fn default() -> Self {
+        ProviderBackendType::OpenAI
+    }
 }
 
 /// 计费模式

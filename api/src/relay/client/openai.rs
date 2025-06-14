@@ -1,9 +1,11 @@
 use reqwest::Client;
 use serde_json::Value;
 use std::time::Duration;
+use async_trait::async_trait;
 use super::types::{ClientError, ClientResponse};
+use super::traits::{AIBackendClient, BackendType};
 
-const OPENAI_API_URL: &str = "https://aigc.x-see.cn/v1";
+// 移除硬编码的默认URL，改为从配置中获取
 
 #[derive(Clone)]
 pub struct OpenAIClient {
@@ -12,15 +14,16 @@ pub struct OpenAIClient {
 }
 
 impl OpenAIClient {
-    pub fn new() -> Self {
-        Self::with_timeout(Duration::from_secs(30)) // 默认30秒超时
+    /// 创建新的OpenAI客户端，需要提供base_url
+    pub fn new(base_url: String) -> Self {
+        Self::with_base_url_and_timeout(base_url, Duration::from_secs(30))
     }
 
     pub fn with_base_url(base_url: String) -> Self {
         Self::with_base_url_and_timeout(base_url, Duration::from_secs(30))
     }
 
-    pub fn with_timeout(timeout: Duration) -> Self {
+    pub fn with_timeout(base_url: String, timeout: Duration) -> Self {
         let client = Client::builder()
             .timeout(timeout)
             .build()
@@ -28,7 +31,7 @@ impl OpenAIClient {
 
         Self {
             client,
-            base_url: OPENAI_API_URL.to_string(),
+            base_url,
         }
     }
 
@@ -102,8 +105,69 @@ impl OpenAIClient {
     }
 }
 
-impl Default for OpenAIClient {
-    fn default() -> Self {
-        Self::new()
+// 移除Default实现，因为现在需要base_url参数
+
+// 实现AIBackendClient trait
+#[async_trait]
+impl AIBackendClient for OpenAIClient {
+    fn backend_type(&self) -> BackendType {
+        BackendType::OpenAI
+    }
+
+    fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
+    fn with_timeout(self, timeout: Duration) -> Self {
+        Self::with_base_url_and_timeout(self.base_url, timeout)
+    }
+
+    fn build_request_headers(
+        &self,
+        authorization: &headers::Authorization<headers::authorization::Bearer>,
+        content_type: &headers::ContentType,
+    ) -> Result<reqwest::header::HeaderMap, ClientError> {
+        let mut headers = reqwest::header::HeaderMap::new();
+
+        // 添加Authorization头
+        let auth_value = format!("Bearer {}", authorization.token());
+        headers.insert(
+            reqwest::header::AUTHORIZATION,
+            auth_value.parse().map_err(|e| {
+                ClientError::HeaderParseError(format!("Invalid authorization header: {}", e))
+            })?,
+        );
+
+        // 添加Content-Type头
+        headers.insert(
+            reqwest::header::CONTENT_TYPE,
+            content_type.to_string().parse().map_err(|e| {
+                ClientError::HeaderParseError(format!("Invalid content-type header: {}", e))
+            })?,
+        );
+
+        Ok(headers)
+    }
+
+    async fn chat_completions_raw(
+        &self,
+        headers: reqwest::header::HeaderMap,
+        body: &Value,
+    ) -> Result<reqwest::Response, ClientError> {
+        self.chat_completions(headers, body).await
+    }
+
+    async fn models(&self, token: &str) -> Result<ClientResponse, ClientError> {
+        self.models(token).await
+    }
+
+    fn supports_model(&self, _model: &str) -> bool {
+        // 不限制模型，让后端API自己验证
+        true
+    }
+
+    fn supported_models(&self) -> Vec<String> {
+        // 返回空列表，表示支持所有模型（由后端决定）
+        vec![]
     }
 }
