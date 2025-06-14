@@ -4,6 +4,9 @@
 
 ## 📚 文档结构
 
+### 🌟 总体文档（推荐首先阅读）
+- **[PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)** - 🎯 **完整的项目总体文档，包含架构、配置、部署、最佳实践等所有内容**
+
 ### 🚀 快速开始
 - **[README.md](README.md)** - 项目主文档，包含特性介绍、安装指南和基础使用
 - **[config_example.toml](config_example.toml)** - 完整的配置示例文件
@@ -14,6 +17,11 @@
 - **[API_REFERENCE.md](API_REFERENCE.md)** - 完整的API接口参考文档
 - **[CONFIGURATION_EXAMPLES.md](CONFIGURATION_EXAMPLES.md)** - 各种场景的配置示例集合
 
+### 🏗️ 架构和实现
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - 详细的系统架构说明
+- **[IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)** - 项目核心功能和架构概述
+- **[FINAL_IMPLEMENTATION.md](FINAL_IMPLEMENTATION.md)** - 完整功能实现总结
+
 ### 🔧 开发相关
 - **[api/examples/](api/examples/)** - 代码示例和演示程序
 - **[test_auth.sh](test_auth.sh)** - 认证功能测试脚本
@@ -22,9 +30,10 @@
 ## 🎯 按需求查找文档
 
 ### 我是新用户，想快速开始
-1. 阅读 [README.md](README.md) 的"快速开始"部分
-2. 复制 [config_simple.toml](config_simple.toml) 作为起点
-3. 参考 [API_REFERENCE.md](API_REFERENCE.md) 了解接口使用
+1. 🌟 **首先阅读 [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) 了解整个项目**
+2. 阅读 [README.md](README.md) 的"快速开始"部分
+3. 复制 [config_simple.toml](config_simple.toml) 作为起点
+4. 参考 [API_REFERENCE.md](API_REFERENCE.md) 了解接口使用
 
 ### 我需要配置多Provider负载均衡
 1. 查看 [CONFIGURATION_EXAMPLES.md](CONFIGURATION_EXAMPLES.md) 的企业级配置
@@ -118,12 +127,21 @@
 3. 在Discussions中提出建议
 
 ### 常见问题快速解答
-1. **如何开始使用？** → 查看 [README.md](README.md#快速开始)
-2. **如何配置多个Provider？** → 查看 [CONFIGURATION_EXAMPLES.md](CONFIGURATION_EXAMPLES.md#企业级配置)
-3. **如何设置用户权限？** → 查看 [USAGE_GUIDE.md](USAGE_GUIDE.md#用户认证配置)
-4. **API如何调用？** → 查看 [API_REFERENCE.md](API_REFERENCE.md)
-5. **遇到错误怎么办？** → 查看 [USAGE_GUIDE.md](USAGE_GUIDE.md#故障排除)
+1. **想了解整个项目？** → 🌟 **查看 [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)**
+2. **如何开始使用？** → 查看 [README.md](README.md#快速开始)
+3. **如何配置多个Provider？** → 查看 [CONFIGURATION_EXAMPLES.md](CONFIGURATION_EXAMPLES.md#企业级配置)
+4. **如何设置用户权限？** → 查看 [USAGE_GUIDE.md](USAGE_GUIDE.md#用户认证配置)
+5. **API如何调用？** → 查看 [API_REFERENCE.md](API_REFERENCE.md)
+6. **遇到错误怎么办？** → 查看 [USAGE_GUIDE.md](USAGE_GUIDE.md#故障排除)
+7. **系统架构是什么？** → 查看 [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md#系统架构) 或 [ARCHITECTURE.md](ARCHITECTURE.md)
 
 ---
 
-**提示**: 建议按照 README.md → USAGE_GUIDE.md → API_REFERENCE.md → CONFIGURATION_EXAMPLES.md 的顺序阅读文档，这样可以从基础到高级逐步掌握Berry API的使用方法。
+**📖 推荐阅读顺序**:
+1. 🌟 **[PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)** - 先了解整个项目的全貌
+2. **[README.md](README.md)** - 快速开始和基础使用
+3. **[USAGE_GUIDE.md](USAGE_GUIDE.md)** - 详细使用指南
+4. **[API_REFERENCE.md](API_REFERENCE.md)** - API接口参考
+5. **[CONFIGURATION_EXAMPLES.md](CONFIGURATION_EXAMPLES.md)** - 高级配置示例
+
+这样可以从整体到细节逐步掌握Berry API的使用方法。
