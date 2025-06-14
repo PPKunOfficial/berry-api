@@ -5,8 +5,6 @@ use async_trait::async_trait;
 use super::types::{ClientError, ClientResponse};
 use super::traits::{AIBackendClient, BackendType, ChatCompletionConfig};
 
-// 移除硬编码的默认URL，改为从配置中获取
-
 #[derive(Clone)]
 pub struct ClaudeClient {
     client: Client,
@@ -147,37 +145,21 @@ impl ClaudeClient {
     }
 
     /// 获取模型列表
-    pub async fn models(&self, _token: &str) -> Result<ClientResponse, ClientError> {
-        // Claude API没有标准的models端点，返回支持的模型列表
-        let models_response = json!({
-            "object": "list",
-            "data": [
-                {
-                    "id": "claude-3-opus-20240229",
-                    "object": "model",
-                    "created": 1677610602,
-                    "owned_by": "anthropic"
-                },
-                {
-                    "id": "claude-3-sonnet-20240229", 
-                    "object": "model",
-                    "created": 1677610602,
-                    "owned_by": "anthropic"
-                },
-                {
-                    "id": "claude-3-haiku-20240307",
-                    "object": "model", 
-                    "created": 1677610602,
-                    "owned_by": "anthropic"
-                }
-            ]
-        });
+    pub async fn models(&self, token: &str) -> Result<ClientResponse, ClientError> {
+        // Claude API现在支持models端点
+        let response = self.client
+            .get(format!("{}/v1/models", self.base_url))
+            .header("x-api-key", token)
+            .header("anthropic-version", "2023-06-01")
+            .send()
+            .await?;
 
-        Ok(ClientResponse::new(200, models_response.to_string()))
+        let status = response.status().as_u16();
+        let body = response.text().await?;
+
+        Ok(ClientResponse::new(status, body))
     }
 }
-
-// 移除Default实现，因为现在需要base_url参数
 
 // 实现AIBackendClient trait
 #[async_trait]
@@ -249,11 +231,13 @@ impl AIBackendClient for ClaudeClient {
 
     fn supports_model(&self, _model: &str) -> bool {
         // 不限制模型，让后端API自己验证
+        // 用户可以使用任何模型名称，由Claude API决定是否支持
         true
     }
 
     fn supported_models(&self) -> Vec<String> {
         // 返回空列表，表示支持所有模型（由后端决定）
+        // 实际支持的模型列表应该通过models() API获取
         vec![]
     }
 }

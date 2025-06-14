@@ -19,7 +19,7 @@ pub type ClientResult<T> = Result<T, ClientError>;
 // 客户端响应类型
 #[derive(Debug)]
 pub struct ClientResponse {
-    pub status: u16,
+    pub status_code: u16,
     pub body: String,
     pub is_success: bool,
 }
@@ -27,7 +27,7 @@ pub struct ClientResponse {
 impl ClientResponse {
     pub fn new(status: u16, body: String) -> Self {
         Self {
-            status,
+            status_code: status,
             body,
             is_success: status >= 200 && status < 300,
         }

@@ -6,6 +6,7 @@ description = "Core library for Berry API - configuration, authentication, and s
 
 [dependencies]
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -16,6 +17,7 @@ chrono = { workspace = true }
 axum = { workspace = true }
 axum-extra = { workspace = true }
 headers = { workspace = true }
+reqwest = { workspace = true }
 
 [dev-dependencies]
 axum-test = { workspace = true }

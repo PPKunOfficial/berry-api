@@ -234,13 +234,25 @@ curl http://localhost:3000/health
 
 ### ⚙️ 基础配置
 
+**配置文件加载机制**
+
+Berry API 支持灵活的配置文件加载，按以下优先级顺序：
+
+1. **环境变量** `CONFIG_PATH` 指定的路径
+2. **默认路径** `config.toml`（当前目录）
+3. **示例配置** `config-example.toml`
+4. **SmartAI示例** `config/smart_ai_example.toml`
+
 **使用配置模板**
 ```bash
-# 复制完整配置示例
+# 方式1：复制完整配置示例
 cp config-example.toml config.toml
 
-# 或复制SmartAI配置示例
-cp smart_ai_example.toml config.toml
+# 方式2：复制SmartAI配置示例
+cp config/smart_ai_example.toml config.toml
+
+# 方式3：使用环境变量指定配置文件
+export CONFIG_PATH=/path/to/your/config.toml
 
 # 编辑配置文件
 vim config.toml

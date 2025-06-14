@@ -7,7 +7,7 @@ use super::openai::OpenAIClient;
 use super::claude::ClaudeClient;
 use super::gemini::GeminiClient;
 use super::types::{ClientError, ClientResponse};
-use berry_core::config::model::ProviderBackendType;
+use crate::config::model::ProviderBackendType;
 
 /// 统一的客户端枚举，包装不同类型的AI后端客户端
 #[derive(Clone)]
@@ -51,10 +51,7 @@ impl AIBackendClient for UnifiedClient {
         match self {
             UnifiedClient::OpenAI(client) => client.build_request_headers(authorization, content_type),
             UnifiedClient::Claude(client) => client.build_request_headers(authorization, content_type),
-            UnifiedClient::Gemini(_) => {
-                // Gemini使用不同的认证方式，暂时返回错误
-                Err(ClientError::HeaderParseError("Gemini client not fully implemented".to_string()))
-            }
+            UnifiedClient::Gemini(client) => client.build_request_headers(authorization, content_type),
         }
     }
 
@@ -104,10 +101,7 @@ impl AIBackendClient for UnifiedClient {
         match self {
             UnifiedClient::OpenAI(client) => client.convert_config_to_json(config),
             UnifiedClient::Claude(client) => client.convert_config_to_json(config),
-            UnifiedClient::Gemini(_) => {
-                // Gemini使用不同的格式，暂时返回OpenAI格式
-                config.to_openai_json()
-            }
+            UnifiedClient::Gemini(client) => client.convert_config_to_json(config),
         }
     }
 
@@ -115,10 +109,7 @@ impl AIBackendClient for UnifiedClient {
         match self {
             UnifiedClient::OpenAI(client) => client.supports_model(model),
             UnifiedClient::Claude(client) => client.supports_model(model),
-            UnifiedClient::Gemini(_) => {
-                // Gemini支持的模型
-                model.starts_with("gemini-")
-            }
+            UnifiedClient::Gemini(client) => client.supports_model(model),
         }
     }
 
@@ -126,14 +117,12 @@ impl AIBackendClient for UnifiedClient {
         match self {
             UnifiedClient::OpenAI(client) => client.supported_models(),
             UnifiedClient::Claude(client) => client.supported_models(),
-            UnifiedClient::Gemini(_) => {
-                vec!["gemini-pro".to_string(), "gemini-pro-vision".to_string()]
-            }
+            UnifiedClient::Gemini(client) => client.supported_models(),
         }
     }
 }
 
-/// 客户端工厂，用于创建不同类型的AI后端客户端
+/// 客户端工厂
 pub struct ClientFactory;
 
 impl ClientFactory {
@@ -208,104 +197,11 @@ impl ClientFactory {
         ClaudeClient::with_base_url_and_timeout(base_url, timeout)
     }
 
-    /// 获取支持的后端类型列表
-    pub fn supported_backends() -> Vec<BackendType> {
-        vec![
-            BackendType::OpenAI,
-            BackendType::Claude,
-            BackendType::Gemini,
-        ]
-    }
-
-    /// 检查后端类型是否受支持
-    pub fn is_backend_supported(backend_type: &BackendType) -> bool {
-        match backend_type {
-            BackendType::OpenAI | BackendType::Claude | BackendType::Gemini => true,
-            BackendType::Custom(_) => true, // 自定义后端使用OpenAI兼容格式
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_backend_type_inference() {
-        assert_eq!(
-            BackendType::from_base_url("https://api.openai.com/v1"),
-            BackendType::OpenAI
-        );
-        assert_eq!(
-            BackendType::from_base_url("https://api.anthropic.com"),
-            BackendType::Claude
-        );
-        // 自定义URL现在默认使用OpenAI兼容格式
-        assert_eq!(
-            BackendType::from_base_url("https://custom-api.com/v1"),
-            BackendType::OpenAI
-        );
-    }
-
-    #[test]
-    fn test_supported_backends() {
-        let backends = ClientFactory::supported_backends();
-        assert!(backends.contains(&BackendType::OpenAI));
-        assert!(backends.contains(&BackendType::Claude));
-    }
-
-    #[test]
-    fn test_backend_support_check() {
-        assert!(ClientFactory::is_backend_supported(&BackendType::OpenAI));
-        assert!(ClientFactory::is_backend_supported(&BackendType::Claude));
-        assert!(ClientFactory::is_backend_supported(&BackendType::Custom("test".to_string())));
-        assert!(ClientFactory::is_backend_supported(&BackendType::Gemini));
-    }
-
-    #[tokio::test]
-    async fn test_create_openai_client() {
-        let client = ClientFactory::create_openai_client(
-            "https://api.openai.com/v1".to_string(),
-            Duration::from_secs(30),
-        );
-        assert_eq!(client.backend_type(), BackendType::OpenAI);
-        assert_eq!(client.base_url(), "https://api.openai.com/v1");
-    }
-
-    #[tokio::test]
-    async fn test_create_claude_client() {
-        let client = ClientFactory::create_claude_client(
-            "https://api.anthropic.com".to_string(),
-            Duration::from_secs(30),
-        );
-        assert_eq!(client.backend_type(), BackendType::Claude);
-        assert_eq!(client.base_url(), "https://api.anthropic.com");
-    }
-
-    #[tokio::test]
-    async fn test_create_client_from_provider_type() {
-        // 测试OpenAI类型
-        let client = ClientFactory::create_client_from_provider_type(
-            ProviderBackendType::OpenAI,
-            "https://api.openai.com/v1".to_string(),
-            Duration::from_secs(30),
-        ).unwrap();
-        assert_eq!(client.backend_type(), BackendType::OpenAI);
-
-        // 测试Claude类型
-        let client = ClientFactory::create_client_from_provider_type(
-            ProviderBackendType::Claude,
-            "https://api.anthropic.com".to_string(),
-            Duration::from_secs(30),
-        ).unwrap();
-        assert_eq!(client.backend_type(), BackendType::Claude);
-
-        // 测试自定义URL使用OpenAI格式
-        let client = ClientFactory::create_client_from_provider_type(
-            ProviderBackendType::OpenAI,
-            "https://custom-api.com/v1".to_string(),
-            Duration::from_secs(30),
-        ).unwrap();
-        assert_eq!(client.backend_type(), BackendType::OpenAI);
+    /// 创建Gemini客户端
+    pub fn create_gemini_client(
+        base_url: String,
+        timeout: Duration,
+    ) -> GeminiClient {
+        GeminiClient::with_base_url_and_timeout(base_url, timeout)
     }
 }

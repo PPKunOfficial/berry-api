@@ -31,6 +31,7 @@ EXPOSE 3000
 # 设置环境变量
 ENV RUST_LOG=info
 ENV BIND_ADDRESS=0.0.0.0:3000
+ENV CONFIG_PATH=/app/config.toml
 
 # 启动命令
 CMD ["/usr/local/bin/berry-api"]

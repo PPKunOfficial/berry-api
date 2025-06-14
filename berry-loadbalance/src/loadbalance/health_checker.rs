@@ -1,9 +1,8 @@
 use berry_core::config::model::{Config, Provider, BillingMode};
-// 注意：健康检查现在使用直接的HTTP请求而不是OpenAIClient，已完成重构
+use berry_core::client::{ClientFactory, AIBackendClient, ChatCompletionConfig, ChatMessage, ChatRole};
 use super::MetricsCollector;
 use anyhow::Result;
 use reqwest::Client;
-use serde_json;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::time::interval;
@@ -312,38 +311,38 @@ impl HealthChecker {
     ) {
         debug!("Checking real AI provider {} using models API", provider_id);
 
-        // 构建models API URL
-        let models_url = format!("{}/v1/models", provider.base_url.trim_end_matches('/'));
-        debug!("Sending models API request to: {}", models_url);
+        // 根据provider的backend_type创建UnifiedClient
+        let timeout = Duration::from_secs(10);
+        let client = match ClientFactory::create_client_from_provider_type(
+            provider.backend_type.clone(),
+            provider.base_url.clone(),
+            timeout,
+        ) {
+            Ok(client) => client,
+            Err(e) => {
+                error!("Failed to create client for provider {}: {}", provider_id, e);
+                // 标记所有模型为不健康
+                for model in &provider.models {
+                    let backend_key = format!("{}:{}", provider_id, model);
+                    debug!("Marking backend {} as unhealthy (client creation failed)", backend_key);
+                    metrics.record_failure(&backend_key);
+                }
+                return;
+            }
+        };
 
-        // 创建HTTP客户端
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(10))
-            .build()
-            .unwrap_or_else(|_| reqwest::Client::new());
+        debug!("Created {} client for models API check to {}",
+               client.backend_type().to_string(), provider_id);
 
-        // 构建请求
-        let mut request = client.get(&models_url);
-
-        // 添加认证头
-        if !provider.api_key.is_empty() {
-            request = request.header("Authorization", format!("Bearer {}", provider.api_key));
-        }
-
-        // 添加自定义头部
-        for (key, value) in &provider.headers {
-            request = request.header(key, value);
-        }
-
-        // 发送请求
-        match request.send().await {
+        // 发送models API请求
+        match client.models(&provider.api_key).await {
             Ok(response) => {
                 let latency = start_time.elapsed();
-                let status = response.status();
+                let status = response.status_code;
                 debug!("Received models API response from provider {} with status: {} ({}ms)",
                        provider_id, status, latency.as_millis());
 
-                if status.is_success() {
+                if response.is_success {
                     if is_initial_check {
                         debug!("Provider {} initial models API check passed, marking {} models as healthy",
                                provider_id, provider.models.len());
@@ -538,48 +537,64 @@ impl HealthChecker {
         let start_time = Instant::now();
         debug!("Starting chat-based recovery check for {}:{}", provider_id, model_name);
 
-        // 构建chat completions API URL
-        let chat_url = format!("{}/v1/chat/completions", provider.base_url.trim_end_matches('/'));
-        debug!("Sending chat completions request to: {}", chat_url);
+        // 根据provider的backend_type创建UnifiedClient
+        let timeout = Duration::from_secs(30);
+        let client = match ClientFactory::create_client_from_provider_type(
+            provider.backend_type.clone(),
+            provider.base_url.clone(),
+            timeout,
+        ) {
+            Ok(client) => client,
+            Err(e) => {
+                error!("Failed to create client for recovery check {}:{}: {}", provider_id, model_name, e);
+                return;
+            }
+        };
 
-        // 创建HTTP客户端
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .unwrap_or_else(|_| reqwest::Client::new());
+        debug!("Created {} client for recovery check to {}:{}",
+               client.backend_type().to_string(), provider_id, model_name);
 
-        // 构建简单的chat请求
-        let test_body = serde_json::json!({
-            "model": model_name,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": "Hello"
-                }
-            ],
-            "max_tokens": 1,
-            "stream": false
-        });
+        // 构建简单的chat请求配置
+        let config = ChatCompletionConfig {
+            model: model_name.to_string(),
+            messages: vec![ChatMessage {
+                role: ChatRole::User,
+                content: "Hello".to_string(),
+            }],
+            max_tokens: Some(1),
+            stream: Some(false),
+            temperature: None,
+            top_p: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            stop: None,
+        };
 
-        // 构建请求
-        let mut request = client.post(&chat_url)
-            .header("Content-Type", "application/json")
-            .json(&test_body);
+        // 构建请求头
+        let mut headers = reqwest::header::HeaderMap::new();
 
         // 添加认证头
         if !provider.api_key.is_empty() {
-            request = request.header("Authorization", format!("Bearer {}", provider.api_key));
+            headers.insert(
+                "Authorization",
+                format!("Bearer {}", provider.api_key).parse().unwrap(),
+            );
         }
 
         // 添加自定义头部
         for (key, value) in &provider.headers {
-            request = request.header(key, value);
+            if let (Ok(header_name), Ok(header_value)) = (
+                key.parse::<reqwest::header::HeaderName>(),
+                value.parse::<reqwest::header::HeaderValue>()
+            ) {
+                headers.insert(header_name, header_value);
+            }
         }
 
         debug!("Sending chat request for recovery check to {}:{}", provider_id, model_name);
 
         // 发送请求
-        match request.send().await {
+        match client.chat_completions(headers, &config).await {
             Ok(response) => {
                 let latency = start_time.elapsed();
                 let backend_key = format!("{}:{}", provider_id, model_name);
@@ -614,6 +629,8 @@ impl HealthChecker {
         let total_time = start_time.elapsed();
         debug!("Completed recovery check for {}:{} in {}ms", provider_id, model_name, total_time.as_millis());
     }
+
+
 
     /// 获取健康检查统计信息
     pub fn get_health_summary(&self) -> HealthSummary {

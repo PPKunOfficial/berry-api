@@ -28,7 +28,8 @@ impl AppState {
     pub async fn new() -> Result<Self> {
         // 加载配置
         let config = load_config()?;
-        info!("Configuration loaded successfully");
+        let config_path = berry_core::config::loader::get_config_path();
+        info!("Configuration loaded successfully from: {}", config_path);
 
         // 创建负载均衡服务
         let load_balancer = Arc::new(LoadBalanceService::new(config.clone())?);
@@ -93,6 +94,17 @@ pub async fn start_server() -> Result<()> {
     info!("Starting Berry API server...");
     info!("Build Time: {}", env!("VERGEN_BUILD_TIMESTAMP"));
     info!("Git Commit: {}", env!("VERGEN_GIT_SHA"));
+
+    // 显示配置信息
+    let config_path = berry_core::config::loader::get_config_path();
+    info!("Configuration file: {}", config_path);
+
+    // 显示环境变量信息
+    if let Ok(config_env) = std::env::var("CONFIG_PATH") {
+        info!("CONFIG_PATH environment variable: {}", config_env);
+    } else {
+        info!("CONFIG_PATH environment variable: not set (using default paths)");
+    }
 
     // 创建应用状态
     let app_state = match AppState::new().await {

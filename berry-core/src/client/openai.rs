@@ -3,9 +3,7 @@ use serde_json::Value;
 use std::time::Duration;
 use async_trait::async_trait;
 use super::types::{ClientError, ClientResponse};
-use super::traits::{AIBackendClient, BackendType};
-
-// 移除硬编码的默认URL，改为从配置中获取
+use super::traits::{AIBackendClient, BackendType, ChatCompletionConfig};
 
 #[derive(Clone)]
 pub struct OpenAIClient {
@@ -47,29 +45,6 @@ impl OpenAIClient {
         }
     }
 
-    // 构建请求头
-    pub fn build_request_headers(
-        &self,
-        authorization: &headers::Authorization<headers::authorization::Bearer>,
-        content_type: &headers::ContentType,
-    ) -> Result<reqwest::header::HeaderMap, ClientError> {
-        let mut headers = reqwest::header::HeaderMap::new();
-
-        let auth_value = format!("Bearer {}", authorization.token())
-            .parse()
-            .map_err(|e| ClientError::HeaderParseError(format!("Authorization header: {}", e)))?;
-
-        let content_type_value = content_type
-            .to_string()
-            .parse()
-            .map_err(|e| ClientError::HeaderParseError(format!("Content-Type header: {}", e)))?;
-
-        headers.insert("Authorization", auth_value);
-        headers.insert("Content-Type", content_type_value);
-
-        Ok(headers)
-    }
-
     // 发送聊天完成请求
     pub async fn chat_completions(
         &self,
@@ -77,7 +52,7 @@ impl OpenAIClient {
         body: &Value,
     ) -> Result<reqwest::Response, ClientError> {
         let response = self.client
-            .post(format!("{}/chat/completions", self.base_url))
+            .post(format!("{}/v1/chat/completions", self.base_url))
             .headers(headers)
             .json(body)
             .send()
@@ -93,7 +68,7 @@ impl OpenAIClient {
     ) -> Result<ClientResponse, ClientError> {
         let auth_header_value = format!("Bearer {}", token);
         let response = self.client
-            .get(format!("{}/models", self.base_url))
+            .get(format!("{}/v1/models", self.base_url))
             .header("Authorization", auth_header_value)
             .send()
             .await?;
@@ -104,8 +79,6 @@ impl OpenAIClient {
         Ok(ClientResponse::new(status, body))
     }
 }
-
-// 移除Default实现，因为现在需要base_url参数
 
 // 实现AIBackendClient trait
 #[async_trait]
@@ -161,13 +134,19 @@ impl AIBackendClient for OpenAIClient {
         self.models(token).await
     }
 
+    fn convert_config_to_json(&self, config: &ChatCompletionConfig) -> Value {
+        config.to_openai_json()
+    }
+
     fn supports_model(&self, _model: &str) -> bool {
         // 不限制模型，让后端API自己验证
+        // 用户可以使用任何模型名称，由OpenAI兼容API决定是否支持
         true
     }
 
     fn supported_models(&self) -> Vec<String> {
         // 返回空列表，表示支持所有模型（由后端决定）
+        // 实际支持的模型列表应该通过models() API获取
         vec![]
     }
 }

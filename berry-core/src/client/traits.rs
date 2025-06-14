@@ -32,14 +32,49 @@ impl BackendType {
             BackendType::OpenAI
         }
     }
+
+    /// 转换为字符串表示
+    pub fn to_string(&self) -> String {
+        match self {
+            BackendType::OpenAI => "OpenAI".to_string(),
+            BackendType::Claude => "Claude".to_string(),
+            BackendType::Gemini => "Gemini".to_string(),
+            BackendType::Custom(name) => format!("Custom({})", name),
+        }
+    }
+}
+
+/// 聊天消息角色
+#[derive(Debug, Clone)]
+pub enum ChatRole {
+    System,
+    User,
+    Assistant,
+}
+
+impl ChatRole {
+    pub fn as_str(&self) -> &str {
+        match self {
+            ChatRole::System => "system",
+            ChatRole::User => "user",
+            ChatRole::Assistant => "assistant",
+        }
+    }
+}
+
+/// 聊天消息
+#[derive(Debug, Clone)]
+pub struct ChatMessage {
+    pub role: ChatRole,
+    pub content: String,
 }
 
 /// 聊天完成请求的配置
 #[derive(Debug, Clone)]
 pub struct ChatCompletionConfig {
     pub model: String,
-    pub messages: Vec<Value>,
-    pub stream: bool,
+    pub messages: Vec<ChatMessage>,
+    pub stream: Option<bool>,
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
     pub top_p: Option<f32>,
@@ -58,20 +93,44 @@ impl ChatCompletionConfig {
             ))?
             .to_string();
 
-        let messages = body.get("messages")
+        let messages_json = body.get("messages")
             .and_then(|v| v.as_array())
             .ok_or_else(|| ClientError::HeaderParseError(
                 "Missing or invalid 'messages' field".to_string()
-            ))?
-            .clone();
+            ))?;
 
-        let stream = body.get("stream")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let mut messages = Vec::new();
+        for msg in messages_json {
+            let role_str = msg.get("role")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| ClientError::HeaderParseError(
+                    "Missing 'role' field in message".to_string()
+                ))?;
+            
+            let role = match role_str {
+                "system" => ChatRole::System,
+                "user" => ChatRole::User,
+                "assistant" => ChatRole::Assistant,
+                _ => return Err(ClientError::HeaderParseError(
+                    format!("Invalid role: {}", role_str)
+                )),
+            };
+
+            let content = msg.get("content")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| ClientError::HeaderParseError(
+                    "Missing 'content' field in message".to_string()
+                ))?
+                .to_string();
+
+            messages.push(ChatMessage { role, content });
+        }
+
+        let stream = body.get("stream").and_then(|v| v.as_bool());
 
         Ok(Self {
             model,
-            messages: messages.into_iter().collect(),
+            messages,
             stream,
             temperature: body.get("temperature").and_then(|v| v.as_f64()).map(|v| v as f32),
             max_tokens: body.get("max_tokens").and_then(|v| v.as_u64()).map(|v| v as u32),
@@ -92,12 +151,21 @@ impl ChatCompletionConfig {
 
     /// 转换为OpenAI格式的JSON
     pub fn to_openai_json(&self) -> Value {
+        let messages: Vec<Value> = self.messages.iter().map(|msg| {
+            serde_json::json!({
+                "role": msg.role.as_str(),
+                "content": msg.content
+            })
+        }).collect();
+
         let mut json = serde_json::json!({
             "model": self.model,
-            "messages": self.messages,
-            "stream": self.stream
+            "messages": messages
         });
 
+        if let Some(stream) = self.stream {
+            json["stream"] = stream.into();
+        }
         if let Some(temp) = self.temperature {
             json["temperature"] = temp.into();
         }

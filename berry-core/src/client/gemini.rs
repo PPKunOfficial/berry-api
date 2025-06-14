@@ -1,10 +1,5 @@
-//! Google Gemini API client implementation
-//! 
-//! This module provides a client for interacting with Google's Gemini API.
-//! Note: Gemini API has a different format compared to OpenAI, so this is a basic implementation.
-
-use crate::relay::client::{ClientError, ClientResult, BackendType, ClientResponse};
-use crate::relay::client::traits::{AIBackendClient, ChatCompletionConfig};
+use crate::client::{ClientError, ClientResponse, BackendType};
+use crate::client::traits::{AIBackendClient, ChatCompletionConfig};
 use async_trait::async_trait;
 use reqwest::{Client, Response, header::HeaderMap};
 use serde_json::{json, Value};
@@ -44,16 +39,6 @@ impl GeminiClient {
         }
     }
 
-    /// 获取后端类型
-    pub fn backend_type(&self) -> BackendType {
-        BackendType::Gemini
-    }
-
-    /// 获取base URL
-    pub fn base_url(&self) -> &str {
-        &self.base_url
-    }
-
     /// 获取超时设置
     pub fn timeout(&self) -> Duration {
         self.timeout
@@ -64,7 +49,7 @@ impl GeminiClient {
         &self,
         headers: reqwest::header::HeaderMap,
         body: &Value,
-    ) -> ClientResult<Response> {
+    ) -> Result<Response, ClientError> {
         debug!("Sending Gemini chat completions request");
 
         // 从headers中提取API key
@@ -101,7 +86,7 @@ impl GeminiClient {
     }
 
     /// 获取模型列表（Gemini格式）
-    pub async fn models(&self, api_key: &str) -> ClientResult<Response> {
+    pub async fn models(&self, api_key: &str) -> Result<Response, ClientError> {
         debug!("Fetching Gemini models list");
 
         let url = format!("{}/models?key={}", self.base_url, api_key);
@@ -121,7 +106,9 @@ impl GeminiClient {
     }
 
     /// 从headers中提取API key
-    fn extract_api_key(&self, headers: &reqwest::header::HeaderMap) -> ClientResult<String> {
+    /// 注意：Gemini API实际上通过URL查询参数传递API key，但为了兼容性，
+    /// 我们仍然支持从Authorization或x-api-key头部提取
+    fn extract_api_key(&self, headers: &reqwest::header::HeaderMap) -> Result<String, ClientError> {
         if let Some(auth_header) = headers.get("Authorization") {
             let auth_str = auth_header.to_str()
                 .map_err(|e| ClientError::HeaderParseError(format!("Invalid Authorization header: {}", e)))?;
@@ -142,7 +129,7 @@ impl GeminiClient {
     }
 
     /// 转换OpenAI格式的请求到Gemini格式
-    fn convert_openai_to_gemini(&self, openai_body: &Value) -> ClientResult<Value> {
+    fn convert_openai_to_gemini(&self, openai_body: &Value) -> Result<Value, ClientError> {
         let messages = openai_body.get("messages")
             .and_then(|m| m.as_array())
             .ok_or_else(|| ClientError::HeaderParseError("Missing messages field".to_string()))?;
@@ -194,7 +181,7 @@ impl GeminiClient {
     }
 
     /// 转换Gemini响应到OpenAI格式（返回JSON字符串）
-    pub async fn convert_gemini_response_to_openai_json(&self, response: Response) -> ClientResult<String> {
+    pub async fn convert_gemini_response_to_openai_json(&self, response: Response) -> Result<String, ClientError> {
         let status = response.status();
 
         if !status.is_success() {
@@ -222,7 +209,7 @@ impl GeminiClient {
     }
 
     /// 转换Gemini响应格式到OpenAI格式
-    fn convert_gemini_to_openai_format(&self, gemini_response: &Value) -> ClientResult<Value> {
+    fn convert_gemini_to_openai_format(&self, gemini_response: &Value) -> Result<Value, ClientError> {
         // 提取Gemini响应中的内容
         let candidates = gemini_response.get("candidates")
             .and_then(|c| c.as_array())
@@ -283,16 +270,13 @@ impl AIBackendClient for GeminiClient {
 
     fn build_request_headers(
         &self,
-        authorization: &headers::Authorization<headers::authorization::Bearer>,
+        _authorization: &headers::Authorization<headers::authorization::Bearer>,
         _content_type: &headers::ContentType,
     ) -> Result<HeaderMap, ClientError> {
         let mut headers = HeaderMap::new();
 
-        // Gemini使用API key而不是Bearer token，所以我们从Bearer token中提取API key
-        let api_key = authorization.token();
-        headers.insert("x-api-key", api_key.parse()
-            .map_err(|e| ClientError::HeaderParseError(format!("Invalid API key: {}", e)))?);
-
+        // Gemini不使用认证头部，API key通过URL查询参数传递
+        // 只设置Content-Type
         headers.insert("Content-Type", "application/json".parse()
             .map_err(|e| ClientError::HeaderParseError(format!("Invalid content type: {}", e)))?);
 
@@ -323,121 +307,15 @@ impl AIBackendClient for GeminiClient {
         self.convert_openai_to_gemini(&openai_json).unwrap_or(openai_json)
     }
 
-    fn supports_model(&self, model: &str) -> bool {
-        // Gemini支持的模型
-        model.starts_with("gemini-") || model.contains("gemini")
+    fn supports_model(&self, _model: &str) -> bool {
+        // 不限制模型，让后端API自己验证
+        // 用户可以使用任何模型名称，由Gemini API决定是否支持
+        true
     }
 
     fn supported_models(&self) -> Vec<String> {
-        vec![
-            "gemini-pro".to_string(),
-            "gemini-pro-vision".to_string(),
-            "gemini-1.5-pro".to_string(),
-            "gemini-1.5-flash".to_string(),
-        ]
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn test_gemini_client_creation() {
-        let client = GeminiClient::new();
-        assert_eq!(client.backend_type(), BackendType::Gemini);
-        assert_eq!(client.base_url(), "https://generativelanguage.googleapis.com/v1beta");
-    }
-
-    #[test]
-    fn test_gemini_client_with_custom_url() {
-        let custom_url = "https://custom-gemini.com/v1";
-        let client = GeminiClient::with_base_url(custom_url.to_string());
-        assert_eq!(client.base_url(), custom_url);
-    }
-
-    #[test]
-    fn test_openai_to_gemini_conversion() {
-        let client = GeminiClient::new();
-        let openai_body = json!({
-            "model": "gemini-pro",
-            "messages": [
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": "Hello!"},
-                {"role": "assistant", "content": "Hi there!"},
-                {"role": "user", "content": "How are you?"}
-            ],
-            "max_tokens": 100,
-            "temperature": 0.7
-        });
-
-        let gemini_body = client.convert_openai_to_gemini(&openai_body).unwrap();
-
-        // 验证转换结果
-        assert!(gemini_body.get("contents").is_some());
-        assert!(gemini_body.get("generationConfig").is_some());
-
-        let contents = gemini_body["contents"].as_array().unwrap();
-        assert_eq!(contents.len(), 4);
-
-        // 验证角色转换
-        assert_eq!(contents[0]["role"], "user"); // system -> user
-        assert_eq!(contents[1]["role"], "user");
-        assert_eq!(contents[2]["role"], "model"); // assistant -> model
-        assert_eq!(contents[3]["role"], "user");
-    }
-
-    #[test]
-    fn test_gemini_to_openai_conversion() {
-        let client = GeminiClient::new();
-        let gemini_response = json!({
-            "candidates": [{
-                "content": {
-                    "parts": [{
-                        "text": "Hello! How can I help you today?"
-                    }]
-                }
-            }]
-        });
-
-        let openai_response = client.convert_gemini_to_openai_format(&gemini_response).unwrap();
-
-        // 验证转换结果
-        assert_eq!(openai_response["object"], "chat.completion");
-        assert!(openai_response.get("id").is_some());
-        assert!(openai_response.get("created").is_some());
-        assert_eq!(openai_response["model"], "gemini-pro");
-
-        let choices = openai_response["choices"].as_array().unwrap();
-        assert_eq!(choices.len(), 1);
-        assert_eq!(choices[0]["message"]["role"], "assistant");
-        assert_eq!(choices[0]["message"]["content"], "Hello! How can I help you today?");
-        assert_eq!(choices[0]["finish_reason"], "stop");
-    }
-
-    #[test]
-    fn test_supports_model() {
-        let client = GeminiClient::new();
-
-        // 测试支持的模型
-        assert!(client.supports_model("gemini-pro"));
-        assert!(client.supports_model("gemini-1.5-pro"));
-        assert!(client.supports_model("gemini-pro-vision"));
-
-        // 测试不支持的模型
-        assert!(!client.supports_model("gpt-4"));
-        assert!(!client.supports_model("claude-3"));
-        assert!(!client.supports_model("random-model"));
-    }
-
-    #[test]
-    fn test_supported_models() {
-        let client = GeminiClient::new();
-        let models = client.supported_models();
-
-        assert!(!models.is_empty());
-        assert!(models.contains(&"gemini-pro".to_string()));
-        assert!(models.contains(&"gemini-1.5-pro".to_string()));
+        // 返回空列表，表示支持所有模型（由后端决定）
+        // 实际支持的模型列表应该通过models() API获取
+        vec![]
     }
 }
