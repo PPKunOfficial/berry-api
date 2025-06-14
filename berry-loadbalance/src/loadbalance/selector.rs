@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
-use tracing::{debug, warn, error, trace};
 use super::cache::{BackendSelectionCache, CacheStats};
 
 /// 后端选择错误类型
