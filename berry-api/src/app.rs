@@ -1,6 +1,6 @@
 use berry_core::config::loader::load_config;
 use berry_loadbalance::LoadBalanceService;
-use berry_relay::LoadBalancedHandler;
+use berry_relay::relay::handler::loadbalanced::ConcreteLoadBalancedHandler;
 use crate::router::router::create_app_router;
 use berry_core::auth::rate_limit::RateLimitService;
 
@@ -14,7 +14,7 @@ use tracing_subscriber::EnvFilter;
 #[derive(Clone)]
 pub struct AppState {
     pub load_balancer: Arc<LoadBalanceService>,
-    pub handler: Arc<LoadBalancedHandler>,
+    pub handler: Arc<ConcreteLoadBalancedHandler>,
     pub config: Arc<berry_core::config::model::Config>,
     pub rate_limiter: Arc<RateLimitService>,
     #[cfg(feature = "observability")]
@@ -40,7 +40,7 @@ impl AppState {
         info!("Load balance service started");
 
         // 创建负载均衡处理器
-        let handler = Arc::new(LoadBalancedHandler::new(load_balancer.clone()));
+        let handler = Arc::new(ConcreteLoadBalancedHandler::new_with_service(load_balancer.clone()));
 
         // 创建速率限制服务
         let rate_limiter = Arc::new(RateLimitService::new());

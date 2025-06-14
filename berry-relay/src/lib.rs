@@ -8,4 +8,4 @@
 pub mod relay;
 
 // Re-export commonly used types
-pub use relay::handler::LoadBalancedHandler;
+pub use relay::handler::loadbalanced::{LoadBalancedHandler, ConcreteLoadBalancedHandler};

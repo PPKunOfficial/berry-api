@@ -7,6 +7,7 @@ use super::openai::OpenAIClient;
 use super::claude::ClaudeClient;
 use super::gemini::GeminiClient;
 use super::types::{ClientError, ClientResponse};
+use super::registry::get_global_registry;
 use crate::config::model::ProviderBackendType;
 
 /// 统一的客户端枚举，包装不同类型的AI后端客户端
@@ -123,52 +124,62 @@ impl AIBackendClient for UnifiedClient {
 }
 
 /// 客户端工厂
+///
+/// 现在使用插件化的客户端注册表系统，支持动态添加新的AI后端类型
 pub struct ClientFactory;
 
 impl ClientFactory {
     /// 根据配置的后端类型创建客户端（推荐使用）
+    ///
+    /// 现在使用全局客户端注册表来创建客户端，支持插件化扩展
     pub fn create_client_from_provider_type(
         provider_backend_type: ProviderBackendType,
         base_url: String,
         timeout: Duration,
     ) -> Result<UnifiedClient, ClientError> {
-        match provider_backend_type {
-            ProviderBackendType::OpenAI => {
-                let client = OpenAIClient::with_base_url_and_timeout(base_url, timeout);
-                Ok(UnifiedClient::OpenAI(client))
-            }
-            ProviderBackendType::Claude => {
-                let client = ClaudeClient::with_base_url_and_timeout(base_url, timeout);
-                Ok(UnifiedClient::Claude(client))
-            }
-            ProviderBackendType::Gemini => {
-                let client = GeminiClient::with_base_url_and_timeout(base_url, timeout);
-                Ok(UnifiedClient::Gemini(client))
-            }
-        }
+        get_global_registry().create_client(provider_backend_type, base_url, timeout)
+    }
+
+    /// 根据配置的后端类型创建客户端（使用自定义注册表）
+    pub fn create_client_from_provider_type_with_registry(
+        registry: &super::registry::ClientRegistry,
+        provider_backend_type: ProviderBackendType,
+        base_url: String,
+        timeout: Duration,
+    ) -> Result<UnifiedClient, ClientError> {
+        registry.create_client(provider_backend_type, base_url, timeout)
+    }
+
+    /// 检查是否支持指定的后端类型
+    pub fn supports_backend_type(provider_backend_type: &ProviderBackendType) -> bool {
+        get_global_registry().supports_backend(provider_backend_type)
+    }
+
+    /// 获取所有支持的后端类型
+    pub fn supported_backend_types() -> Vec<ProviderBackendType> {
+        get_global_registry().supported_backends()
+    }
+
+    /// 获取注册的客户端类型数量
+    pub fn registered_client_count() -> usize {
+        get_global_registry().count()
     }
 
     /// 根据后端类型和配置创建客户端（兼容旧接口）
+    #[deprecated(note = "Use create_client_from_provider_type instead for better type safety and plugin support")]
     pub fn create_client(
         backend_type: BackendType,
         base_url: String,
         timeout: Duration,
     ) -> Result<UnifiedClient, ClientError> {
-        match backend_type {
-            BackendType::OpenAI | BackendType::Custom(_) => {
-                // OpenAI格式兼容大部分后端，包括自定义后端
-                let client = OpenAIClient::with_base_url_and_timeout(base_url, timeout);
-                Ok(UnifiedClient::OpenAI(client))
-            }
-            BackendType::Claude => {
-                let client = ClaudeClient::with_base_url_and_timeout(base_url, timeout);
-                Ok(UnifiedClient::Claude(client))
-            }
-            BackendType::Gemini => {
-                let client = GeminiClient::with_base_url_and_timeout(base_url, timeout);
-                Ok(UnifiedClient::Gemini(client))
-            }
-        }
+        // 将旧的 BackendType 映射到新的 ProviderBackendType
+        let provider_type = match backend_type {
+            BackendType::OpenAI | BackendType::Custom(_) => ProviderBackendType::OpenAI,
+            BackendType::Claude => ProviderBackendType::Claude,
+            BackendType::Gemini => ProviderBackendType::Gemini,
+        };
+
+        Self::create_client_from_provider_type(provider_type, base_url, timeout)
     }
 
     /// 从base_url自动推断后端类型并创建客户端（已废弃，建议使用create_client_from_provider_type）
@@ -178,7 +189,13 @@ impl ClientFactory {
         timeout: Duration,
     ) -> Result<UnifiedClient, ClientError> {
         let backend_type = BackendType::from_base_url(&base_url);
-        Self::create_client(backend_type, base_url, timeout)
+        // 将旧的 BackendType 映射到新的 ProviderBackendType
+        let provider_type = match backend_type {
+            BackendType::OpenAI | BackendType::Custom(_) => ProviderBackendType::OpenAI,
+            BackendType::Claude => ProviderBackendType::Claude,
+            BackendType::Gemini => ProviderBackendType::Gemini,
+        };
+        Self::create_client_from_provider_type(provider_type, base_url, timeout)
     }
 
     /// 创建OpenAI客户端

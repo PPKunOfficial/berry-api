@@ -8,20 +8,35 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use berry_loadbalance::{LoadBalanceService, RequestResult};
+use berry_loadbalance::loadbalance::LoadBalancer;
 use crate::relay::client::{ClientFactory, UnifiedClient, AIBackendClient};
 
 use super::types::{ErrorHandler, ErrorRecorder, RetryErrorHandler, ResponseBodyHandler, ErrorType, create_error_response};
 
 /// 负载均衡的OpenAI兼容处理器
-pub struct LoadBalancedHandler {
-    load_balancer: std::sync::Arc<LoadBalanceService>,
+///
+/// 使用泛型支持不同的负载均衡器实现，提升可测试性和灵活性
+pub struct LoadBalancedHandler<T: LoadBalancer + 'static> {
+    load_balancer: std::sync::Arc<T>,
 }
 
-impl LoadBalancedHandler {
-    pub fn new(load_balancer: std::sync::Arc<LoadBalanceService>) -> Self {
+impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
+    pub fn new(load_balancer: std::sync::Arc<T>) -> Self {
         Self { load_balancer }
     }
+}
 
+/// 为了向后兼容，提供具体的 LoadBalanceService 类型别名
+pub type ConcreteLoadBalancedHandler = LoadBalancedHandler<LoadBalanceService>;
+
+impl ConcreteLoadBalancedHandler {
+    /// 创建使用 LoadBalanceService 的处理器（向后兼容）
+    pub fn new_with_service(load_balancer: std::sync::Arc<LoadBalanceService>) -> Self {
+        Self::new(load_balancer)
+    }
+}
+
+impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
     /// 处理聊天完成请求（支持负载均衡和智能重试）
     pub async fn handle_completions(
         self: Arc<Self>,
@@ -196,7 +211,7 @@ impl LoadBalancedHandler {
                 Err(e) => {
                     // 使用统一的错误记录器
                     ErrorRecorder::record_request_failure(
-                        &self.load_balancer,
+                        self.load_balancer.as_ref(),
                         &selected_backend.backend.provider,
                         &selected_backend.backend.model,
                         &anyhow::anyhow!("{}", e),
@@ -227,7 +242,7 @@ impl LoadBalancedHandler {
                 Err(e) => {
                     // 使用统一的错误记录器
                     ErrorRecorder::record_request_failure(
-                        &self.load_balancer,
+                        self.load_balancer.as_ref(),
                         &selected_backend.backend.provider,
                         &selected_backend.backend.model,
                         &anyhow::anyhow!("{}", e),
@@ -260,7 +275,7 @@ impl LoadBalancedHandler {
 
                             // 记录错误并继续重试
                             ErrorRecorder::record_request_failure(
-                                &self.load_balancer,
+                                self.load_balancer.as_ref(),
                                 &selected_backend.backend.provider,
                                 &selected_backend.backend.model,
                                 &anyhow::anyhow!("Authorization header parse error: {}", e),
@@ -444,7 +459,7 @@ impl LoadBalancedHandler {
 
             // 使用统一的错误记录器
             ErrorRecorder::record_http_failure(
-                &self.load_balancer,
+                self.load_balancer.as_ref(),
                 provider,
                 model,
                 status,
@@ -625,7 +640,7 @@ impl LoadBalancedHandler {
 
             // 使用统一的错误记录器
             ErrorRecorder::record_http_failure(
-                &self.load_balancer,
+                self.load_balancer.as_ref(),
                 provider,
                 model,
                 status,
@@ -719,7 +734,7 @@ impl LoadBalancedHandler {
 
                 // 使用统一的错误记录器
                 ErrorRecorder::record_http_failure(
-                    &load_balancer_clone,
+                    load_balancer_clone.as_ref(),
                     &provider_clone,
                     &model_clone,
                     status,

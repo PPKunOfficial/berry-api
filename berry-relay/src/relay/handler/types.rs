@@ -373,8 +373,8 @@ pub struct ErrorRecorder;
 
 impl ErrorRecorder {
     /// 记录请求失败到负载均衡器
-    pub async fn record_request_failure(
-        load_balancer: &berry_loadbalance::LoadBalanceService,
+    pub async fn record_request_failure<T: berry_loadbalance::loadbalance::LoadBalancer>(
+        load_balancer: &T,
         provider: &str,
         model: &str,
         error: &anyhow::Error,
@@ -391,8 +391,8 @@ impl ErrorRecorder {
     }
 
     /// 记录请求失败（字符串错误）
-    pub async fn record_failure_with_message(
-        load_balancer: &berry_loadbalance::LoadBalanceService,
+    pub async fn record_failure_with_message<T: berry_loadbalance::loadbalance::LoadBalancer>(
+        load_balancer: &T,
         provider: &str,
         model: &str,
         error_message: String,
@@ -409,8 +409,8 @@ impl ErrorRecorder {
     }
 
     /// 记录HTTP错误失败
-    pub async fn record_http_failure(
-        load_balancer: &berry_loadbalance::LoadBalanceService,
+    pub async fn record_http_failure<T: berry_loadbalance::loadbalance::LoadBalancer>(
+        load_balancer: &T,
         provider: &str,
         model: &str,
         status_code: u16,

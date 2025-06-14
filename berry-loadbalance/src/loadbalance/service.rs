@@ -1,7 +1,9 @@
 use berry_core::{Config, Backend};
 use super::{LoadBalanceManager, HealthChecker, MetricsCollector};
 use super::selector::{RequestResult as SmartAiRequestResult, SmartAiErrorType};
+use super::traits::{LoadBalancer, LoadBalancerMetrics};
 use anyhow::Result;
+use async_trait::async_trait;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
@@ -551,6 +553,71 @@ impl ServiceHealth {
         } else {
             0.0
         }
+    }
+}
+
+/// 为 LoadBalanceService 实现 LoadBalancer trait
+#[async_trait]
+impl LoadBalancer for LoadBalanceService {
+    async fn select_backend(&self, model_name: &str) -> Result<SelectedBackend> {
+        LoadBalanceService::select_backend(self, model_name).await
+    }
+
+    async fn select_backend_with_user_tags(
+        &self,
+        model_name: &str,
+        user_tags: Option<&[String]>
+    ) -> Result<SelectedBackend> {
+        LoadBalanceService::select_backend_with_user_tags(self, model_name, user_tags).await
+    }
+
+    async fn select_specific_backend(
+        &self,
+        model_name: &str,
+        provider_name: &str
+    ) -> Result<SelectedBackend> {
+        LoadBalanceService::select_specific_backend(self, model_name, provider_name).await
+    }
+
+    async fn record_request_result(
+        &self,
+        provider: &str,
+        model: &str,
+        result: RequestResult
+    ) {
+        LoadBalanceService::record_request_result(self, provider, model, result).await;
+    }
+
+    fn get_metrics(&self) -> Arc<dyn LoadBalancerMetrics> {
+        self.metrics.clone()
+    }
+
+    async fn get_service_health(&self) -> ServiceHealth {
+        LoadBalanceService::get_service_health(self).await
+    }
+
+    async fn trigger_health_check(&self) -> Result<()> {
+        LoadBalanceService::trigger_health_check(self).await
+    }
+
+    async fn reload_config(&self, new_config: berry_core::Config) -> Result<()> {
+        LoadBalanceService::reload_config(self, new_config).await
+    }
+
+    async fn is_running(&self) -> bool {
+        LoadBalanceService::is_running(self).await
+    }
+
+    async fn get_cache_stats(&self) -> Option<super::cache::CacheStats> {
+        LoadBalanceService::get_cache_stats(self).await
+    }
+
+    async fn get_model_weights(&self, model_name: &str) -> Result<std::collections::HashMap<String, f64>> {
+        LoadBalanceService::get_model_weights(self, model_name).await
+    }
+
+    async fn get_health_stats(&self) -> std::collections::HashMap<String, super::manager::HealthStats> {
+        self.manager.get_health_stats().await
     }
 }
 

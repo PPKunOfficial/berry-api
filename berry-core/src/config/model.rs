@@ -144,7 +144,7 @@ pub struct Provider {
 }
 
 /// Provider的后端类型
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderBackendType {
     /// OpenAI兼容格式（默认）
