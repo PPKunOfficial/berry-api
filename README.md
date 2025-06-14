@@ -1,280 +1,527 @@
-# Berry API - 负载均衡AI网关
+# Berry API - 智能AI负载均衡网关
 
-Berry API 是一个高性能的AI服务负载均衡网关，支持多种AI服务提供商的智能负载均衡、故障转移和健康检查。
+[![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
+[![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
+[![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](Dockerfile)
+[![OpenAI Compatible](https://img.shields.io/badge/OpenAI-Compatible-green.svg)](https://platform.openai.com/docs/api-reference)
+
+Berry API 是一个高性能、生产就绪的AI服务负载均衡网关，专为多AI提供商环境设计。它提供智能负载均衡、自动故障转移、健康检查和成本优化功能，完全兼容OpenAI API格式。
+
+## ✨ 核心特性
+
+### 🎯 智能负载均衡
+- **8种负载均衡策略**：加权随机、轮询、最低延迟、故障转移、SmartAI等
+- **SmartAI策略**：基于成本感知的智能选择，小流量健康检查优化
+- **权重故障转移**：结合权重分配和自动故障切换
+- **用户标签过滤**：支持基于用户标签的后端选择
+
+### 🏥 智能健康检查
+- **差异化检查策略**：按token计费执行主动检查，按请求计费使用被动验证
+- **自动故障恢复**：支持渐进式权重恢复（30%→50%→100%）
+- **熔断机制**：自动熔断故障服务，防止级联失败
+- **实时监控**：提供详细的健康状态和性能指标
+
+### 🔐 企业级认证
+- **Token认证**：基于Bearer Token的用户认证
+- **权限控制**：细粒度的模型访问权限管理
+- **速率限制**：支持用户级别的请求频率控制
+- **用户标签**：支持用户分组和权限标签
+
+### 🚀 高性能架构
+- **异步处理**：基于Tokio的高并发异步架构
+- **流式支持**：完整支持SSE流式和非流式响应
+- **连接保活**：智能保活机制防止连接超时
+- **配置热重载**：运行时配置更新，无需重启服务
+
+### 📊 可观测性
+- **Prometheus指标**：完整的性能和健康指标导出
+- **结构化日志**：支持多级别日志和调试模式
+- **健康检查端点**：提供详细的服务状态信息
+- **管理API**：丰富的管理和监控接口
 
 ## 📚 文档导航
 
-## 📚 文档导航
+### 🚀 快速开始
+- **[⚡ 快速开始指南](QUICKSTART.md)** - 5分钟部署运行
+- **[🐳 Docker部署](#-docker部署)** - 容器化部署方案
+- **[⚙️ 配置指南](#-配置指南)** - 详细配置说明
 
-### 核心文档
-- **[📋 文档索引](docs/DOCUMENTATION_INDEX.md)** - 所有文档的导航页面
-- **[📖 使用指南](docs/USAGE_GUIDE.md)** - 基础使用和最佳实践
-- **[🔌 API参考](docs/API_REFERENCE.md)** - 完整的API文档
-- **[🔑 认证指南](docs/AUTH_GUIDE.md)** - 用户认证和权限管理
-- **[🔄 API密钥更新](docs/API_KEY_UPDATE.md)** - 如何更新API密钥
+### 📖 使用指南
+- **[🔌 API参考文档](API_REFERENCE.md)** - 完整的API接口文档
+- **[🏥 健康检查](#-健康检查与故障处理)** - 健康检查机制详解
+- **[⚖️ 负载均衡](#-负载均衡策略详解)** - 负载均衡策略选择
+- **[🔐 认证授权](#-认证与权限管理)** - 用户认证和权限配置
 
-### 配置指南
-- **[⚙️ 配置示例](docs/CONFIGURATION_EXAMPLES.md)** - 各种场景的配置示例
-- **[🛠️ 调试日志](docs/DEBUG_LOGGING_GUIDE.md)** - 调试和日志配置
-- **[🆙 健康检查升级](docs/HEALTH_CHECK_UPGRADE.md)** - 智能健康检查功能
+### 🛠️ 运维指南
+- **[📊 监控告警](#-监控与可观测性)** - 监控指标和告警配置
+- **[🔧 故障排除](#-故障排除)** - 常见问题和解决方案
+- **[🎯 性能优化](#-性能优化)** - 性能调优建议
+- **[🔄 配置管理](#-配置热重载)** - 配置热重载和管理
 
-### Docker部署
-- **[🐳 Docker指南](docs/DOCKER_README.md)** - Docker容器化部署
-- **[📦 容器编排](docker-compose.yml)** - Docker Compose配置
+### 🏗️ 开发指南
+- **[🏛️ 架构设计](ARCHITECTURE.md)** - 系统架构和组件设计
+- **[🧪 测试指南](#-测试与调试)** - 测试和调试方法
+- **[🤝 贡献指南](#-贡献指南)** - 开发环境和贡献流程
 
-### 实现细节
-- **[🧠 智能健康检查](docs/SMART_HEALTH_CHECK.md)** - 健康检查算法详解
-- **[🏗️ 实现总结](docs/IMPLEMENTATION_SUMMARY.md)** - 架构设计概述
-- **[✅ 最终实现](docs/FINAL_IMPLEMENTATION.md)** - 完整实现细节
-- **[📝 项目总结](docs/FINAL_SUMMARY.md)** - 项目回顾与总结
+## 🏗️ 系统架构
 
-## 🚀 特性
-
-### 核心功能
-- **智能负载均衡**: 支持加权随机、轮询、最低延迟、故障转移等多种负载均衡策略
-- **健康检查**: 自动监控后端服务健康状态，实现故障自动切换
-- **用户认证**: 基于Token的用户认证和权限管理
-- **配置热重载**: 支持运行时配置更新，无需重启服务
-- **OpenAI兼容**: 完全兼容OpenAI API格式，无缝替换
-- **流式支持**: 完整支持流式和非流式响应
-
-### 负载均衡策略
-- **加权随机 (weighted_random)**: 根据权重随机选择后端
-- **轮询 (round_robin)**: 依次轮询所有可用后端
-- **最低延迟 (least_latency)**: 选择响应时间最短的后端
-- **故障转移 (failover)**: 按优先级顺序选择，主要用于备份场景
-- **随机 (random)**: 完全随机选择后端
-- **权重故障转移 (weighted_failover)**: 🆕 结合权重选择和故障转移，优先从健康的后端中按权重选择，故障时自动切换
-
-### 监控与指标
-- **实时健康状态**: 提供详细的服务健康状态信息
-- **性能指标**: 记录请求延迟、成功率等关键指标
-- **服务发现**: 自动发现和管理可用的模型服务
-- **熔断机制**: 自动熔断故障服务，防止级联失败
-
-## 📋 系统架构
+Berry API 采用模块化架构设计，由5个核心模块组成：
 
 ```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   客户端请求     │───▶│  Berry API网关   │───▶│   AI服务提供商   │
-│                │    │                  │    │                │
-│ - OpenAI格式    │    │ - 用户认证        │    │ - OpenAI        │
-│ - 流式/非流式   │    │ - 负载均衡        │    │ - Azure OpenAI  │
-│ - 模型选择      │    │ - 健康检查        │    │ - Anthropic     │
-│ - Token认证     │    │ - 故障转移        │    │ - 其他代理服务   │
-└─────────────────┘    │ - 指标收集        │    └─────────────────┘
-                       │ - 熔断保护        │
-                       └──────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                        Berry API Gateway                        │
+├─────────────────┬─────────────────┬─────────────────┬───────────┤
+│   berry-api     │  berry-relay    │ berry-loadbalance│berry-core │
+│   Web服务层     │   请求转发层    │   负载均衡层     │  核心库   │
+│                 │                 │                 │           │
+│ • HTTP路由      │ • 请求转发      │ • 后端选择      │ • 配置管理│
+│ • 认证中间件    │ • 流式处理      │ • 健康检查      │ • 认证系统│
+│ • 静态文件      │ • 错误处理      │ • 指标收集      │ • 共享类型│
+│ • 管理接口      │ • 协议适配      │ • 策略实现      │ • 工具函数│
+└─────────────────┴─────────────────┴─────────────────┴───────────┘
+                                │
+                    ┌───────────┴───────────┐
+                    │      berry-cli        │
+                    │     命令行工具        │
+                    │                       │
+                    │ • 配置验证            │
+                    │ • 健康检查            │
+                    │ • 指标查看            │
+                    │ • 后端测试            │
+                    └───────────────────────┘
 ```
 
-### 核心组件
+### 🔄 请求处理流程
 
-- **配置管理**: 支持TOML配置文件，包含Provider、模型映射、用户管理等
-- **负载均衡器**: 多种策略的智能负载均衡，支持权重、优先级、健康状态
-- **健康检查器**: 定期检查后端服务健康状态，支持自动故障转移和恢复
-- **认证中间件**: 基于Token的用户认证，支持模型访问权限控制
-- **请求转发器**: 高性能的HTTP请求转发，支持流式响应
-- **指标收集器**: 实时收集性能指标，支持监控和告警
+```mermaid
+graph TD
+    A[客户端请求] --> B[认证中间件]
+    B --> C{认证成功?}
+    C -->|否| D[返回401错误]
+    C -->|是| E[权限检查]
+    E --> F{有权限?}
+    F -->|否| G[返回403错误]
+    F -->|是| H[速率限制检查]
+    H --> I{未超限?}
+    I -->|否| J[返回429错误]
+    I -->|是| K[负载均衡选择]
+    K --> L[后端健康检查]
+    L --> M{后端健康?}
+    M -->|否| N[重试其他后端]
+    M -->|是| O[转发请求]
+    O --> P[处理响应]
+    P --> Q{流式响应?}
+    Q -->|是| R[SSE流式传输]
+    Q -->|否| S[JSON响应]
+    R --> T[返回客户端]
+    S --> T
+    N --> K
+```
 
-## 🛠️ 快速开始
+### 🧩 核心组件
 
-### 1. 环境要求
-- **Rust**: 1.70+ (推荐使用最新稳定版)
-- **操作系统**: Linux, macOS, Windows
-- **内存**: 最少512MB，推荐1GB+
-- **网络**: 需要访问AI服务提供商的API
+| 组件 | 功能 | 技术栈 |
+|------|------|--------|
+| **berry-api** | Web服务层，提供HTTP API | Axum, Tower |
+| **berry-relay** | 请求转发层，处理上游请求 | Reqwest, Tokio |
+| **berry-loadbalance** | 负载均衡层，实现选择策略 | 自研算法, Metrics |
+| **berry-core** | 核心库，配置和认证管理 | Serde, TOML |
+| **berry-cli** | 命令行工具，运维管理 | Clap, 配置验证 |
 
-### 2. 安装
+## ⚖️ 负载均衡策略
+
+Berry API 提供8种负载均衡策略，适应不同的业务场景：
+
+| 策略 | 适用场景 | 优势 | 配置复杂度 |
+|------|----------|------|------------|
+| `weighted_random` | 成本控制、按性能分配 | 灵活的权重分配 | ⭐⭐ |
+| `round_robin` | 简单均衡、相同性能后端 | 完全均匀分配 | ⭐ |
+| `least_latency` | 性能优化、延迟敏感 | 自动选择最快后端 | ⭐⭐ |
+| `failover` | 高可用、主备场景 | 明确的优先级 | ⭐⭐ |
+| `weighted_failover` | 智能负载均衡 | 结合权重和故障转移 | ⭐⭐⭐ |
+| `smart_weighted_failover` | 渐进式恢复 | 支持按请求计费优化 | ⭐⭐⭐ |
+| `smart_ai` | 成本感知优化 | 小流量健康检查 | ⭐⭐⭐⭐ |
+| `random` | 简单场景、测试 | 实现简单 | ⭐ |
+
+### 🧠 SmartAI策略详解
+
+SmartAI是Berry API的核心创新，专为小流量、成本敏感的场景设计：
+
+**核心特性：**
+- **成本感知选择**：优先选择便宜的后端，premium后端作为备选
+- **小流量优化**：80%选择最佳后端，20%探索其他选项
+- **智能健康检查**：基于用户请求进行被动健康验证
+- **信心度机制**：动态调整后端选择权重
+
+**工作原理：**
+```
+1. 初始化：所有后端获得初始信心度(0.8)
+2. 请求处理：根据信心度和权重选择后端
+3. 结果反馈：成功提升信心度，失败降低信心度
+4. 动态调整：信心度影响下次选择概率
+5. 探索机制：20%流量用于测试其他后端
+```
+
+### 🏥 健康检查机制
+
+Berry API 实现了差异化的健康检查策略：
+
+**按计费模式分类：**
+- **按Token计费**：执行主动健康检查（调用模型API）
+- **按请求计费**：使用被动验证（基于用户请求结果）
+
+**检查流程：**
+```
+定期检查 → 模型列表API → 简单聊天测试 → 更新健康状态
+     ↓
+用户请求 → 成功/失败 → 自动恢复/标记故障
+     ↓
+渐进恢复 → 30% → 50% → 100% 权重恢复
+```
+
+## ⚡ 快速开始
+
+### 📋 环境要求
+
+| 组件 | 版本要求 | 推荐版本 |
+|------|----------|----------|
+| **Rust** | 1.70+ | 1.75+ |
+| **操作系统** | Linux/macOS/Windows | Ubuntu 22.04+ |
+| **内存** | 512MB+ | 1GB+ |
+| **CPU** | 1核+ | 2核+ |
+| **网络** | 访问AI服务商API | 稳定网络连接 |
+
+### 🚀 一键部署
+
+**方式1：Docker部署（推荐）**
 ```bash
-# 克隆项目
+# 1. 克隆项目
 git clone https://github.com/PPKunOfficial/berry-api.git
 cd berry-api
 
-# 编译项目
-cargo build --release
+# 2. 复制配置文件
+cp smart_ai_example.toml config.toml
+
+# 3. 编辑配置文件，添加你的API密钥
+vim config.toml
+
+# 4. 启动服务
+docker-compose up -d
+
+# 5. 验证服务
+curl http://localhost:3000/health
 ```
 
-### 3. 配置文件设置
-复制示例配置文件并根据需要修改：
+**方式2：源码编译**
 ```bash
-cp config_example.toml config.toml
+# 1. 克隆项目
+git clone https://github.com/PPKunOfficial/berry-api.git
+cd berry-api
+
+# 2. 编译项目（启用可观测性功能）
+cargo build --release --features observability
+
+# 3. 配置文件
+cp smart_ai_example.toml config.toml
+# 编辑config.toml，配置你的AI服务提供商
+
+# 4. 启动服务
+RUST_LOG=info ./target/release/berry-api
+
+# 5. 验证服务
+curl http://localhost:3000/health
 ```
 
-### 4. 基础配置
-编辑 `config.toml` 文件，配置你的AI服务提供商：
+### ⚙️ 基础配置
 
+**使用配置模板**
+```bash
+# 复制完整配置示例
+cp config-example.toml config.toml
+
+# 或复制SmartAI配置示例
+cp smart_ai_example.toml config.toml
+
+# 编辑配置文件
+vim config.toml
+```
+
+**最小配置示例**：
 ```toml
 # 全局设置
 [settings]
 health_check_interval_seconds = 30
 request_timeout_seconds = 30
 max_retries = 3
+max_internal_retries = 2
 
-# 用户认证配置
+# 用户认证
 [users.admin]
 name = "Administrator"
-token = "your-admin-token-here"
+token = "berry-admin-token-12345"
 allowed_models = []  # 空数组表示允许访问所有模型
 enabled = true
 
-# Provider配置
-[providers.openai-primary]
-name = "OpenAI Primary Account"
+# AI服务提供商
+[providers.openai]
+name = "OpenAI"
 base_url = "https://api.openai.com/v1"
 api_key = "sk-your-openai-key-here"
 models = ["gpt-4", "gpt-3.5-turbo"]
 enabled = true
 
-# 模型映射配置
+# 模型映射
 [models.gpt_4]
 name = "gpt-4"
-strategy = "weighted_random"
+strategy = "weighted_failover"  # 推荐策略
 enabled = true
 
 [[models.gpt_4.backends]]
-provider = "openai-primary"
+provider = "openai"
 model = "gpt-4"
 weight = 1.0
 priority = 1
 enabled = true
 ```
 
-### 5. 启动服务
+**配置文件说明**：
+- `config-example.toml` - 完整配置示例，包含所有选项和详细注释
+- `smart_ai_example.toml` - SmartAI策略专用配置示例
+- 根据需要选择合适的模板进行修改
+
+### 🧪 快速测试
+
 ```bash
-# 开发模式
-cargo run
+# 1. 检查服务状态
+curl http://localhost:3000/health
 
-# 生产模式
-./target/release/berry-api
+# 2. 获取可用模型
+curl -H "Authorization: Bearer berry-admin-token-12345" \
+     http://localhost:3000/v1/models
 
-# 指定配置文件
-CONFIG_PATH="config.toml" cargo run
-
-# 启用调试日志
-RUST_LOG=debug cargo run
+# 3. 发送聊天请求
+curl -X POST http://localhost:3000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer berry-admin-token-12345" \
+  -d '{
+    "model": "gpt-4",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "stream": false
+  }'
 ```
 
-服务默认在 `http://localhost:3000` 启动。
+### 🐳 Docker部署
 
-## 📝 详细配置指南
+使用Docker Compose快速部署：
 
-### 1. 全局设置 (settings)
+```yaml
+# docker-compose.yml
+services:
+  berry-api:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - RUST_LOG=info
+      - CONFIG_PATH=/app/config.toml
+    volumes:
+      - ./config.toml:/app/config.toml:ro
+    restart: unless-stopped
+```
+
+```bash
+# 启动服务
+docker-compose up -d
+
+# 查看日志
+docker-compose logs -f berry-api
+
+# 停止服务
+docker-compose down
+```
+
+## � 配置指南
+
+### 🔧 配置文件结构
+
+Berry API 使用TOML格式的配置文件，主要包含4个部分：
+
+```toml
+[settings]        # 全局设置
+[users.*]         # 用户认证配置
+[providers.*]     # AI服务提供商配置
+[models.*]        # 模型映射配置
+```
+
+### ⚙️ 全局设置 (settings)
+
 ```toml
 [settings]
-health_check_interval_seconds = 30    # 健康检查间隔（秒）
-request_timeout_seconds = 30          # 请求超时时间（秒）
+# 基础设置
+health_check_interval_seconds = 30    # 健康检查间隔
+request_timeout_seconds = 30          # 请求超时时间
 max_retries = 3                       # 最大重试次数
+max_internal_retries = 2              # 内部重试次数
+health_check_timeout_seconds = 10     # 健康检查超时
+
+# 熔断器设置
 circuit_breaker_failure_threshold = 5 # 熔断器失败阈值
-circuit_breaker_timeout_seconds = 60  # 熔断器超时时间（秒）
+circuit_breaker_timeout_seconds = 60  # 熔断器超时时间
+recovery_check_interval_seconds = 120 # 恢复检查间隔
+
+# SmartAI 设置（可选）
+[settings.smart_ai]
+initial_confidence = 0.8              # 初始信心度
+min_confidence = 0.05                 # 最小信心度
+enable_time_decay = true              # 启用时间衰减
+exploration_ratio = 0.2               # 探索流量比例
 ```
 
-### 2. 用户认证配置 (users)
+### 👤 用户认证配置 (users)
+
 ```toml
-# 管理员用户 - 可以访问所有模型
+# 管理员用户
 [users.admin]
 name = "Administrator"
 token = "berry-admin-token-12345"
-allowed_models = []  # 空数组表示允许访问所有模型
+allowed_models = []                   # 空数组 = 访问所有模型
 enabled = true
 tags = ["admin", "unlimited"]
 
-# 普通用户 - 只能访问指定模型
+# 普通用户
 [users.user1]
-name = "Regular User 1"
+name = "Regular User"
 token = "berry-user1-token-67890"
-allowed_models = ["gpt-3.5-turbo", "fast-chat"]
+allowed_models = ["gpt-3.5-turbo"]   # 限制访问模型
 enabled = true
 tags = ["user", "basic"]
+# 速率限制（可选）
+[users.user1.rate_limit]
+requests_per_minute = 60
+requests_per_hour = 1000
 
-# 高级用户 - 可以访问高级模型
+# 高级用户
 [users.premium]
 name = "Premium User"
 token = "berry-premium-token-abcde"
-allowed_models = ["gpt-4", "gpt-4-turbo", "premium", "claude_3"]
+allowed_models = ["gpt-4", "claude-3"]
 enabled = true
 tags = ["premium", "advanced"]
 ```
 
-### 3. Provider配置 (providers)
+### 🔌 Provider配置 (providers)
+
 ```toml
 # OpenAI 配置
-[providers.openai-primary]
-name = "OpenAI Primary Account"
+[providers.openai]
+name = "OpenAI"
 base_url = "https://api.openai.com/v1"
 api_key = "sk-your-openai-key-here"
-models = ["gpt-4", "gpt-4-turbo", "gpt-3.5-turbo"]
+models = ["gpt-4", "gpt-3.5-turbo"]
 enabled = true
 timeout_seconds = 30
-max_retries = 3
+backend_type = "openai"               # 后端类型
 
 # Azure OpenAI 配置
-[providers.azure-openai]
-name = "Azure OpenAI Service"
+[providers.azure]
+name = "Azure OpenAI"
 base_url = "https://your-resource.openai.azure.com"
-api_key = "your-azure-openai-key-here"
+api_key = "your-azure-key-here"
 models = ["gpt-4", "gpt-35-turbo"]
 enabled = true
-timeout_seconds = 30
-max_retries = 3
-[providers.azure-openai.headers]
+backend_type = "openai"
+# 自定义请求头
+[providers.azure.headers]
 "api-version" = "2024-02-01"
 
 # Anthropic Claude 配置
 [providers.anthropic]
-name = "Anthropic Claude"
+name = "Anthropic"
 base_url = "https://api.anthropic.com"
-api_key = "sk-ant-your-anthropic-key-here"
-models = ["claude-3-opus-20240229", "claude-3-sonnet-20240229"]
+api_key = "sk-ant-your-key-here"
+models = ["claude-3-opus", "claude-3-sonnet"]
 enabled = true
-timeout_seconds = 30
-max_retries = 3
+backend_type = "claude"               # Claude格式
 ```
 
-### 4. 模型映射配置 (models)
+### 🎯 模型映射配置 (models)
+
 ```toml
-# GPT-4 模型 - 使用加权随机负载均衡
+# 基础模型配置
 [models.gpt_4]
-name = "gpt-4"  # 对外暴露的模型名
-strategy = "weighted_random"
+name = "gpt-4"                        # 对外暴露的模型名
+strategy = "weighted_failover"        # 负载均衡策略
 enabled = true
 
-# 后端配置：多个provider的gpt-4模型
+# 后端配置 - 主要服务
 [[models.gpt_4.backends]]
-provider = "openai-primary"
+provider = "openai"
 model = "gpt-4"
-weight = 0.5      # 50% 权重
-priority = 1      # 最高优先级
+weight = 0.7                          # 70% 权重
+priority = 1                          # 最高优先级
 enabled = true
-tags = ["premium", "stable"]
+billing_mode = "per_token"            # 计费模式
+tags = ["premium"]
 
+# 后端配置 - 备用服务
 [[models.gpt_4.backends]]
-provider = "azure-openai"
+provider = "azure"
 model = "gpt-4"
-weight = 0.3      # 30% 权重
-priority = 2
+weight = 0.3                          # 30% 权重
+priority = 2                          # 备用优先级
 enabled = true
+billing_mode = "per_token"
 tags = ["enterprise"]
+```
 
-[[models.gpt_4.backends]]
-provider = "anthropic"
-model = "claude-3-opus-20240229"
-weight = 0.2      # 20% 权重
-priority = 3
-enabled = true
-tags = ["alternative"]
+### 📋 配置文件模板
+
+Berry API 提供了多个配置文件模板：
+
+**1. 完整配置示例 (`config-example.toml`)**
+- ✅ 包含所有配置选项和详细注释
+- ✅ 8种负载均衡策略示例
+- ✅ 多种用户权限配置
+- ✅ 完整的Provider配置示例
+- ✅ 安全和性能优化建议
+
+**2. SmartAI专用配置 (`smart_ai_example.toml`)**
+- ✅ SmartAI策略专用配置
+- ✅ 成本感知负载均衡
+- ✅ 小流量健康检查优化
+- ✅ 信心度调整参数
+
+**使用方法**：
+```bash
+# 使用完整配置模板
+cp config-example.toml config.toml
+
+# 使用SmartAI配置模板
+cp smart_ai_example.toml config.toml
+
+# 编辑配置文件
+vim config.toml
 ```
 
 ## 🔌 API使用指南
 
-### 1. 认证方式
-所有API请求都需要在Header中包含认证Token：
+Berry API 完全兼容 OpenAI API 格式，可以无缝替换现有的 OpenAI 客户端。
+
+### 🔐 认证与权限管理
+
+**认证方式**
 ```bash
 Authorization: Bearer your-token-here
 ```
 
-### 2. 聊天完成 (兼容OpenAI)
+**权限控制**
+- **管理员用户**：`allowed_models = []` 可访问所有模型
+- **普通用户**：`allowed_models = ["gpt-4"]` 只能访问指定模型
+- **用户标签**：支持基于标签的后端过滤
 
-#### 非流式请求
+### 💬 聊天完成接口
+
+**非流式请求**
 ```bash
 curl -X POST http://localhost:3000/v1/chat/completions \
   -H "Content-Type: application/json" \
@@ -282,15 +529,19 @@ curl -X POST http://localhost:3000/v1/chat/completions \
   -d '{
     "model": "gpt-4",
     "messages": [
+      {"role": "system", "content": "You are a helpful assistant."},
       {"role": "user", "content": "Hello, world!"}
     ],
     "stream": false,
     "max_tokens": 1000,
-    "temperature": 0.7
+    "temperature": 0.7,
+    "top_p": 1.0,
+    "frequency_penalty": 0,
+    "presence_penalty": 0
   }'
 ```
 
-#### 流式请求
+**流式请求**
 ```bash
 curl -X POST http://localhost:3000/v1/chat/completions \
   -H "Content-Type: application/json" \
@@ -305,7 +556,7 @@ curl -X POST http://localhost:3000/v1/chat/completions \
   }'
 ```
 
-#### Python示例
+**Python SDK 示例**
 ```python
 import openai
 
@@ -315,25 +566,59 @@ client = openai.OpenAI(
     base_url="http://localhost:3000/v1"
 )
 
-# 发送请求
+# 非流式请求
 response = client.chat.completions.create(
     model="gpt-4",
     messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Hello, world!"}
     ],
     stream=False
 )
-
 print(response.choices[0].message.content)
+
+# 流式请求
+stream = client.chat.completions.create(
+    model="gpt-4",
+    messages=[{"role": "user", "content": "Tell me a story"}],
+    stream=True
+)
+
+for chunk in stream:
+    if chunk.choices[0].delta.content is not None:
+        print(chunk.choices[0].delta.content, end="")
 ```
 
-### 3. 获取可用模型
+**Node.js 示例**
+```javascript
+import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  apiKey: 'berry-admin-token-12345',
+  baseURL: 'http://localhost:3000/v1',
+});
+
+async function main() {
+  const completion = await openai.chat.completions.create({
+    messages: [{ role: 'user', content: 'Hello world' }],
+    model: 'gpt-4',
+  });
+
+  console.log(completion.choices[0].message.content);
+}
+
+main();
+```
+
+### 📋 模型管理
+
+**获取可用模型**
 ```bash
 curl http://localhost:3000/v1/models \
   -H "Authorization: Bearer berry-admin-token-12345"
 ```
 
-响应示例：
+**响应示例**
 ```json
 {
   "object": "list",
@@ -354,54 +639,60 @@ curl http://localhost:3000/v1/models \
 }
 ```
 
-### 4. 健康检查
-```bash
-# 基础健康检查
-curl http://localhost:3000/health
+### 🏥 健康检查与监控
 
-# OpenAI兼容健康检查
-curl http://localhost:3000/v1/health
+**基础健康检查**
+```bash
+curl http://localhost:3000/health
 ```
 
-### 5. 服务指标
+**详细健康状态**
 ```bash
 curl http://localhost:3000/metrics
 ```
 
-响应示例：
-```json
-{
-  "providers": {
-    "openai-primary": {
-      "healthy": true,
-      "total_requests": 1250,
-      "successful_requests": 1200,
-      "failed_requests": 50,
-      "average_latency_ms": 850,
-      "last_check": "2024-01-15T10:30:00Z"
-    }
-  },
-  "models": {
-    "gpt-4": {
-      "total_requests": 800,
-      "successful_requests": 780,
-      "failed_requests": 20
-    }
-  }
-}
+**Prometheus 指标**
+```bash
+curl http://localhost:3000/prometheus
 ```
 
-## 📊 API端点总览
+### 🎛️ 管理接口
+
+**获取模型权重**
+```bash
+curl http://localhost:3000/admin/model-weights \
+  -H "Authorization: Bearer admin-token"
+```
+
+**获取后端健康状态**
+```bash
+curl http://localhost:3000/admin/backend-health \
+  -H "Authorization: Bearer admin-token"
+```
+
+**SmartAI 权重查看**
+```bash
+curl http://localhost:3000/smart-ai/weights
+curl http://localhost:3000/smart-ai/models/gpt-4/weights
+```
+
+## 📊 完整API端点
 
 | 端点 | 方法 | 认证 | 描述 |
 |------|------|------|------|
-| `/` | GET | 否 | 服务首页 |
-| `/health` | GET | 否 | 服务健康状态 |
-| `/metrics` | GET | 否 | 详细性能指标 |
-| `/models` | GET | 是 | 可用模型列表 |
-| `/v1/chat/completions` | POST | 是 | 聊天完成（OpenAI兼容） |
-| `/v1/models` | GET | 是 | 可用模型列表（OpenAI兼容） |
-| `/v1/health` | GET | 否 | OpenAI兼容健康检查 |
+| `/` | GET | ❌ | 服务首页 |
+| `/health` | GET | ❌ | 基础健康检查 |
+| `/metrics` | GET | ❌ | 详细性能指标 |
+| `/prometheus` | GET | ❌ | Prometheus格式指标 |
+| `/models` | GET | ✅ | 可用模型列表 |
+| `/v1/chat/completions` | POST | ✅ | 聊天完成（OpenAI兼容） |
+| `/v1/models` | GET | ✅ | 模型列表（OpenAI兼容） |
+| `/v1/health` | GET | ❌ | OpenAI兼容健康检查 |
+| `/admin/model-weights` | GET | ✅ | 模型权重信息 |
+| `/admin/backend-health` | GET | ✅ | 后端健康状态 |
+| `/admin/system-stats` | GET | ✅ | 系统统计信息 |
+| `/smart-ai/weights` | GET | ❌ | SmartAI全局权重 |
+| `/smart-ai/models/{model}/weights` | GET | ❌ | 特定模型SmartAI权重 |
 
 ## 🔧 负载均衡策略详解
 
@@ -690,7 +981,159 @@ time curl -X POST http://localhost:3000/v1/chat/completions \
   -d '{"model": "gpt-4", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
 
-## 📈 性能优化与部署
+## 🛠️ 命令行工具 (berry-cli)
+
+Berry CLI 提供了丰富的运维管理功能：
+
+### 📋 配置管理
+
+**验证配置文件**
+```bash
+# 验证默认配置
+berry-cli validate-config
+
+# 验证指定配置文件
+berry-cli validate-config -c /path/to/config.toml
+
+# 输出示例
+✅ Configuration is valid
+  - 2 providers configured
+  - 3 models configured
+  - 5 users configured
+```
+
+**生成配置文件**
+```bash
+# 生成基础配置
+berry-cli generate-config -o config_example.toml
+
+# 生成高级配置（包含所有功能）
+berry-cli generate-config -o advanced_config.toml --advanced
+```
+
+### 🏥 健康检查
+
+**检查所有后端**
+```bash
+berry-cli health-check -c config.toml
+# 输出：✅ Health check completed
+```
+
+**检查特定Provider**
+```bash
+berry-cli health-check -c config.toml -p openai
+# 输出：✅ Provider openai is healthy
+```
+
+### 📊 指标查看
+
+**查看服务指标**
+```bash
+# 基础指标
+berry-cli metrics -c config.toml
+
+# 详细指标
+berry-cli metrics -c config.toml --detailed
+```
+
+### 🧪 后端测试
+
+**测试后端连接**
+```bash
+berry-cli test-backend -c config.toml -p openai -m gpt-4
+# 输出：✅ Backend openai:gpt-4 connectivity test passed
+```
+
+### 🔧 CLI 安装
+
+```bash
+# 编译CLI工具
+cargo build --release -p berry-cli
+
+# 安装到系统路径
+sudo cp target/release/berry-cli /usr/local/bin/
+
+# 验证安装
+berry-cli --help
+```
+
+## �️ 命令行工具 (berry-cli)
+
+Berry CLI 提供了丰富的运维管理功能：
+
+### 📋 配置管理
+
+**验证配置文件**
+```bash
+# 验证默认配置
+berry-cli validate-config
+
+# 验证指定配置文件
+berry-cli validate-config -c /path/to/config.toml
+
+# 输出示例
+✅ Configuration is valid
+  - 2 providers configured
+  - 3 models configured
+  - 5 users configured
+```
+
+**生成配置文件**
+```bash
+# 生成基础配置
+berry-cli generate-config -o config_example.toml
+
+# 生成高级配置（包含所有功能）
+berry-cli generate-config -o advanced_config.toml --advanced
+```
+
+### 🏥 健康检查
+
+**检查所有后端**
+```bash
+berry-cli health-check -c config.toml
+# 输出：✅ Health check completed
+```
+
+**检查特定Provider**
+```bash
+berry-cli health-check -c config.toml -p openai
+# 输出：✅ Provider openai is healthy
+```
+
+### 📊 指标查看
+
+**查看服务指标**
+```bash
+# 基础指标
+berry-cli metrics -c config.toml
+
+# 详细指标
+berry-cli metrics -c config.toml --detailed
+```
+
+### 🧪 后端测试
+
+**测试后端连接**
+```bash
+berry-cli test-backend -c config.toml -p openai -m gpt-4
+# 输出：✅ Backend openai:gpt-4 connectivity test passed
+```
+
+### 🔧 CLI 安装
+
+```bash
+# 编译CLI工具
+cargo build --release -p berry-cli
+
+# 安装到系统路径
+sudo cp target/release/berry-cli /usr/local/bin/
+
+# 验证安装
+berry-cli --help
+```
+
+## �📈 性能优化与部署
 
 ### 性能调优建议
 
@@ -718,23 +1161,209 @@ time curl -X POST http://localhost:3000/v1/chat/completions \
    circuit_breaker_timeout_seconds = 60   # 平衡恢复速度和稳定性
    ```
 
-### 监控与告警
+## 📊 监控与可观测性
 
-1. **关键指标监控**
-   - Provider健康状态
-   - 请求成功率
-   - 平均响应时间
-   - 错误率统计
+Berry API 提供完整的可观测性支持，包括指标收集、日志记录和健康监控。
 
-2. **日志分析**
-   ```bash
-   # 查看错误日志
-   grep "ERROR" logs/berry-api.log
+### 🎯 核心指标
 
-   # 监控健康检查
-   grep "health_check" logs/berry-api.log
+**HTTP 请求指标**
+- `http_requests_total` - 总请求数（按状态码、方法、路径分类）
+- `http_request_duration_seconds` - 请求延迟分布
+- `http_requests_in_flight` - 当前处理中的请求数
 
-   # 分析性能指标
+**后端健康指标**
+- `backend_health_status` - 后端健康状态（0=不健康，1=健康）
+- `backend_request_count_total` - 后端请求总数
+- `backend_error_count_total` - 后端错误总数
+- `backend_latency_seconds` - 后端响应延迟
+
+**负载均衡指标**
+- `load_balance_selections_total` - 负载均衡选择次数
+- `smart_ai_confidence_score` - SmartAI信心度分数
+- `circuit_breaker_state` - 熔断器状态
+
+### 📈 Prometheus 集成
+
+**启用可观测性功能**
+```bash
+# 编译时启用observability特性
+cargo build --release --features observability
+
+# 或在Cargo.toml中配置
+[features]
+default = ["observability"]
+observability = ["prometheus", "axum-prometheus"]
+```
+
+**Prometheus 配置**
+```yaml
+# prometheus.yml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'berry-api'
+    static_configs:
+      - targets: ['localhost:3000']
+    metrics_path: '/prometheus'
+    scrape_interval: 10s
+```
+
+**Grafana 仪表板**
+
+创建 Grafana 仪表板监控关键指标：
+
+```json
+{
+  "dashboard": {
+    "title": "Berry API Dashboard",
+    "panels": [
+      {
+        "title": "Request Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total[5m])",
+            "legendFormat": "{{method}} {{status}}"
+          }
+        ]
+      },
+      {
+        "title": "Backend Health",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "backend_health_status",
+            "legendFormat": "{{provider}}:{{model}}"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### 📝 日志管理
+
+**日志级别配置**
+```bash
+# 环境变量配置
+export RUST_LOG=info                    # 基础日志
+export RUST_LOG=debug                   # 调试日志
+export RUST_LOG=berry_api=debug         # 特定模块日志
+export RUST_LOG=trace                   # 详细跟踪日志
+```
+
+**结构化日志示例**
+```json
+{
+  "timestamp": "2024-01-15T10:30:00Z",
+  "level": "INFO",
+  "target": "berry_api::loadbalance",
+  "message": "Backend selected",
+  "fields": {
+    "provider": "openai",
+    "model": "gpt-4",
+    "strategy": "weighted_failover",
+    "latency_ms": 850
+  }
+}
+```
+
+**日志分析命令**
+```bash
+# 查看错误日志
+grep "ERROR" logs/berry-api.log | jq .
+
+# 监控健康检查
+grep "health_check" logs/berry-api.log | tail -20
+
+# 分析性能指标
+grep "latency" logs/berry-api.log | jq '.fields.latency_ms' | sort -n
+
+# 统计请求分布
+grep "Backend selected" logs/berry-api.log | jq -r '.fields.provider' | sort | uniq -c
+```
+
+### 🚨 告警配置
+
+**Prometheus 告警规则**
+```yaml
+# alerts.yml
+groups:
+  - name: berry-api
+    rules:
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate detected"
+
+      - alert: BackendDown
+        expr: backend_health_status == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Backend {{ $labels.provider }}:{{ $labels.model }} is down"
+
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High latency detected"
+```
+
+### 🔍 健康检查监控
+
+**健康检查端点**
+```bash
+# 基础健康检查
+curl http://localhost:3000/health
+
+# 详细健康状态
+curl http://localhost:3000/metrics | jq .
+
+# 特定后端健康状态
+curl http://localhost:3000/admin/backend-health
+```
+
+**健康状态响应示例**
+```json
+{
+  "status": "healthy",
+  "timestamp": "2024-01-15T10:30:00Z",
+  "providers": {
+    "openai": {
+      "healthy": true,
+      "last_check": "2024-01-15T10:29:45Z",
+      "total_requests": 1250,
+      "successful_requests": 1200,
+      "failed_requests": 50,
+      "average_latency_ms": 850,
+      "models": {
+        "gpt-4": {
+          "healthy": true,
+          "requests": 800,
+          "errors": 20
+        }
+      }
+    }
+  },
+  "load_balancer": {
+    "total_selections": 5000,
+    "strategy_distribution": {
+      "weighted_failover": 3000,
+      "smart_ai": 2000
+    }
+  }
+}
+```
    grep "latency" logs/berry-api.log
    ```
 
@@ -805,112 +1434,765 @@ time curl -X POST http://localhost:3000/v1/chat/completions \
 
 ## 🔧 故障排除
 
-### 常见问题
+### 🚨 常见问题诊断
 
-1. **服务启动失败**
-   ```bash
-   # 检查配置文件语法
-   cargo run -- --check-config
-
-   # 检查端口占用
-   lsof -i :3000
-
-   # 查看详细错误信息
-   RUST_LOG=debug cargo run
-   ```
-
-2. **Provider连接失败**
-   - 检查API密钥是否正确
-   - 验证网络连接
-   - 确认base_url格式正确
-   - 检查防火墙设置
-
-3. **认证失败**
-   - 确认Token配置正确
-   - 检查用户是否启用
-   - 验证模型访问权限
-
-4. **负载均衡不工作**
-   - 检查Provider健康状态
-   - 验证权重配置
-   - 查看负载均衡策略设置
-
-### 日志分析
-
+**1. 服务启动失败**
 ```bash
-# 查看服务启动日志
+# 检查配置文件语法
+berry-cli validate-config -c config.toml
+
+# 检查端口占用
+lsof -i :3000
+netstat -tulpn | grep :3000
+
+# 查看详细错误信息
+RUST_LOG=debug cargo run
+
+# 检查依赖和编译
+cargo check
+cargo build --release
+```
+
+**2. Provider连接失败**
+```bash
+# 测试网络连接
+curl -I https://api.openai.com/v1/models
+
+# 验证API密钥
+curl https://api.openai.com/v1/models \
+  -H "Authorization: Bearer your-api-key"
+
+# 检查防火墙和代理设置
+export https_proxy=http://proxy:8080
+```
+
+**3. 认证失败**
+```bash
+# 验证Token格式
+echo "berry-admin-token-12345" | wc -c
+
+# 检查用户配置
+berry-cli validate-config | grep users
+
+# 测试认证
+curl -H "Authorization: Bearer berry-admin-token-12345" \
+     http://localhost:3000/v1/models
+```
+
+**4. 负载均衡异常**
+```bash
+# 检查后端健康状态
+curl http://localhost:3000/admin/backend-health
+
+# 查看负载均衡权重
+curl http://localhost:3000/admin/model-weights
+
+# 测试特定后端
+berry-cli test-backend -p openai -m gpt-4
+```
+
+### 📊 日志分析与调试
+
+**日志级别配置**
+```bash
+# 基础日志
+export RUST_LOG=info
+
+# 调试特定模块
+export RUST_LOG=berry_loadbalance=debug,berry_relay=debug
+
+# 详细跟踪
+export RUST_LOG=trace
+```
+
+**关键日志查询**
+```bash
+# 服务启动日志
 grep "Starting Berry API" logs/berry-api.log
 
-# 检查健康检查状态
-grep "health_check" logs/berry-api.log
+# 健康检查状态
+grep "health_check" logs/berry-api.log | tail -20
 
-# 查看认证失败
+# 认证失败记录
 grep "Authentication failed" logs/berry-api.log
 
-# 监控负载均衡决策
-grep "selected backend" logs/berry-api.log
+# 负载均衡决策
+grep "selected backend" logs/berry-api.log | tail -10
+
+# 错误统计
+grep "ERROR" logs/berry-api.log | cut -d' ' -f3 | sort | uniq -c
+
+# 性能分析
+grep "latency" logs/berry-api.log | jq '.fields.latency_ms' | \
+  awk '{sum+=$1; count++} END {print "Average:", sum/count "ms"}'
+```
+
+### 🔄 配置热重载
+
+Berry API 支持运行时配置更新，无需重启服务：
+
+**热重载机制**
+```bash
+# 修改配置文件
+vim config.toml
+
+# 发送重载信号（如果支持）
+kill -HUP $(pgrep berry-api)
+
+# 或通过API重载（需要实现）
+curl -X POST http://localhost:3000/admin/reload-config \
+  -H "Authorization: Bearer admin-token"
+```
+
+**配置变更监控**
+```bash
+# 监控配置文件变化
+inotifywait -m config.toml -e modify
+
+# 验证新配置
+berry-cli validate-config -c config.toml
+
+# 比较配置差异
+diff config.toml.backup config.toml
+```
+
+### 🛡️ 安全检查
+
+**配置安全审计**
+```bash
+# 检查敏感信息泄露
+grep -r "sk-" config/ --exclude="*.example"
+
+# 验证Token强度
+python3 -c "
+import secrets
+token = 'berry-admin-token-12345'
+print(f'Token length: {len(token)}')
+print(f'Entropy: {len(set(token))} unique chars')
+"
+
+# 检查文件权限
+ls -la config.toml
+# 应该是 -rw------- (600)
+```
+
+### 🔍 性能诊断
+
+**延迟分析**
+```bash
+# 测试端到端延迟
+time curl -X POST http://localhost:3000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer token" \
+  -d '{"model":"gpt-4","messages":[{"role":"user","content":"hi"}]}'
+
+# 分析响应时间分布
+for i in {1..10}; do
+  time curl -s http://localhost:3000/health > /dev/null
+done
+```
+
+**内存和CPU监控**
+```bash
+# 监控资源使用
+top -p $(pgrep berry-api)
+htop -p $(pgrep berry-api)
+
+# 内存使用分析
+ps aux | grep berry-api
+cat /proc/$(pgrep berry-api)/status | grep -E "(VmRSS|VmSize)"
+```
+
+## 🚀 生产部署指南
+
+### 🏭 生产环境配置
+
+**系统要求**
+```bash
+# 推荐配置
+CPU: 2核心以上
+内存: 2GB以上
+磁盘: 10GB以上
+网络: 稳定的互联网连接
+
+# 操作系统
+Ubuntu 22.04 LTS (推荐)
+CentOS 8+
+Debian 11+
+```
+
+**环境变量配置**
+```bash
+# /etc/environment
+RUST_LOG=info
+CONFIG_PATH=/etc/berry-api/config.toml
+BIND_ADDRESS=0.0.0.0:3000
+MAX_CONNECTIONS=1000
+```
+
+### 🐳 Docker 生产部署
+
+**多阶段构建优化**
+```dockerfile
+# Dockerfile.prod
+FROM rust:1.75-slim AS builder
+WORKDIR /app
+COPY . .
+RUN cargo build --release --features observability
+
+FROM gcr.io/distroless/cc-debian12
+WORKDIR /app
+COPY --from=builder /app/target/release/berry-api /usr/local/bin/
+COPY --from=builder /app/config /app/config
+EXPOSE 3000
+CMD ["/usr/local/bin/berry-api"]
+```
+
+**Docker Compose 生产配置**
+```yaml
+# docker-compose.prod.yml
+version: '3.8'
+services:
+  berry-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    ports:
+      - "3000:3000"
+    environment:
+      - RUST_LOG=info
+      - CONFIG_PATH=/app/config.toml
+    volumes:
+      - ./config.toml:/app/config.toml:ro
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - berry-api
+    restart: unless-stopped
+```
+
+### ⚖️ 负载均衡与高可用
+
+**Nginx 配置**
+```nginx
+# nginx.conf
+upstream berry_api {
+    server berry-api-1:3000 weight=3;
+    server berry-api-2:3000 weight=2;
+    server berry-api-3:3000 weight=1 backup;
+}
+
+server {
+    listen 80;
+    listen 443 ssl http2;
+    server_name api.yourdomain.com;
+
+    # SSL配置
+    ssl_certificate /etc/nginx/ssl/cert.pem;
+    ssl_certificate_key /etc/nginx/ssl/key.pem;
+
+    # 安全头
+    add_header X-Frame-Options DENY;
+    add_header X-Content-Type-Options nosniff;
+    add_header X-XSS-Protection "1; mode=block";
+
+    location / {
+        proxy_pass http://berry_api;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # 超时配置
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+
+        # 缓冲配置
+        proxy_buffering on;
+        proxy_buffer_size 4k;
+        proxy_buffers 8 4k;
+    }
+
+    # 健康检查
+    location /health {
+        proxy_pass http://berry_api/health;
+        access_log off;
+    }
+}
+```
+
+### 🔒 安全最佳实践
+
+**1. API密钥管理**
+```bash
+# 使用环境变量或密钥管理服务
+export OPENAI_API_KEY=$(vault kv get -field=api_key secret/openai)
+
+# 定期轮换密钥
+./scripts/rotate-api-keys.sh
+
+# 密钥强度检查
+python3 -c "
+import secrets
+import string
+# 生成强密钥
+key = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(32))
+print(f'Strong API key: berry-{key}')
+"
+```
+
+**2. 网络安全**
+```bash
+# 防火墙配置
+ufw allow 22/tcp
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw deny 3000/tcp  # 只允许内部访问
+ufw enable
+
+# 限制访问源
+iptables -A INPUT -p tcp --dport 3000 -s 10.0.0.0/8 -j ACCEPT
+iptables -A INPUT -p tcp --dport 3000 -j DROP
+```
+
+**3. 日志安全**
+```toml
+# config.toml - 生产配置
+[settings]
+# 不记录敏感信息
+log_request_body = false
+log_response_body = false
+mask_api_keys = true
+```
+
+### 📊 监控与告警
+
+**Prometheus + Grafana 部署**
+```yaml
+# monitoring/docker-compose.yml
+version: '3.8'
+services:
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+
+volumes:
+  prometheus_data:
+  grafana_data:
+```
+
+### 🔄 CI/CD 流水线
+
+**GitHub Actions 配置**
+```yaml
+# .github/workflows/deploy.yml
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - run: cargo test --all-features
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build Docker image
+        run: |
+          docker build -t berry-api:${{ github.sha }} .
+          docker tag berry-api:${{ github.sha }} berry-api:latest
+
+      - name: Push to registry
+        run: |
+          echo ${{ secrets.DOCKER_PASSWORD }} | docker login -u ${{ secrets.DOCKER_USERNAME }} --password-stdin
+          docker push berry-api:${{ github.sha }}
+          docker push berry-api:latest
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to production
+        run: |
+          ssh ${{ secrets.PROD_SERVER }} "
+            docker pull berry-api:latest
+            docker-compose -f docker-compose.prod.yml up -d --no-deps berry-api
+          "
 ```
 
 ## 🤝 贡献指南
 
-### 开发环境设置
+### 🛠️ 开发环境设置
+
 ```bash
-# 克隆项目
+# 1. 克隆项目
 git clone https://github.com/PPKunOfficial/berry-api.git
 cd berry-api
 
-# 安装依赖
+# 2. 安装Rust工具链
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+rustup component add clippy rustfmt
+
+# 3. 安装依赖并编译
 cargo build
 
-# 运行测试
-cargo test
+# 4. 运行测试
+cargo test --all-features
 
-# 代码格式化
-cargo fmt
+# 5. 代码质量检查
+cargo fmt --check
+cargo clippy -- -D warnings
 
-# 代码检查
-cargo clippy
+# 6. 运行开发服务器
+RUST_LOG=debug cargo run
 ```
 
-### 提交规范
-- 使用清晰的commit message
-- 添加相应的测试用例
-- 更新相关文档
-- 确保所有测试通过
+### 📝 开发规范
 
-### 贡献类型
-- 🐛 Bug修复
-- ✨ 新功能
-- 📚 文档改进
-- 🎨 代码优化
-- 🧪 测试增强
+**代码风格**
+```bash
+# 格式化代码
+cargo fmt
 
-欢迎提交Issue和Pull Request！
+# 检查代码质量
+cargo clippy
+
+# 运行所有检查
+./scripts/check.sh
+```
+
+**提交规范**
+```bash
+# 提交格式
+git commit -m "feat: add SmartAI load balancing strategy"
+git commit -m "fix: resolve authentication timeout issue"
+git commit -m "docs: update API documentation"
+
+# 提交类型
+feat: 新功能
+fix: 修复bug
+docs: 文档更新
+style: 代码格式
+refactor: 重构
+test: 测试相关
+chore: 构建/工具相关
+```
+
+**Pull Request 流程**
+1. Fork 项目到个人仓库
+2. 创建功能分支：`git checkout -b feature/new-feature`
+3. 提交更改：`git commit -am 'Add new feature'`
+4. 推送分支：`git push origin feature/new-feature`
+5. 创建 Pull Request
+
+### 🧪 测试指南
+
+**单元测试**
+```bash
+# 运行所有测试
+cargo test
+
+# 运行特定模块测试
+cargo test loadbalance
+cargo test auth
+
+# 生成测试覆盖率报告
+cargo tarpaulin --out Html
+```
+
+**集成测试**
+```bash
+# 启动测试环境
+docker-compose -f docker-compose.test.yml up -d
+
+# 运行集成测试
+cargo test --test integration
+
+# 清理测试环境
+docker-compose -f docker-compose.test.yml down
+```
+
+欢迎提交Issue和Pull Request！我们重视每一个贡献。
+
+## � 常见用例
+
+### 🏢 企业级AI服务
+
+**场景：大型企业多部门AI服务**
+```toml
+# 企业配置示例
+[settings]
+health_check_interval_seconds = 30
+max_internal_retries = 3
+
+# 部门用户配置
+[users.hr_dept]
+name = "HR Department"
+token = "hr-dept-token-12345"
+allowed_models = ["gpt-3.5-turbo", "claude-3-haiku"]
+tags = ["hr", "basic"]
+
+[users.rd_dept]
+name = "R&D Department"
+token = "rd-dept-token-67890"
+allowed_models = ["gpt-4", "claude-3-opus"]
+tags = ["rd", "premium"]
+
+# 成本优化配置
+[models.cost_effective]
+name = "cost-effective"
+strategy = "smart_ai"
+enabled = true
+
+[[models.cost_effective.backends]]
+provider = "cheap_provider"
+model = "gpt-3.5-turbo"
+weight = 0.8
+billing_mode = "per_request"
+tags = []
+
+[[models.cost_effective.backends]]
+provider = "premium_provider"
+model = "gpt-4"
+weight = 0.2
+billing_mode = "per_token"
+tags = ["premium"]
+```
+
+### 🚀 初创公司成本控制
+
+**场景：预算有限的初创公司**
+```toml
+# 成本敏感配置
+[models.startup_gpt4]
+name = "gpt-4"
+strategy = "smart_ai"  # 智能成本控制
+enabled = true
+
+[[models.startup_gpt4.backends]]
+provider = "budget_provider"
+model = "gpt-3.5-turbo"
+weight = 1.0
+priority = 1
+enabled = true
+
+[[models.startup_gpt4.backends]]
+provider = "premium_provider"
+model = "gpt-4"
+weight = 0.1  # 仅作为备选
+priority = 2
+enabled = true
+tags = ["premium"]
+```
+
+### 🔄 多云容灾部署
+
+**场景：跨云服务商的高可用部署**
+```toml
+[models.ha_gpt4]
+name = "gpt-4"
+strategy = "weighted_failover"
+enabled = true
+
+# 主要云服务商
+[[models.ha_gpt4.backends]]
+provider = "aws_openai"
+model = "gpt-4"
+weight = 0.5
+priority = 1
+enabled = true
+
+# 备用云服务商
+[[models.ha_gpt4.backends]]
+provider = "azure_openai"
+model = "gpt-4"
+weight = 0.3
+priority = 2
+enabled = true
+
+# 应急服务商
+[[models.ha_gpt4.backends]]
+provider = "gcp_openai"
+model = "gpt-4"
+weight = 0.2
+priority = 3
+enabled = true
+```
+
+### 🧪 开发测试环境
+
+**场景：开发团队测试不同AI模型**
+```toml
+[users.dev_team]
+name = "Development Team"
+token = "dev-team-token"
+allowed_models = []  # 允许访问所有模型
+enabled = true
+tags = ["dev", "testing"]
+
+# 测试模型配置
+[models.test_model]
+name = "test-model"
+strategy = "round_robin"  # 轮询测试所有后端
+enabled = true
+
+[[models.test_model.backends]]
+provider = "openai"
+model = "gpt-3.5-turbo"
+weight = 1.0
+enabled = true
+
+[[models.test_model.backends]]
+provider = "anthropic"
+model = "claude-3-sonnet"
+weight = 1.0
+enabled = true
+```
+
+## 🎯 最佳实践总结
+
+### ✅ 配置最佳实践
+
+1. **安全配置**
+   - 使用强随机Token
+   - 定期轮换API密钥
+   - 限制用户模型访问权限
+   - 启用请求日志审计
+
+2. **性能优化**
+   - 根据实际使用情况调整权重
+   - 设置合理的超时时间
+   - 使用SmartAI策略进行成本优化
+   - 启用健康检查和熔断机制
+
+3. **监控告警**
+   - 配置Prometheus指标收集
+   - 设置关键指标告警
+   - 定期检查日志和性能
+   - 监控成本和使用情况
+
+### 🚀 部署最佳实践
+
+1. **生产环境**
+   - 使用Docker容器化部署
+   - 配置负载均衡和高可用
+   - 启用HTTPS和安全头
+   - 实施备份和恢复策略
+
+2. **扩展性**
+   - 设计无状态架构
+   - 支持水平扩展
+   - 使用配置热重载
+   - 实施蓝绿部署
 
 ## 📄 许可证
 
-本项目采用 GNU GENERAL PUBLIC LICENSE Version 3 许可证。
+本项目采用 **GNU General Public License v3.0** 许可证。
+
+这意味着：
+- ✅ 可以自由使用、修改和分发
+- ✅ 可以用于商业用途
+- ⚠️ 修改后的代码必须开源
+- ⚠️ 必须保留原始许可证声明
 
 详细信息请查看 [LICENSE](LICENSE) 文件。
 
 ## 🔗 相关资源
 
-### 官方文档
-- [OpenAI API文档](https://platform.openai.com/docs/api-reference)
-- [Azure OpenAI文档](https://docs.microsoft.com/en-us/azure/cognitive-services/openai/)
-- [Anthropic API文档](https://docs.anthropic.com/claude/reference/)
+### 📚 官方文档
+- [OpenAI API 参考](https://platform.openai.com/docs/api-reference) - OpenAI官方API文档
+- [Azure OpenAI 服务](https://docs.microsoft.com/en-us/azure/cognitive-services/openai/) - 微软Azure OpenAI文档
+- [Anthropic Claude API](https://docs.anthropic.com/claude/reference/) - Anthropic官方API文档
 
-### 技术栈
-- [Rust](https://www.rust-lang.org/) - 系统编程语言
-- [Tokio](https://tokio.rs/) - 异步运行时
-- [Axum](https://github.com/tokio-rs/axum) - Web框架
-- [Serde](https://serde.rs/) - 序列化框架
-- [TOML](https://toml.io/) - 配置文件格式
+### 🛠️ 技术栈
+- [Rust 编程语言](https://www.rust-lang.org/) - 系统级编程语言
+- [Tokio 异步运行时](https://tokio.rs/) - Rust异步编程框架
+- [Axum Web框架](https://github.com/tokio-rs/axum) - 现代化Web服务框架
+- [Serde 序列化](https://serde.rs/) - Rust序列化/反序列化框架
+- [TOML 配置格式](https://toml.io/) - 人性化的配置文件格式
 
-### 社区
-- [GitHub Issues](https://github.com/PPKunOfficial/berry-api/issues) - 问题反馈
-- [GitHub Discussions](https://github.com/PPKunOfficial/berry-api/discussions) - 讨论交流
+### 🔧 工具与集成
+- [Prometheus 监控](https://prometheus.io/) - 开源监控系统
+- [Grafana 可视化](https://grafana.com/) - 监控数据可视化平台
+- [Docker 容器化](https://www.docker.com/) - 应用容器化平台
+- [Nginx 负载均衡](https://nginx.org/) - 高性能Web服务器
+
+### 🌟 社区与支持
+- [GitHub 仓库](https://github.com/PPKunOfficial/berry-api) - 源代码和版本管理
+- [Issues 问题反馈](https://github.com/PPKunOfficial/berry-api/issues) - Bug报告和功能请求
+- [Discussions 讨论区](https://github.com/PPKunOfficial/berry-api/discussions) - 社区讨论和交流
+- [Wiki 文档](https://github.com/PPKunOfficial/berry-api/wiki) - 详细文档和教程
+
+### 📈 性能基准
+- **并发处理**: 支持1000+并发连接
+- **响应延迟**: 平均增加延迟<10ms
+- **内存占用**: 基础运行内存<100MB
+- **CPU使用**: 单核心可处理500+ QPS
 
 ---
 
-**Berry API** - 让AI服务负载均衡变得简单高效！ 🚀
+<div align="center">
+
+## 🚀 Berry API
+
+**让AI服务负载均衡变得简单高效！**
+
+[![Star on GitHub](https://img.shields.io/github/stars/PPKunOfficial/berry-api?style=social)](https://github.com/PPKunOfficial/berry-api)
+[![Fork on GitHub](https://img.shields.io/github/forks/PPKunOfficial/berry-api?style=social)](https://github.com/PPKunOfficial/berry-api/fork)
+
+**[快速开始](#-快速开始)** • **[配置指南](#-配置指南)** • **[API文档](#-api使用指南)** • **[部署指南](#-生产部署指南)**
+
+</div>

@@ -1,0 +1,431 @@
+# Berry API 配置示例文件
+# 这是一个完整的配置示例，展示了所有可用的配置选项
+# 复制此文件为 config.toml 并根据需要修改
+
+# ===== 全局设置 =====
+[settings]
+# 基础设置
+health_check_interval_seconds = 30        # 健康检查间隔（秒）
+request_timeout_seconds = 30              # 请求超时时间（秒）
+max_retries = 3                          # 最大重试次数
+max_internal_retries = 2                 # 内部重试次数，避免直接给用户报错
+health_check_timeout_seconds = 10        # 健康检查请求超时时间
+
+# 熔断器设置
+circuit_breaker_failure_threshold = 5    # 熔断器失败阈值
+circuit_breaker_timeout_seconds = 60     # 熔断器超时时间（秒）
+recovery_check_interval_seconds = 120    # 不健康provider的恢复检查间隔
+
+# SmartAI 特定配置（可选，仅在使用smart_ai策略时需要）
+[settings.smart_ai]
+initial_confidence = 0.8                 # 初始信心度 (0.0-1.0)
+min_confidence = 0.05                    # 最小信心度，保留恢复机会
+enable_time_decay = true                 # 启用时间衰减
+lightweight_check_interval_seconds = 600 # 轻量级连通性检查间隔（秒）
+exploration_ratio = 0.2                  # 探索流量比例（20%用于测试其他后端）
+non_premium_stability_bonus = 1.1        # 非premium后端稳定性加成
+
+# 信心度调整参数
+[settings.smart_ai.confidence_adjustments]
+success_boost = 0.1                      # 成功请求的信心度提升
+network_error_penalty = 0.3              # 网络错误的信心度惩罚
+auth_error_penalty = 0.8                 # 认证错误的信心度惩罚
+rate_limit_penalty = 0.1                 # 速率限制的信心度惩罚
+server_error_penalty = 0.2               # 服务器错误的信心度惩罚
+model_error_penalty = 0.3                # 模型错误的信心度惩罚
+timeout_penalty = 0.2                    # 超时的信心度惩罚
+
+# ===== 用户认证配置 =====
+
+# 管理员用户 - 可以访问所有模型和管理接口
+[users.admin]
+name = "Administrator"
+token = "berry-admin-token-replace-with-secure-token"
+allowed_models = []                      # 空数组表示允许访问所有模型
+enabled = true
+tags = ["admin", "unlimited"]
+
+# 普通用户 - 只能访问指定模型
+[users.user1]
+name = "Regular User 1"
+token = "berry-user1-token-replace-with-secure-token"
+allowed_models = ["gpt-3.5-turbo", "claude-3-haiku"]
+enabled = true
+tags = ["user", "basic"]
+# 速率限制（可选）
+[users.user1.rate_limit]
+requests_per_minute = 60
+requests_per_hour = 1000
+
+# 高级用户 - 可以访问高级模型
+[users.premium]
+name = "Premium User"
+token = "berry-premium-token-replace-with-secure-token"
+allowed_models = ["gpt-4", "gpt-4-turbo", "claude-3-opus"]
+enabled = true
+tags = ["premium", "advanced"]
+[users.premium.rate_limit]
+requests_per_minute = 120
+requests_per_hour = 5000
+
+# 开发团队用户 - 用于测试和开发
+[users.dev_team]
+name = "Development Team"
+token = "berry-dev-token-replace-with-secure-token"
+allowed_models = []                      # 允许访问所有模型用于测试
+enabled = true
+tags = ["dev", "testing"]
+
+# ===== AI服务提供商配置 =====
+
+# OpenAI 主账户
+[providers.openai_primary]
+name = "OpenAI Primary Account"
+base_url = "https://api.openai.com/v1"
+api_key = "sk-your-openai-primary-key-here"
+models = ["gpt-4", "gpt-4-turbo", "gpt-3.5-turbo"]
+enabled = true
+timeout_seconds = 30
+max_retries = 3
+backend_type = "openai"                  # 后端类型：openai, claude, gemini
+
+# OpenAI 备用账户
+[providers.openai_backup]
+name = "OpenAI Backup Account"
+base_url = "https://api.openai.com/v1"
+api_key = "sk-your-openai-backup-key-here"
+models = ["gpt-4", "gpt-3.5-turbo"]
+enabled = true
+timeout_seconds = 30
+max_retries = 3
+backend_type = "openai"
+
+# Azure OpenAI 服务
+[providers.azure_openai]
+name = "Azure OpenAI Service"
+base_url = "https://your-resource.openai.azure.com"
+api_key = "your-azure-openai-key-here"
+models = ["gpt-4", "gpt-35-turbo"]
+enabled = true
+timeout_seconds = 30
+max_retries = 3
+backend_type = "openai"
+# Azure特定的请求头
+[providers.azure_openai.headers]
+"api-version" = "2024-02-01"
+
+# Anthropic Claude
+[providers.anthropic]
+name = "Anthropic Claude"
+base_url = "https://api.anthropic.com"
+api_key = "sk-ant-your-anthropic-key-here"
+models = ["claude-3-opus-20240229", "claude-3-sonnet-20240229", "claude-3-haiku-20240307"]
+enabled = true
+timeout_seconds = 30
+max_retries = 3
+backend_type = "claude"
+
+# 本地部署的模型（如Ollama）
+[providers.local_llm]
+name = "Local LLM Server"
+base_url = "http://localhost:11434/v1"
+api_key = ""                             # 本地服务通常不需要API密钥
+models = ["llama2", "codellama"]
+enabled = false                          # 默认禁用，需要时启用
+timeout_seconds = 60                     # 本地模型可能需要更长时间
+max_retries = 1
+backend_type = "openai"
+
+# 第三方代理服务
+[providers.proxy_service]
+name = "Third-party Proxy"
+base_url = "https://api.proxy-service.com/v1"
+api_key = "your-proxy-api-key-here"
+models = ["gpt-4", "claude-3-opus"]
+enabled = false                          # 默认禁用
+timeout_seconds = 45
+max_retries = 2
+backend_type = "openai"
+
+# ===== 模型映射配置 =====
+
+# GPT-4 模型 - 使用加权故障转移策略
+[models.gpt_4]
+name = "gpt-4"
+strategy = "weighted_failover"           # 负载均衡策略
+enabled = true
+
+# 主要后端：OpenAI主账户
+[[models.gpt_4.backends]]
+provider = "openai_primary"
+model = "gpt-4"
+weight = 0.6                            # 60% 权重
+priority = 1                            # 最高优先级
+enabled = true
+billing_mode = "per_token"              # 计费模式：per_token 或 per_request
+tags = ["premium", "stable"]
+
+# 备用后端：Azure OpenAI
+[[models.gpt_4.backends]]
+provider = "azure_openai"
+model = "gpt-4"
+weight = 0.3                            # 30% 权重
+priority = 2
+enabled = true
+billing_mode = "per_token"
+tags = ["enterprise", "stable"]
+
+# 应急后端：OpenAI备用账户
+[[models.gpt_4.backends]]
+provider = "openai_backup"
+model = "gpt-4"
+weight = 0.1                            # 10% 权重
+priority = 3
+enabled = true
+billing_mode = "per_token"
+tags = ["backup"]
+
+# GPT-3.5-Turbo 模型 - 使用轮询策略
+[models.gpt_3_5_turbo]
+name = "gpt-3.5-turbo"
+strategy = "round_robin"
+enabled = true
+
+[[models.gpt_3_5_turbo.backends]]
+provider = "openai_primary"
+model = "gpt-3.5-turbo"
+weight = 1.0
+priority = 1
+enabled = true
+billing_mode = "per_token"
+tags = ["cost-effective"]
+
+[[models.gpt_3_5_turbo.backends]]
+provider = "openai_backup"
+model = "gpt-3.5-turbo"
+weight = 1.0
+priority = 1
+enabled = true
+billing_mode = "per_token"
+tags = ["cost-effective"]
+
+# Claude-3 Opus - 使用SmartAI策略进行成本优化
+[models.claude_3_opus]
+name = "claude-3-opus"
+strategy = "smart_ai"                   # 智能AI负载均衡
+enabled = true
+
+# 便宜的替代方案（如果有的话）
+[[models.claude_3_opus.backends]]
+provider = "proxy_service"
+model = "claude-3-opus"
+weight = 1.0
+enabled = false                         # 需要时启用
+billing_mode = "per_request"
+tags = []                               # 非premium，可获得稳定性加成
+
+# 官方Claude服务
+[[models.claude_3_opus.backends]]
+provider = "anthropic"
+model = "claude-3-opus-20240229"
+weight = 1.0
+enabled = true
+billing_mode = "per_token"
+tags = ["premium", "official"]
+
+# 混合模型 - 使用最低延迟策略
+[models.fast_chat]
+name = "fast-chat"
+strategy = "least_latency"
+enabled = true
+
+[[models.fast_chat.backends]]
+provider = "openai_primary"
+model = "gpt-3.5-turbo"
+weight = 1.0
+priority = 1
+enabled = true
+billing_mode = "per_token"
+tags = ["fast"]
+
+[[models.fast_chat.backends]]
+provider = "anthropic"
+model = "claude-3-haiku-20240307"
+weight = 1.0
+priority = 1
+enabled = true
+billing_mode = "per_token"
+tags = ["fast"]
+
+# 成本优化模型 - 使用SmartAI策略
+[models.cost_effective]
+name = "cost-effective"
+strategy = "smart_ai"
+enabled = true
+
+[[models.cost_effective.backends]]
+provider = "openai_primary"
+model = "gpt-3.5-turbo"
+weight = 1.0
+enabled = true
+billing_mode = "per_token"
+tags = []                               # 非premium后端
+
+[[models.cost_effective.backends]]
+provider = "openai_primary"
+model = "gpt-4"
+weight = 0.3                            # 较低权重，作为质量保证
+enabled = true
+billing_mode = "per_token"
+tags = ["premium"]                      # premium后端
+
+# 高可用模型 - 使用故障转移策略
+[models.high_availability]
+name = "ha-gpt-4"
+strategy = "failover"
+enabled = true
+
+[[models.high_availability.backends]]
+provider = "openai_primary"
+model = "gpt-4"
+weight = 1.0
+priority = 1                            # 主要服务
+enabled = true
+billing_mode = "per_token"
+tags = ["primary"]
+
+[[models.high_availability.backends]]
+provider = "azure_openai"
+model = "gpt-4"
+weight = 1.0
+priority = 2                            # 备用服务
+enabled = true
+billing_mode = "per_token"
+tags = ["backup"]
+
+[[models.high_availability.backends]]
+provider = "openai_backup"
+model = "gpt-4"
+weight = 1.0
+priority = 3                            # 应急服务
+enabled = true
+billing_mode = "per_token"
+tags = ["emergency"]
+
+# ===== 负载均衡策略说明 =====
+#
+# 可用的负载均衡策略：
+#
+# 1. weighted_random - 加权随机选择
+#    根据权重随机选择后端，适合大多数场景
+#
+# 2. round_robin - 轮询选择
+#    依次轮询所有可用后端，确保均匀分配
+#
+# 3. least_latency - 最低延迟选择
+#    选择响应时间最短的后端，适合延迟敏感场景
+#
+# 4. failover - 故障转移
+#    按优先级顺序选择，主要用于高可用场景
+#
+# 5. random - 完全随机选择
+#    完全随机选择后端，实现简单
+#
+# 6. weighted_failover - 权重故障转移
+#    结合权重选择和故障转移，平衡性能和可用性
+#
+# 7. smart_weighted_failover - 智能权重故障转移
+#    支持渐进式权重恢复，适合按请求计费的场景
+#
+# 8. smart_ai - 智能AI负载均衡
+#    基于成本感知的智能选择，小流量健康检查优化
+#    特别适合个人用户和小团队的成本控制场景
+
+# ===== 计费模式说明 =====
+#
+# per_token - 按Token计费
+#   - 执行主动健康检查（调用模型API）
+#   - 适合大多数商业AI服务
+#
+# per_request - 按请求计费
+#   - 使用被动验证（基于用户请求结果）
+#   - 避免额外的健康检查成本
+#   - 支持渐进式权重恢复（30%→50%→100%）
+
+# ===== 用户标签说明 =====
+#
+# 用户标签可用于：
+# - 权限控制和分组
+# - 后端选择过滤
+# - 监控和统计分析
+#
+# 常用标签：
+# - admin: 管理员权限
+# - premium: 高级用户
+# - dev: 开发用户
+# - basic: 基础用户
+# - testing: 测试用户
+
+# ===== 后端标签说明 =====
+#
+# 后端标签可用于：
+# - SmartAI策略中的稳定性加成判断
+# - 用户权限过滤
+# - 监控分类
+#
+# 常用标签：
+# - premium: 高级后端（SmartAI中不获得稳定性加成）
+# - stable: 稳定的后端
+# - fast: 快速响应的后端
+# - cost-effective: 成本效益高的后端
+# - backup: 备用后端
+# - emergency: 应急后端
+
+# ===== 安全建议 =====
+#
+# 1. Token安全：
+#    - 使用强随机Token（建议32字符以上）
+#    - 定期轮换Token
+#    - 不要在日志中记录Token
+#
+# 2. API密钥安全：
+#    - 使用环境变量存储敏感信息
+#    - 定期轮换API密钥
+#    - 限制API密钥权限
+#
+# 3. 网络安全：
+#    - 使用HTTPS
+#    - 配置防火墙规则
+#    - 限制访问来源IP
+
+# ===== 性能优化建议 =====
+#
+# 1. 超时设置：
+#    - request_timeout_seconds: 根据模型响应时间调整
+#    - health_check_timeout_seconds: 建议设置为10-15秒
+#
+# 2. 重试策略：
+#    - max_retries: 建议2-3次
+#    - max_internal_retries: 建议1-2次
+#
+# 3. 健康检查：
+#    - health_check_interval_seconds: 建议30-60秒
+#    - 根据流量调整检查频率
+
+# ===== 监控建议 =====
+#
+# 1. 关键指标：
+#    - 请求成功率
+#    - 平均响应时间
+#    - 后端健康状态
+#    - 负载均衡分布
+#
+# 2. 告警设置：
+#    - 后端不可用告警
+#    - 高错误率告警
+#    - 高延迟告警
+#
+# 3. 日志级别：
+#    - 生产环境建议使用info级别
+#    - 调试时使用debug级别
+#    - 使用RUST_LOG环境变量控制
