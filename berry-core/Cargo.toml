@@ -1,0 +1,21 @@
+[package]
+name = "berry-core"
+version = "0.1.0"
+edition = "2021"
+description = "Core library for Berry API - configuration, authentication, and shared types"
+
+[dependencies]
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
+axum = { workspace = true }
+axum-extra = { workspace = true }
+headers = { workspace = true }
+
+[dev-dependencies]
+axum-test = { workspace = true }

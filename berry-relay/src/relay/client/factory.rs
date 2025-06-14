@@ -5,14 +5,16 @@ use serde_json::Value;
 use super::traits::{AIBackendClient, BackendType, ChatCompletionConfig};
 use super::openai::OpenAIClient;
 use super::claude::ClaudeClient;
+use super::gemini::GeminiClient;
 use super::types::{ClientError, ClientResponse};
-use crate::config::model::ProviderBackendType;
+use berry_core::config::model::ProviderBackendType;
 
 /// 统一的客户端枚举，包装不同类型的AI后端客户端
 #[derive(Clone)]
 pub enum UnifiedClient {
     OpenAI(OpenAIClient),
     Claude(ClaudeClient),
+    Gemini(GeminiClient),
 }
 
 #[async_trait]
@@ -21,6 +23,7 @@ impl AIBackendClient for UnifiedClient {
         match self {
             UnifiedClient::OpenAI(client) => client.backend_type(),
             UnifiedClient::Claude(client) => client.backend_type(),
+            UnifiedClient::Gemini(client) => client.backend_type(),
         }
     }
 
@@ -28,6 +31,7 @@ impl AIBackendClient for UnifiedClient {
         match self {
             UnifiedClient::OpenAI(client) => client.base_url(),
             UnifiedClient::Claude(client) => client.base_url(),
+            UnifiedClient::Gemini(client) => client.base_url(),
         }
     }
 
@@ -35,6 +39,7 @@ impl AIBackendClient for UnifiedClient {
         match self {
             UnifiedClient::OpenAI(client) => UnifiedClient::OpenAI(client.with_timeout(timeout)),
             UnifiedClient::Claude(client) => UnifiedClient::Claude(client.with_timeout(timeout)),
+            UnifiedClient::Gemini(client) => UnifiedClient::Gemini(GeminiClient::with_base_url_and_timeout(client.base_url().to_string(), timeout)),
         }
     }
 
@@ -46,6 +51,10 @@ impl AIBackendClient for UnifiedClient {
         match self {
             UnifiedClient::OpenAI(client) => client.build_request_headers(authorization, content_type),
             UnifiedClient::Claude(client) => client.build_request_headers(authorization, content_type),
+            UnifiedClient::Gemini(_) => {
+                // Gemini使用不同的认证方式，暂时返回错误
+                Err(ClientError::HeaderParseError("Gemini client not fully implemented".to_string()))
+            }
         }
     }
 
@@ -57,6 +66,7 @@ impl AIBackendClient for UnifiedClient {
         match self {
             UnifiedClient::OpenAI(client) => client.chat_completions_raw(headers, body).await,
             UnifiedClient::Claude(client) => client.chat_completions_raw(headers, body).await,
+            UnifiedClient::Gemini(client) => client.chat_completions(headers, body).await,
         }
     }
 
@@ -64,6 +74,16 @@ impl AIBackendClient for UnifiedClient {
         match self {
             UnifiedClient::OpenAI(client) => client.models(token).await,
             UnifiedClient::Claude(client) => client.models(token).await,
+            UnifiedClient::Gemini(client) => {
+                match client.models(token).await {
+                    Ok(response) => {
+                        let status = response.status().as_u16();
+                        let body = response.text().await.unwrap_or_default();
+                        Ok(ClientResponse::new(status, body))
+                    }
+                    Err(e) => Err(e),
+                }
+            }
         }
     }
 
@@ -71,6 +91,12 @@ impl AIBackendClient for UnifiedClient {
         match self {
             UnifiedClient::OpenAI(client) => client.health_check(token).await,
             UnifiedClient::Claude(client) => client.health_check(token).await,
+            UnifiedClient::Gemini(client) => {
+                match client.models(token).await {
+                    Ok(response) => Ok(response.status().is_success()),
+                    Err(_) => Ok(false),
+                }
+            }
         }
     }
 
@@ -78,6 +104,10 @@ impl AIBackendClient for UnifiedClient {
         match self {
             UnifiedClient::OpenAI(client) => client.convert_config_to_json(config),
             UnifiedClient::Claude(client) => client.convert_config_to_json(config),
+            UnifiedClient::Gemini(_) => {
+                // Gemini使用不同的格式，暂时返回OpenAI格式
+                config.to_openai_json()
+            }
         }
     }
 
@@ -85,6 +115,10 @@ impl AIBackendClient for UnifiedClient {
         match self {
             UnifiedClient::OpenAI(client) => client.supports_model(model),
             UnifiedClient::Claude(client) => client.supports_model(model),
+            UnifiedClient::Gemini(_) => {
+                // Gemini支持的模型
+                model.starts_with("gemini-")
+            }
         }
     }
 
@@ -92,6 +126,9 @@ impl AIBackendClient for UnifiedClient {
         match self {
             UnifiedClient::OpenAI(client) => client.supported_models(),
             UnifiedClient::Claude(client) => client.supported_models(),
+            UnifiedClient::Gemini(_) => {
+                vec!["gemini-pro".to_string(), "gemini-pro-vision".to_string()]
+            }
         }
     }
 }
@@ -176,16 +213,15 @@ impl ClientFactory {
         vec![
             BackendType::OpenAI,
             BackendType::Claude,
-            // BackendType::Gemini, // TODO: 待实现
+            BackendType::Gemini,
         ]
     }
 
     /// 检查后端类型是否受支持
     pub fn is_backend_supported(backend_type: &BackendType) -> bool {
         match backend_type {
-            BackendType::OpenAI | BackendType::Claude => true,
+            BackendType::OpenAI | BackendType::Claude | BackendType::Gemini => true,
             BackendType::Custom(_) => true, // 自定义后端使用OpenAI兼容格式
-            BackendType::Gemini => false, // TODO: 待实现
         }
     }
 }
@@ -223,7 +259,7 @@ mod tests {
         assert!(ClientFactory::is_backend_supported(&BackendType::OpenAI));
         assert!(ClientFactory::is_backend_supported(&BackendType::Claude));
         assert!(ClientFactory::is_backend_supported(&BackendType::Custom("test".to_string())));
-        assert!(!ClientFactory::is_backend_supported(&BackendType::Gemini));
+        assert!(ClientFactory::is_backend_supported(&BackendType::Gemini));
     }
 
     #[tokio::test]

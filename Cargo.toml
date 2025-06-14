@@ -1,12 +1,60 @@
-[package]
-name = "berry-api"
-version = "0.1.0"
-edition = "2024"
-
 [workspace]
-members = [".", "api"]
+resolver = "2"
+members = [
+    "berry-core",
+    "berry-loadbalance",
+    "berry-relay",
+    "berry-api",
+    "berry-cli"
+]
 
-[dependencies]
-berry-api-api = { path = "api" }
+[workspace.dependencies]
+# 共享依赖版本管理
+anyhow = "1.0.98"
+async-trait = "0.1.88"
+axum = "0.8.4"
+axum-extra = { version = "0.10.1", features = ["typed-header"] }
+bytes = "1.10.1"
+chrono = { version = "0.4.41", features = ["serde"] }
+eventsource-stream = "0.2.3"
+futures = "0.3.31"
+headers = "0.4.0"
+include_dir = "0.7"
+mime_guess = "2.0"
+rand = { version = "0.9.1", features = ["std", "std_rng"] }
+reqwest = { version = "0.12.15", features = [
+    "stream",
+    "json",
+    "http2",
+    "charset",
+    "system-proxy",
+    "rustls-tls",
+], default-features = false }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+thiserror = "2.0.12"
 tokio = { version = "1.45.0", features = ["full"] }
+tokio-stream = { version = "0.1.17", features = ["io-util"] }
+tokio-util = "0.7.15"
+toml = "0.8.23"
+tower-http = { version = "0.6.4", features = ["fs", "trace"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+
+# 测试依赖
+axum-test = "17.3.0"
+
+# CLI依赖
+clap = { version = "4.4", features = ["derive"] }
+
+# Observability依赖
+prometheus = "0.13"
+axum-prometheus = "0.7"
+
+# 构建依赖
+vergen-git2 = { version = "1.0", features = ["build", "cargo", "rustc", "si"] }
+
+[workspace.features]
+default = []
+observability = ["prometheus", "axum-prometheus"]
 

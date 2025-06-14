@@ -7,4 +7,4 @@ pub mod chat;
 pub mod smart_ai;
 
 #[cfg(test)]
-mod tests;   
+mod tests;

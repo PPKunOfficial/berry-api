@@ -1,0 +1,121 @@
+# Berry API Advanced Configuration File
+# This configuration includes all available features
+
+[settings]
+health_check_interval_seconds = 30
+request_timeout_seconds = 30
+max_retries = 3
+circuit_breaker_failure_threshold = 5
+circuit_breaker_timeout_seconds = 60
+recovery_check_interval_seconds = 120
+max_internal_retries = 2
+health_check_timeout_seconds = 10
+
+[settings.smart_ai]
+enabled = true
+small_traffic_threshold = 100
+cost_control_factor = 0.8
+health_check_weight = 0.3
+
+# Provider Configuration with advanced features
+[providers.openai]
+name = "OpenAI"
+base_url = "https://api.openai.com"
+api_key = "your-openai-api-key-here"
+models = ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo"]
+enabled = true
+timeout_seconds = 30
+max_retries = 3
+backend_type = "OpenAI"
+tags = ["premium"]
+
+[providers.openai.headers]
+"X-Custom-Header" = "custom-value"
+
+[providers.anthropic]
+name = "Anthropic"
+base_url = "https://api.anthropic.com"
+api_key = "your-anthropic-api-key-here"
+models = ["claude-3-sonnet-20240229", "claude-3-opus-20240229"]
+enabled = true
+timeout_seconds = 30
+max_retries = 3
+backend_type = "OpenAI"
+tags = ["premium"]
+
+[providers.local]
+name = "Local LLM"
+base_url = "http://localhost:8080"
+api_key = ""
+models = ["llama2-7b"]
+enabled = true
+timeout_seconds = 60
+max_retries = 1
+backend_type = "OpenAI"
+tags = ["local", "cost-effective"]
+
+# Advanced Model Mappings with multiple backends
+[models.gpt-4-balanced]
+name = "gpt-4-balanced"
+enabled = true
+strategy = "SmartWeightedFailover"
+
+[[models.gpt-4-balanced.backends]]
+provider = "openai"
+model = "gpt-4"
+weight = 0.7
+priority = 1
+enabled = true
+billing_mode = "PerToken"
+tags = ["premium"]
+
+[[models.gpt-4-balanced.backends]]
+provider = "anthropic"
+model = "claude-3-sonnet-20240229"
+weight = 0.3
+priority = 2
+enabled = true
+billing_mode = "PerToken"
+tags = ["premium"]
+
+[models.cost-effective]
+name = "cost-effective"
+enabled = true
+strategy = "WeightedRandom"
+
+[[models.cost-effective.backends]]
+provider = "local"
+model = "llama2-7b"
+weight = 0.8
+priority = 1
+enabled = true
+billing_mode = "PerRequest"
+tags = ["local"]
+
+[[models.cost-effective.backends]]
+provider = "openai"
+model = "gpt-3.5-turbo"
+weight = 0.2
+priority = 2
+enabled = true
+billing_mode = "PerToken"
+tags = ["fallback"]
+
+# User Configuration with different access levels
+[users.admin]
+token = "admin-token-here"
+enabled = true
+models = ["gpt-4-balanced", "cost-effective"]
+tags = ["premium", "local"]
+
+[users.basic_user]
+token = "basic-user-token-here"
+enabled = true
+models = ["cost-effective"]
+tags = ["local"]
+
+[users.premium_user]
+token = "premium-user-token-here"
+enabled = true
+models = ["gpt-4-balanced"]
+tags = ["premium"]

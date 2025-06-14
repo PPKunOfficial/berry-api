@@ -1,4 +1,4 @@
-use crate::config::model::{Config, Backend};
+use berry_core::{Config, Backend};
 use super::{LoadBalanceManager, HealthChecker, MetricsCollector};
 use super::selector::{RequestResult as SmartAiRequestResult, SmartAiErrorType};
 use anyhow::Result;
@@ -301,7 +301,7 @@ impl LoadBalanceService {
 
                 // 检查backend的计费模式
                 let config = self.manager.get_config();
-                let mut backend_billing_mode = crate::config::model::BillingMode::PerToken; // 默认值
+                let mut backend_billing_mode = berry_core::BillingMode::PerToken; // 默认值
                 let mut found_backend = false;
 
                 // 查找对应的backend配置
@@ -323,7 +323,7 @@ impl LoadBalanceService {
                 }
 
                 match backend_billing_mode {
-                    crate::config::model::BillingMode::PerToken => {
+                    berry_core::BillingMode::PerToken => {
                         // 按token计费：正常记录成功
                         self.manager.record_success(provider, model, latency);
                         debug!(
@@ -333,7 +333,7 @@ impl LoadBalanceService {
                             latency.as_millis()
                         );
                     }
-                    crate::config::model::BillingMode::PerRequest => {
+                    berry_core::BillingMode::PerRequest => {
                         // 按请求计费：检查是否在不健康列表中
                         if self.metrics.is_in_unhealthy_list(&backend_key) {
                             // 不健康的按请求计费backend：使用被动验证
@@ -367,7 +367,7 @@ impl LoadBalanceService {
 
                 // 对于按请求计费的backend，失败时需要初始化权重恢复状态
                 let config = self.manager.get_config();
-                let mut backend_billing_mode = crate::config::model::BillingMode::PerToken; // 默认值
+                let mut backend_billing_mode = berry_core::BillingMode::PerToken; // 默认值
                 let mut found_backend = false;
 
                 // 查找对应的backend配置
@@ -384,7 +384,7 @@ impl LoadBalanceService {
                     }
                 }
 
-                if found_backend && backend_billing_mode == crate::config::model::BillingMode::PerRequest {
+                if found_backend && backend_billing_mode == berry_core::BillingMode::PerRequest {
                     let backend_key = format!("{}:{}", provider, model);
                     let original_weight = self.get_backend_original_weight(provider, model).unwrap_or(1.0);
                     self.metrics.initialize_per_request_recovery(&backend_key, original_weight);
@@ -409,8 +409,8 @@ impl LoadBalanceService {
             is_running,
             health_summary,
             model_stats,
-            total_requests: 0, // 注意：这是旧版本，新版本在berry-loadbalance中已实现
-            successful_requests: 0, // 注意：这是旧版本，新版本在berry-loadbalance中已实现
+            total_requests: self.metrics.get_total_requests(),
+            successful_requests: self.metrics.get_successful_requests(),
         }
     }
 
@@ -462,9 +462,9 @@ impl LoadBalanceService {
     /// 通过模型名称查找模型（支持键名和显示名称）
     fn find_model_by_name<'a>(
         &self,
-        config: &'a crate::config::model::Config,
+        config: &'a berry_core::Config,
         model_name: &str,
-    ) -> Option<(String, &'a crate::config::model::ModelMapping)> {
+    ) -> Option<(String, &'a berry_core::Model)> {
         // 首先尝试直接通过键名查找
         if let Some(mapping) = config.models.get(model_name) {
             return Some((model_name.to_string(), mapping));
@@ -485,7 +485,7 @@ impl LoadBalanceService {
 #[derive(Debug, Clone)]
 pub struct SelectedBackend {
     pub backend: Backend,
-    pub provider: crate::config::model::Provider,
+    pub provider: berry_core::Provider,
     pub selection_time: Duration,
 }
 
@@ -537,6 +537,8 @@ impl ServiceHealth {
         self.is_running && self.health_summary.is_system_healthy()
     }
 
+
+
     /// 获取成功率
     pub fn success_rate(&self) -> f64 {
         if self.total_requests > 0 {
@@ -550,7 +552,7 @@ impl ServiceHealth {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::model::{Provider, ModelMapping, LoadBalanceStrategy, GlobalSettings, BillingMode};
+    use berry_core::{Provider, LoadBalanceStrategy, BillingMode, GlobalSettings};
     use std::collections::HashMap;
 
     fn create_test_config() -> Config {
@@ -564,11 +566,11 @@ mod tests {
             enabled: true,
             timeout_seconds: 30,
             max_retries: 3,
-            backend_type: crate::config::model::ProviderBackendType::OpenAI,
+            backend_type: berry_core::config::model::ProviderBackendType::OpenAI,
         });
 
         let mut models = HashMap::new();
-        models.insert("test-model".to_string(), ModelMapping {
+        models.insert("test-model".to_string(), berry_core::Model {
             name: "test-model".to_string(),
             backends: vec![Backend {
                 provider: "test-provider".to_string(),

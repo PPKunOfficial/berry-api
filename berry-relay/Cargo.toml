@@ -1,0 +1,29 @@
+[package]
+name = "berry-relay"
+version = "0.1.0"
+edition = "2021"
+description = "Request relay and client library for Berry API"
+
+[dependencies]
+berry-core = { path = "../berry-core" }
+berry-loadbalance = { path = "../berry-loadbalance" }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+axum = { workspace = true }
+axum-extra = { workspace = true }
+bytes = { workspace = true }
+chrono = { workspace = true }
+eventsource-stream = { workspace = true }
+futures = { workspace = true }
+headers = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+axum-test = { workspace = true }
