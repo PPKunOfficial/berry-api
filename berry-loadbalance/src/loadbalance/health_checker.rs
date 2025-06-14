@@ -1,6 +1,6 @@
 use berry_core::config::model::{Config, Provider, BillingMode};
 use berry_core::client::{ClientFactory, AIBackendClient, ChatCompletionConfig, ChatMessage, ChatRole};
-use super::MetricsCollector;
+use super::{MetricsCollector, selector::HealthCheckMethod};
 use anyhow::Result;
 use reqwest::Client;
 use std::sync::Arc;
@@ -388,7 +388,7 @@ impl HealthChecker {
                         let backend_key = format!("{}:{}", provider_id, model);
                         debug!("Marking backend {} as unhealthy (models API failed with status {})",
                                backend_key, status);
-                        metrics.record_failure(&backend_key);
+                        metrics.record_failure_with_method(&backend_key, HealthCheckMethod::ModelList);
                     }
                 }
             }
@@ -401,7 +401,7 @@ impl HealthChecker {
                 for model in &provider.models {
                     let backend_key = format!("{}:{}", provider_id, model);
                     debug!("Marking backend {} as unhealthy (API error: {})", backend_key, e);
-                    metrics.record_failure(&backend_key);
+                    metrics.record_failure_with_method(&backend_key, HealthCheckMethod::ModelList);
                 }
             }
         }
@@ -493,21 +493,38 @@ impl HealthChecker {
                             warn!("Backend configuration not found for {}:{}, using default per-token billing", provider_id, model_name);
                         }
 
-                        match backend_billing_mode {
-                            BillingMode::PerToken => {
-                                info!("Attempting chat recovery check for per-token backend {}:{}", provider_id, model_name);
+                        // 根据失败检查方式和计费模式选择恢复方式
+                        match (&unhealthy_backend.failure_check_method, backend_billing_mode) {
+                            (HealthCheckMethod::ModelList, BillingMode::PerToken) => {
+                                info!("Attempting model list recovery check for per-token backend {}:{} (originally failed via model list)", provider_id, model_name);
                                 debug!("Recording recovery attempt for backend: {}", unhealthy_backend.backend_key);
                                 self.metrics.record_recovery_attempt(&unhealthy_backend.backend_key);
 
-                                // 按token计费：使用chat请求进行恢复检查
+                                // 使用model list进行恢复检查，保持一致性
+                                self.check_recovery_with_model_list(provider_id, provider, model_name).await;
+                            }
+                            (HealthCheckMethod::Chat, BillingMode::PerToken) => {
+                                info!("Attempting chat recovery check for per-token backend {}:{} (originally failed via chat)", provider_id, model_name);
+                                debug!("Recording recovery attempt for backend: {}", unhealthy_backend.backend_key);
+                                self.metrics.record_recovery_attempt(&unhealthy_backend.backend_key);
+
+                                // 使用chat请求进行恢复检查
                                 self.check_recovery_with_chat(provider_id, provider, model_name).await;
                             }
-                            BillingMode::PerRequest => {
+                            (_, BillingMode::PerRequest) => {
                                 debug!("Skipping active recovery check for per-request backend {}:{} (relies on passive validation)",
                                        provider_id, model_name);
                                 // 按请求计费：跳过主动恢复检查，依赖被动验证
-                                // 只更新恢复尝试时间，不执行实际的chat请求
+                                // 只更新恢复尝试时间，不执行实际的检查请求
                                 self.metrics.record_recovery_attempt(&unhealthy_backend.backend_key);
+                            }
+                            (HealthCheckMethod::Network, BillingMode::PerToken) => {
+                                info!("Attempting network recovery check for per-token backend {}:{} (originally failed via network)", provider_id, model_name);
+                                debug!("Recording recovery attempt for backend: {}", unhealthy_backend.backend_key);
+                                self.metrics.record_recovery_attempt(&unhealthy_backend.backend_key);
+
+                                // 网络错误通常用model list检查恢复
+                                self.check_recovery_with_model_list(provider_id, provider, model_name).await;
                             }
                         }
                     } else {
@@ -630,7 +647,72 @@ impl HealthChecker {
         debug!("Completed recovery check for {}:{} in {}ms", provider_id, model_name, total_time.as_millis());
     }
 
+    /// 使用model list API检查provider恢复状态
+    async fn check_recovery_with_model_list(
+        &self,
+        provider_id: &str,
+        provider: &Provider,
+        model_name: &str,
+    ) {
+        let start_time = Instant::now();
+        debug!("Starting model list-based recovery check for {}:{}", provider_id, model_name);
 
+        // 根据provider的backend_type创建UnifiedClient
+        let timeout = Duration::from_secs(10);
+        let client = match ClientFactory::create_client_from_provider_type(
+            provider.backend_type.clone(),
+            provider.base_url.clone(),
+            timeout,
+        ) {
+            Ok(client) => client,
+            Err(e) => {
+                error!("Failed to create client for model list recovery check {}:{}: {}", provider_id, model_name, e);
+                return;
+            }
+        };
+
+        debug!("Created {} client for model list recovery check to {}:{}",
+               client.backend_type().to_string(), provider_id, model_name);
+
+        // 发送models API请求
+        match client.models(&provider.api_key).await {
+            Ok(response) => {
+                let latency = start_time.elapsed();
+                let backend_key = format!("{}:{}", provider_id, model_name);
+                let status = response.status_code;
+
+                debug!("Received models API response for recovery check: status={}, latency={}ms",
+                       status, latency.as_millis());
+
+                if response.is_success {
+                    info!("Model list recovery check passed for {}:{} ({}ms)", provider_id, model_name, latency.as_millis());
+                    debug!("Marking backend {} as recovered and healthy", backend_key);
+
+                    // 恢复成功，标记为健康
+                    self.metrics.record_latency(&backend_key, latency);
+                    self.metrics.record_success(&backend_key);
+                    self.metrics.update_health_check(&backend_key);
+
+                    debug!("Successfully restored backend {} to healthy state via model list check", backend_key);
+                } else {
+                    warn!("Model list recovery check failed for {}:{} with status: {}", provider_id, model_name, status);
+                    debug!("Backend {} remains unhealthy after model list recovery attempt", backend_key);
+                    // 保持不健康状态，记录失败但保持原有的检查方式
+                    self.metrics.record_failure_with_method(&backend_key, HealthCheckMethod::ModelList);
+                }
+            }
+            Err(e) => {
+                error!("Model list recovery check error for {}:{}: {}", provider_id, model_name, e);
+                debug!("Network/API error during model list recovery check for {}:{}: {}", provider_id, model_name, e);
+                let backend_key = format!("{}:{}", provider_id, model_name);
+                // 保持不健康状态，记录失败
+                self.metrics.record_failure_with_method(&backend_key, HealthCheckMethod::ModelList);
+            }
+        }
+
+        let total_time = start_time.elapsed();
+        debug!("Completed model list recovery check for {}:{} in {}ms", provider_id, model_name, total_time.as_millis());
+    }
 
     /// 获取健康检查统计信息
     pub fn get_health_summary(&self) -> HealthSummary {

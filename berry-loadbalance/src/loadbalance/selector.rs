@@ -64,6 +64,17 @@ pub struct MetricsCollector {
     request_counts: Arc<std::sync::RwLock<HashMap<String, u64>>>,
 }
 
+/// 健康检查方式
+#[derive(Debug, Clone, PartialEq)]
+pub enum HealthCheckMethod {
+    /// 使用model list API检查
+    ModelList,
+    /// 使用chat请求检查
+    Chat,
+    /// 网络连接检查
+    Network,
+}
+
 /// 不健康后端信息
 #[derive(Debug, Clone)]
 pub struct UnhealthyBackend {
@@ -73,6 +84,8 @@ pub struct UnhealthyBackend {
     pub failure_count: u32,
     pub last_recovery_attempt: Option<Instant>,
     pub recovery_attempts: u32,
+    /// 记录导致不健康的检查方式，用于恢复时保持一致性
+    pub failure_check_method: HealthCheckMethod,
 }
 
 /// 权重恢复状态
@@ -170,8 +183,13 @@ impl MetricsCollector {
 
     /// 记录请求失败
     pub fn record_failure(&self, backend_key: &str) {
+        self.record_failure_with_method(backend_key, HealthCheckMethod::Network);
+    }
+
+    /// 记录请求失败（带检查方式）
+    pub fn record_failure_with_method(&self, backend_key: &str, check_method: HealthCheckMethod) {
         let now = Instant::now();
-        tracing::debug!("Recording failure for backend: {}", backend_key);
+        tracing::debug!("Recording failure for backend: {} with method: {:?}", backend_key, check_method);
 
         // 增加总请求计数
         self.total_requests.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -199,14 +217,17 @@ impl MetricsCollector {
                 Some(backend) => {
                     backend.last_failure_time = now;
                     backend.failure_count += 1;
+                    // 更新检查方式（使用最新的失败检查方式）
+                    backend.failure_check_method = check_method;
                     tracing::debug!(
-                        "Updated existing unhealthy backend {}: failure_count={}",
+                        "Updated existing unhealthy backend {}: failure_count={}, check_method={:?}",
                         backend_key,
-                        backend.failure_count
+                        backend.failure_count,
+                        backend.failure_check_method
                     );
                 }
                 None => {
-                    tracing::debug!("Adding new backend {} to unhealthy list", backend_key);
+                    tracing::debug!("Adding new backend {} to unhealthy list with method: {:?}", backend_key, check_method);
                     unhealthy.insert(
                         backend_key.to_string(),
                         UnhealthyBackend {
@@ -216,6 +237,7 @@ impl MetricsCollector {
                             failure_count: 1,
                             last_recovery_attempt: None,
                             recovery_attempts: 0,
+                            failure_check_method: check_method,
                         },
                     );
                 }
