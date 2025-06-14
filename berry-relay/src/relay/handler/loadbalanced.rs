@@ -10,7 +10,7 @@ use std::time::Instant;
 use berry_loadbalance::{LoadBalanceService, RequestResult};
 use crate::relay::client::{ClientFactory, UnifiedClient, AIBackendClient};
 
-use super::types::{create_service_unavailable_response, create_internal_error_response, create_gateway_timeout_response, ErrorType, create_error_response};
+use super::types::{ErrorHandler, ErrorRecorder, RetryErrorHandler, ResponseBodyHandler, ErrorType, create_error_response};
 
 /// 负载均衡的OpenAI兼容处理器
 pub struct LoadBalancedHandler {
@@ -84,39 +84,8 @@ impl LoadBalancedHandler {
                     e
                 );
 
-                // 创建更详细的错误响应，使用正确的HTTP状态码
-                let error_str = e.to_string();
-                if error_str.contains("Backend selection failed after") || error_str.contains("no available backends") {
-                    // 服务不可用 - 503
-                    create_service_unavailable_response(
-                        &format!("Service temporarily unavailable for model '{}'", model_name),
-                        Some(format!("All backends are currently unhealthy or unavailable. Details: {}", e)),
-                    ).into_response()
-                } else if error_str.contains("Failed to select backend") {
-                    // 服务不可用 - 503
-                    create_service_unavailable_response(
-                        &format!("No available backends for model '{}'", model_name),
-                        Some(format!("Backend selection failed. Please try again later. Details: {}", e)),
-                    ).into_response()
-                } else if error_str.contains("timeout") || error_str.contains("timed out") {
-                    // 网关超时 - 504
-                    create_gateway_timeout_response(
-                        &format!("Request timeout for model '{}'", model_name),
-                        Some(format!("Request processing timed out after multiple attempts. Details: {}", e)),
-                    ).into_response()
-                } else if error_str.contains("API key") || error_str.contains("configuration error") {
-                    // 内部服务器错误 - 500
-                    create_internal_error_response(
-                        &format!("Configuration error for model '{}'", model_name),
-                        Some("Please contact system administrator to check backend configuration".to_string()),
-                    ).into_response()
-                } else {
-                    // 通用内部服务器错误 - 500
-                    create_internal_error_response(
-                        &format!("Request processing failed for model '{}'", model_name),
-                        Some(format!("Request failed after multiple attempts. If the problem persists, contact support. Details: {}", e)),
-                    ).into_response()
-                }
+                // 使用统一的错误处理器
+                ErrorHandler::from_anyhow_error(&e, Some(&format!("Request processing failed for model '{}'", model_name))).into_response()
             }
         }
     }
@@ -217,24 +186,23 @@ impl LoadBalancedHandler {
             let api_key = match selected_backend.get_api_key() {
                 Ok(key) => key,
                 Err(e) => {
-                    self.load_balancer
-                        .record_request_result(
-                            &selected_backend.backend.provider,
-                            &selected_backend.backend.model,
-                            RequestResult::Failure {
-                                error: e.to_string(),
-                            },
-                        )
-                        .await;
+                    // 使用统一的错误记录器
+                    ErrorRecorder::record_request_failure(
+                        &self.load_balancer,
+                        &selected_backend.backend.provider,
+                        &selected_backend.backend.model,
+                        &anyhow::anyhow!("{}", e),
+                    ).await;
 
-                    if attempt == max_retries - 1 {
-                        return Err(anyhow::anyhow!(
-                            "API key configuration error for model '{}': {}. Please check provider configuration.",
-                            model_name,
-                            e
-                        ));
+                    // 使用统一的重试错误处理器
+                    if let Err(final_error) = RetryErrorHandler::handle_retry_error(
+                        attempt,
+                        max_retries,
+                        &anyhow::anyhow!("{}", e),
+                        &format!("API key configuration error for model '{}'", model_name),
+                    ) {
+                        return Err(final_error);
                     }
-                    tracing::warn!("API key error on attempt {}, retrying: {}", attempt + 1, e);
                     continue;
                 }
             };
@@ -249,28 +217,23 @@ impl LoadBalancedHandler {
             ) {
                 Ok(c) => c,
                 Err(e) => {
-                    self.load_balancer
-                        .record_request_result(
-                            &selected_backend.backend.provider,
-                            &selected_backend.backend.model,
-                            RequestResult::Failure {
-                                error: e.to_string(),
-                            },
-                        )
-                        .await;
+                    // 使用统一的错误记录器
+                    ErrorRecorder::record_request_failure(
+                        &self.load_balancer,
+                        &selected_backend.backend.provider,
+                        &selected_backend.backend.model,
+                        &anyhow::anyhow!("{}", e),
+                    ).await;
 
-                    if attempt == max_retries - 1 {
-                        return Err(anyhow::anyhow!(
-                            "Failed to create client for model '{}': {}. Please check provider configuration.",
-                            model_name,
-                            e
-                        ));
+                    // 使用统一的重试错误处理器
+                    if let Err(final_error) = RetryErrorHandler::handle_retry_error(
+                        attempt,
+                        max_retries,
+                        &anyhow::anyhow!("{}", e),
+                        &format!("Failed to create client for model '{}'", model_name),
+                    ) {
+                        return Err(final_error);
                     }
-                    tracing::warn!(
-                        "Client creation error on attempt {}, retrying: {}",
-                        attempt + 1,
-                        e
-                    );
                     continue;
                 }
             };
@@ -442,19 +405,22 @@ impl LoadBalancedHandler {
 
         // 检查HTTP状态
         if !response.status().is_success() {
-            let status = response.status();
-            tracing::debug!("Streaming request failed with status: {}", status);
-            // 记录失败但不在这里处理，让重试机制处理
-            self.load_balancer
-                .record_request_result(
-                    provider,
-                    model,
-                    RequestResult::Failure {
-                        error: format!("HTTP {}", status),
-                    },
-                )
-                .await;
-            return Err(anyhow::anyhow!("HTTP error: {}", status));
+            // 使用统一的响应体处理器
+            let (status, error_body) = ResponseBodyHandler::read_and_log_error_body(
+                response,
+                "Streaming request"
+            ).await;
+
+            // 使用统一的错误记录器
+            ErrorRecorder::record_http_failure(
+                &self.load_balancer,
+                provider,
+                model,
+                status,
+                &error_body,
+            ).await;
+
+            return Err(anyhow::anyhow!("HTTP error {}: {}", status, error_body));
         }
 
         // 成功情况 - 创建流式响应
@@ -620,20 +586,22 @@ impl LoadBalancedHandler {
                 }
             }
         } else {
-            // 记录失败
-            let status = response.status().as_u16();
-            self.load_balancer
-                .record_request_result(
-                    provider,
-                    model,
-                    RequestResult::Failure {
-                        error: format!("HTTP {}", status),
-                    },
-                )
-                .await;
+            // 使用统一的响应体处理器
+            let (status, error_body) = ResponseBodyHandler::read_and_log_error_body(
+                response,
+                "Non-streaming request"
+            ).await;
 
-            tracing::debug!("Non-streaming request failed with status: {}", status);
-            Err(anyhow::anyhow!("HTTP error: {}", status))
+            // 使用统一的错误记录器
+            ErrorRecorder::record_http_failure(
+                &self.load_balancer,
+                provider,
+                model,
+                status,
+                &error_body,
+            ).await;
+
+            Err(anyhow::anyhow!("HTTP error {}: {}", status, error_body))
         }
     }
 
@@ -712,20 +680,22 @@ impl LoadBalancedHandler {
                     }
                 }
             } else {
-                // 记录失败
-                let status = response.status().as_u16();
-                load_balancer_clone
-                    .record_request_result(
-                        &provider_clone,
-                        &model_clone,
-                        RequestResult::Failure {
-                            error: format!("HTTP {}", status),
-                        },
-                    )
-                    .await;
+                // 使用统一的响应体处理器
+                let (status, error_body) = ResponseBodyHandler::read_and_log_error_body(
+                    response,
+                    "Non-streaming request"
+                ).await;
 
-                tracing::debug!("Non-streaming request failed with status: {}", status);
-                let _ = result_tx.send(Err(anyhow::anyhow!("HTTP error: {}", status))).await;
+                // 使用统一的错误记录器
+                ErrorRecorder::record_http_failure(
+                    &load_balancer_clone,
+                    &provider_clone,
+                    &model_clone,
+                    status,
+                    &error_body,
+                ).await;
+
+                let _ = result_tx.send(Err(anyhow::anyhow!("HTTP error {}: {}", status, error_body))).await;
             }
         });
 
@@ -836,5 +806,47 @@ impl LoadBalancedHandler {
             "object": "list",
             "data": model_list
         }))
+    }
+
+
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+
+
+    #[test]
+    fn test_error_handler_from_anyhow() {
+        // 测试从anyhow错误创建响应
+        let error = anyhow::anyhow!("HTTP error 400: Invalid request format");
+        let response = ErrorHandler::from_anyhow_error(&error, Some("Test context"));
+
+        // 确保函数不会panic
+        let _response = response.into_response();
+    }
+
+    #[test]
+    fn test_error_handler_from_http() {
+        // 测试从HTTP错误创建响应
+        let response_body = r#"{"error":{"message":"Rate limit exceeded"}}"#;
+        let response = ErrorHandler::from_http_error(429, response_body, Some("Test context"));
+
+        // 确保函数不会panic
+        let _response = response.into_response();
+    }
+
+    #[test]
+    fn test_error_handler_business_error() {
+        // 测试业务错误
+        let response = ErrorHandler::business_error(
+            ErrorType::BadRequest,
+            "Invalid input",
+            Some("Details about the error".to_string())
+        );
+
+        // 确保函数不会panic
+        let _response = response.into_response();
     }
 }
