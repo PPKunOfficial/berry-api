@@ -21,6 +21,7 @@
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - 详细的系统架构说明
 - **[IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)** - 项目核心功能和架构概述
 - **[FINAL_IMPLEMENTATION.md](FINAL_IMPLEMENTATION.md)** - 完整功能实现总结
+- **[OPTIMIZATION_RECOMMENDATIONS.md](OPTIMIZATION_RECOMMENDATIONS.md)** - 🔧 **项目优化建议和实施方案**
 
 ### 🔧 开发相关
 - **[api/examples/](api/examples/)** - 代码示例和演示程序
@@ -134,6 +135,8 @@
 5. **API如何调用？** → 查看 [API_REFERENCE.md](API_REFERENCE.md)
 6. **遇到错误怎么办？** → 查看 [USAGE_GUIDE.md](USAGE_GUIDE.md#故障排除)
 7. **系统架构是什么？** → 查看 [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md#系统架构) 或 [ARCHITECTURE.md](ARCHITECTURE.md)
+8. **如何优化性能？** → 🔧 **查看 [OPTIMIZATION_RECOMMENDATIONS.md](OPTIMIZATION_RECOMMENDATIONS.md)**
+9. **如何提高安全性？** → 查看 [OPTIMIZATION_RECOMMENDATIONS.md](OPTIMIZATION_RECOMMENDATIONS.md#安全性增强)
 
 ---
 

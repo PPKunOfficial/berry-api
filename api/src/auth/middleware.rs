@@ -126,7 +126,7 @@ pub fn validate_request_token<'a>(config: &'a Config, token: &str) -> Result<&'a
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::model::{UserToken, RateLimit};
+    use crate::config::model::{UserToken, RateLimit, ModelMapping, Backend, BillingMode, LoadBalanceStrategy};
     use std::collections::HashMap;
 
     fn create_test_config() -> Config {
@@ -134,7 +134,7 @@ mod tests {
         users.insert("test-user".to_string(), UserToken {
             name: "Test User".to_string(),
             token: "test-token-123".to_string(),
-            allowed_models: vec!["gpt-4".to_string()],
+            allowed_models: vec!["gpt-4-model".to_string()], // 使用模型ID而不是模型名称
             enabled: true,
             rate_limit: Some(RateLimit {
                 requests_per_minute: 60,
@@ -153,9 +153,41 @@ mod tests {
             tags: vec!["admin".to_string()],
         });
 
+        // 创建测试模型配置
+        let mut models = HashMap::new();
+        models.insert("gpt-4-model".to_string(), ModelMapping {
+            name: "gpt-4".to_string(), // 面向客户的模型名称
+            backends: vec![Backend {
+                provider: "test-provider".to_string(),
+                model: "gpt-4".to_string(),
+                weight: 1.0,
+                priority: 1,
+                enabled: true,
+                tags: vec![],
+                billing_mode: BillingMode::PerToken,
+            }],
+            strategy: LoadBalanceStrategy::WeightedRandom,
+            enabled: true,
+        });
+
+        models.insert("gpt-3.5-model".to_string(), ModelMapping {
+            name: "gpt-3.5-turbo".to_string(), // 面向客户的模型名称
+            backends: vec![Backend {
+                provider: "test-provider".to_string(),
+                model: "gpt-3.5-turbo".to_string(),
+                weight: 1.0,
+                priority: 1,
+                enabled: true,
+                tags: vec![],
+                billing_mode: BillingMode::PerToken,
+            }],
+            strategy: LoadBalanceStrategy::WeightedRandom,
+            enabled: true,
+        });
+
         Config {
             providers: HashMap::new(),
-            models: HashMap::new(),
+            models,
             users,
             settings: Default::default(),
         }
