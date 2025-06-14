@@ -33,6 +33,23 @@ pub async fn chat_completions(
         }
     };
 
+    // 检查速率限制
+    if let Some(rate_limit) = &user.rate_limit {
+        if let Err(e) = state.rate_limiter.check_rate_limit(token, rate_limit).await {
+            return (
+                axum::http::StatusCode::TOO_MANY_REQUESTS,
+                Json(json!({
+                    "error": {
+                        "type": "rate_limit_exceeded",
+                        "message": format!("Rate limit exceeded: {}", e),
+                        "code": 429
+                    }
+                })),
+            )
+                .into_response();
+        }
+    }
+
     // 检查模型访问权限
     if let Some(model_name) = body.get("model").and_then(|m| m.as_str()) {
         if !state.config.user_can_access_model(user, model_name) {
@@ -50,14 +67,16 @@ pub async fn chat_completions(
         }
     }
 
-    // 继续处理请求
+    // 继续处理请求（传递用户标签）
+    let user_tags = if user.tags.is_empty() { None } else { Some(user.tags.as_slice()) };
     state
         .handler
         .clone()
-        .handle_completions(
+        .handle_completions_with_user_tags(
             TypedHeader(authorization),
             TypedHeader(content_type),
             Json(body),
+            user_tags,
         )
         .await
 }

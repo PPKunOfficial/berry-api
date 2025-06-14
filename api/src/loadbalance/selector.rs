@@ -664,28 +664,58 @@ impl BackendSelector {
             .cloned()
             .collect();
 
-        if enabled_backends.is_empty() {
+        self.select_with_user_filter(&enabled_backends, None)
+    }
+
+    /// 根据用户标签过滤后端并选择
+    pub fn select_with_user_tags(&self, user_tags: &[String]) -> Result<Backend> {
+        let enabled_backends: Vec<Backend> = self
+            .mapping
+            .backends
+            .iter()
+            .filter(|b| b.enabled)
+            .cloned()
+            .collect();
+
+        self.select_with_user_filter(&enabled_backends, Some(user_tags))
+    }
+
+    /// 内部选择方法，支持用户标签过滤
+    fn select_with_user_filter(&self, enabled_backends: &[Backend], user_tags: Option<&[String]>) -> Result<Backend> {
+        // 根据用户标签过滤后端
+        let filtered_backends = if let Some(tags) = user_tags {
+            self.filter_backends_by_tags(enabled_backends, tags)
+        } else {
+            enabled_backends.to_vec()
+        };
+
+        if filtered_backends.is_empty() {
+            let error_msg = if user_tags.is_some() {
+                "No backends available matching user tags"
+            } else {
+                "No enabled backends available"
+            };
             return Err(self.create_detailed_error(
-                "No enabled backends available",
+                error_msg,
                 &self.mapping.backends,
                 &[],
             ).into());
         }
 
         let result = match self.mapping.strategy {
-            LoadBalanceStrategy::WeightedRandom => self.select_weighted_random(&enabled_backends),
-            LoadBalanceStrategy::RoundRobin => self.select_round_robin(&enabled_backends),
-            LoadBalanceStrategy::LeastLatency => self.select_least_latency(&enabled_backends),
-            LoadBalanceStrategy::Failover => self.select_failover(&enabled_backends),
-            LoadBalanceStrategy::Random => self.select_random(&enabled_backends),
+            LoadBalanceStrategy::WeightedRandom => self.select_weighted_random(&filtered_backends),
+            LoadBalanceStrategy::RoundRobin => self.select_round_robin(&filtered_backends),
+            LoadBalanceStrategy::LeastLatency => self.select_least_latency(&filtered_backends),
+            LoadBalanceStrategy::Failover => self.select_failover(&filtered_backends),
+            LoadBalanceStrategy::Random => self.select_random(&filtered_backends),
             LoadBalanceStrategy::WeightedFailover => {
-                self.select_weighted_failover(&enabled_backends)
+                self.select_weighted_failover(&filtered_backends)
             }
             LoadBalanceStrategy::SmartWeightedFailover => {
-                self.select_smart_weighted_failover(&enabled_backends)
+                self.select_smart_weighted_failover(&filtered_backends)
             }
             LoadBalanceStrategy::SmartAi => {
-                self.select_smart_ai(&enabled_backends)
+                self.select_smart_ai(&filtered_backends)
             }
         };
 
@@ -700,6 +730,28 @@ impl BackendSelector {
         }
 
         result
+    }
+
+    /// 根据用户标签过滤后端
+    fn filter_backends_by_tags(&self, backends: &[Backend], user_tags: &[String]) -> Vec<Backend> {
+        // 如果用户没有标签，返回所有后端
+        if user_tags.is_empty() {
+            return backends.to_vec();
+        }
+
+        // 过滤出与用户标签匹配的后端
+        backends.iter()
+            .filter(|backend| {
+                // 如果后端没有标签，允许所有用户访问
+                if backend.tags.is_empty() {
+                    return true;
+                }
+
+                // 检查是否有共同标签
+                backend.tags.iter().any(|backend_tag| user_tags.contains(backend_tag))
+            })
+            .cloned()
+            .collect()
     }
 
     fn select_weighted_random(&self, backends: &[Backend]) -> Result<Backend> {

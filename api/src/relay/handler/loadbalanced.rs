@@ -29,7 +29,25 @@ impl LoadBalancedHandler {
             headers::Authorization<headers::authorization::Bearer>,
         >,
         TypedHeader(content_type): TypedHeader<headers::ContentType>,
+        Json(body): Json<Value>,
+    ) -> axum::response::Response {
+        self.handle_completions_with_user_tags(
+            TypedHeader(authorization),
+            TypedHeader(content_type),
+            Json(body),
+            None,
+        ).await
+    }
+
+    /// 处理聊天完成请求（支持用户标签过滤）
+    pub async fn handle_completions_with_user_tags(
+        self: Arc<Self>,
+        TypedHeader(authorization): TypedHeader<
+            headers::Authorization<headers::authorization::Bearer>,
+        >,
+        TypedHeader(content_type): TypedHeader<headers::ContentType>,
         Json(mut body): Json<Value>,
+        user_tags: Option<&[String]>,
     ) -> axum::response::Response {
         let start_time = Instant::now();
 
@@ -54,6 +72,7 @@ impl LoadBalancedHandler {
                 &authorization,
                 &content_type,
                 start_time,
+                user_tags,
             )
             .await
         {
@@ -110,6 +129,7 @@ impl LoadBalancedHandler {
         authorization: &headers::Authorization<headers::authorization::Bearer>,
         content_type: &headers::ContentType,
         start_time: Instant,
+        user_tags: Option<&[String]>,
     ) -> Result<axum::response::Response, anyhow::Error> {
         let max_retries = 3; // 可以从配置中读取
         let original_model = model_name.to_string();
@@ -152,8 +172,8 @@ impl LoadBalancedHandler {
                     }
                 }
             } else {
-                // 使用负载均衡器选择后端
-                match self.load_balancer.select_backend(model_name).await {
+                // 使用负载均衡器选择后端（考虑用户标签）
+                match self.load_balancer.select_backend_with_user_tags(model_name, user_tags).await {
                     Ok(backend) => backend,
                     Err(e) => {
                         if attempt == max_retries - 1 {

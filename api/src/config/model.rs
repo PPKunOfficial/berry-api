@@ -477,6 +477,49 @@ impl Config {
         self.users.get(user_id)
     }
 
+    /// 检查用户是否有指定标签
+    pub fn user_has_tag(&self, user: &UserToken, tag: &str) -> bool {
+        user.tags.contains(&tag.to_string())
+    }
+
+    /// 根据用户标签过滤后端
+    pub fn filter_backends_by_user_tags(&self, backends: &[Backend], user: &UserToken) -> Vec<Backend> {
+        // 如果用户没有标签，返回所有后端
+        if user.tags.is_empty() {
+            return backends.to_vec();
+        }
+
+        // 过滤出与用户标签匹配的后端
+        backends.iter()
+            .filter(|backend| {
+                // 如果后端没有标签，允许所有用户访问
+                if backend.tags.is_empty() {
+                    return true;
+                }
+
+                // 检查是否有共同标签
+                backend.tags.iter().any(|backend_tag| user.tags.contains(backend_tag))
+            })
+            .cloned()
+            .collect()
+    }
+
+    /// 获取具有指定标签的用户列表
+    pub fn get_users_with_tag(&self, tag: &str) -> Vec<&UserToken> {
+        self.users.values()
+            .filter(|user| user.tags.contains(&tag.to_string()))
+            .collect()
+    }
+
+    /// 获取具有指定标签的后端列表
+    pub fn get_backends_with_tag(&self, model_name: &str, tag: &str) -> Option<Vec<&Backend>> {
+        self.models.get(model_name).map(|model| {
+            model.backends.iter()
+                .filter(|backend| backend.tags.contains(&tag.to_string()))
+                .collect()
+        })
+    }
+
     /// 获取用户可访问的模型列表
     pub fn get_user_available_models(&self, user: &UserToken) -> Vec<String> {
         if user.allowed_models.is_empty() {

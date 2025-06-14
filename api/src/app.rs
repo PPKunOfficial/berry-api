@@ -2,6 +2,7 @@ use crate::config::loader::load_config;
 use crate::loadbalance::LoadBalanceService;
 use crate::relay::handler::LoadBalancedHandler;
 use crate::router::router::create_app_router;
+use crate::auth::rate_limit::RateLimitService;
 
 use anyhow::Result;
 use axum::Router;
@@ -15,6 +16,7 @@ pub struct AppState {
     pub load_balancer: Arc<LoadBalanceService>,
     pub handler: Arc<LoadBalancedHandler>,
     pub config: Arc<crate::config::model::Config>,
+    pub rate_limiter: Arc<RateLimitService>,
 }
 
 impl AppState {
@@ -34,10 +36,14 @@ impl AppState {
         // 创建负载均衡处理器
         let handler = Arc::new(LoadBalancedHandler::new(load_balancer.clone()));
 
+        // 创建速率限制服务
+        let rate_limiter = Arc::new(RateLimitService::new());
+
         Ok(Self {
             load_balancer,
             handler,
             config: Arc::new(config),
+            rate_limiter,
         })
     }
 

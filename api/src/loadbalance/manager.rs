@@ -48,15 +48,28 @@ impl LoadBalanceManager {
 
     /// 为指定模型选择后端
     pub async fn select_backend(&self, model_name: &str) -> Result<Backend> {
+        self.select_backend_with_user_tags(model_name, None).await
+    }
+
+    /// 为指定模型选择后端（支持用户标签过滤）
+    pub async fn select_backend_with_user_tags(&self, model_name: &str, user_tags: Option<&[String]>) -> Result<Backend> {
         // 首先尝试通过模型ID查找
         if let Some(selector) = self.selectors.read().await.get(model_name) {
-            return selector.select();
+            return if let Some(tags) = user_tags {
+                selector.select_with_user_tags(tags)
+            } else {
+                selector.select()
+            };
         }
 
         // 如果没找到，尝试通过模型的真实名称查找
         for (_, selector) in self.selectors.read().await.iter() {
             if selector.get_model_name() == model_name {
-                return selector.select();
+                return if let Some(tags) = user_tags {
+                    selector.select_with_user_tags(tags)
+                } else {
+                    selector.select()
+                };
             }
         }
 

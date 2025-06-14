@@ -142,6 +142,11 @@ impl LoadBalanceService {
 
     /// 为指定模型选择后端（带智能重试）
     pub async fn select_backend(&self, model_name: &str) -> Result<SelectedBackend> {
+        self.select_backend_with_user_tags(model_name, None).await
+    }
+
+    /// 为指定模型选择后端（支持用户标签过滤）
+    pub async fn select_backend_with_user_tags(&self, model_name: &str, user_tags: Option<&[String]>) -> Result<SelectedBackend> {
         let start_time = Instant::now();
         let max_retries = self.manager.get_config().settings.max_internal_retries;
 
@@ -150,7 +155,7 @@ impl LoadBalanceService {
         for attempt in 0..=max_retries {
             debug!("Backend selection attempt {} for model '{}'", attempt + 1, model_name);
 
-            match self.manager.select_backend(model_name).await {
+            match self.manager.select_backend_with_user_tags(model_name, user_tags).await {
                 Ok(backend) => {
                     debug!("Load balancer selected backend: {}:{}", backend.provider, backend.model);
 

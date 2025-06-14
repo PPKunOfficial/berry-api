@@ -632,7 +632,7 @@ impl HealthChecker {
 }
 
 /// 健康检查摘要
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct HealthSummary {
     pub total_providers: usize,
     pub healthy_providers: usize,
