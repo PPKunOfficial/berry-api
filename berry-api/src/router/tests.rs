@@ -36,7 +36,7 @@ mod tests {
         let mut users = HashMap::new();
         users.insert("test-user".to_string(), UserToken {
             name: "Test User".to_string(),
-            token: "test-token-123".to_string(),
+            token: "test-token-123456789".to_string(), // 增加长度到16+字符
             allowed_models: vec!["test-model".to_string()],
             enabled: true,
             rate_limit: Some(RateLimit {
@@ -49,7 +49,7 @@ mod tests {
 
         users.insert("admin-user".to_string(), UserToken {
             name: "Admin User".to_string(),
-            token: "admin-token-456".to_string(),
+            token: "admin-token-456789012".to_string(), // 增加长度到16+字符
             allowed_models: vec![], // 允许所有模型
             enabled: true,
             rate_limit: None,
@@ -94,13 +94,13 @@ mod tests {
 
         let test_user = config.users.get("test-user").unwrap();
         assert_eq!(test_user.name, "Test User");
-        assert_eq!(test_user.token, "test-token-123");
+        assert_eq!(test_user.token, "test-token-123456789");
         assert!(test_user.enabled);
         assert_eq!(test_user.allowed_models.len(), 1);
 
         let admin_user = config.users.get("admin-user").unwrap();
         assert_eq!(admin_user.name, "Admin User");
-        assert_eq!(admin_user.token, "admin-token-456");
+        assert_eq!(admin_user.token, "admin-token-456789012");
         assert!(admin_user.enabled);
         assert!(admin_user.allowed_models.is_empty()); // 管理员允许所有模型
     }

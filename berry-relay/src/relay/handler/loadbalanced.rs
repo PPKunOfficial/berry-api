@@ -242,10 +242,33 @@ impl LoadBalancedHandler {
             let headers = match client.build_request_headers(&authorization, &content_type) {
                 Ok(mut h) => {
                     // 使用选中后端的API密钥
-                    h.insert(
-                        "Authorization",
-                        format!("Bearer {}", api_key).parse().unwrap(),
-                    );
+                    match format!("Bearer {}", api_key).parse() {
+                        Ok(auth_value) => {
+                            h.insert("Authorization", auth_value);
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to parse authorization header for backend {}: {}",
+                                selected_backend.backend.provider, e);
+
+                            // 记录错误并继续重试
+                            ErrorRecorder::record_request_failure(
+                                &self.load_balancer,
+                                &selected_backend.backend.provider,
+                                &selected_backend.backend.model,
+                                &anyhow::anyhow!("Authorization header parse error: {}", e),
+                            ).await;
+
+                            if let Err(final_error) = RetryErrorHandler::handle_retry_error(
+                                attempt,
+                                max_retries,
+                                &anyhow::anyhow!("Authorization header parse error: {}", e),
+                                &format!("Authorization header configuration error for model '{}'", model_name),
+                            ) {
+                                return Err(final_error);
+                            }
+                            continue;
+                        }
+                    }
 
                     // 添加自定义头部
                     for (key, value) in selected_backend.get_headers() {

@@ -229,10 +229,14 @@ impl GeminiClient {
             .unwrap_or("");
 
         // 构建OpenAI格式的响应
+        let now = std::time::SystemTime::now();
+        let timestamp = now.duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| ClientError::HeaderParseError(format!("System time error: {}", e)))?;
+
         let openai_response = json!({
-            "id": format!("chatcmpl-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()),
+            "id": format!("chatcmpl-{}", timestamp.as_nanos()),
             "object": "chat.completion",
-            "created": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+            "created": timestamp.as_secs(),
             "model": "gemini-pro", // 默认模型名
             "choices": [{
                 "index": 0,

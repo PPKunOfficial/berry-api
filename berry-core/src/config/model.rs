@@ -340,73 +340,271 @@ impl Config {
     pub fn validate(&self) -> Result<()> {
         // 验证providers
         for (provider_id, provider) in &self.providers {
-            if provider.name.is_empty() {
-                anyhow::bail!("Provider '{}' has empty name", provider_id);
-            }
-            if provider.base_url.is_empty() {
-                anyhow::bail!("Provider '{}' has empty base_url", provider_id);
-            }
-            if provider.api_key.is_empty() {
-                anyhow::bail!("Provider '{}' has empty api_key", provider_id);
-            }
-            if provider.models.is_empty() {
-                anyhow::bail!("Provider '{}' has no models defined", provider_id);
-            }
+            self.validate_provider_config(provider_id, provider)?;
         }
 
         // 验证models
         for (model_id, model) in &self.models {
-            if model.name.is_empty() {
-                anyhow::bail!("Model '{}' has empty name", model_id);
-            }
-            if model.backends.is_empty() {
-                anyhow::bail!("Model '{}' has no backends defined", model_id);
-            }
-
-            // 验证backends
-            for backend in &model.backends {
-                if !self.providers.contains_key(&backend.provider) {
-                    anyhow::bail!(
-                        "Model '{}' references unknown provider '{}'",
-                        model_id, backend.provider
-                    );
-                }
-
-                let provider = &self.providers[&backend.provider];
-                if !provider.models.contains(&backend.model) {
-                    anyhow::bail!(
-                        "Model '{}' backend references model '{}' not available in provider '{}'",
-                        model_id, backend.model, backend.provider
-                    );
-                }
-
-                if backend.weight <= 0.0 {
-                    anyhow::bail!(
-                        "Model '{}' backend has invalid weight: {}",
-                        model_id, backend.weight
-                    );
-                }
-            }
+            self.validate_model_config(model_id, model)?;
         }
 
         // 验证用户令牌
         for (user_id, user) in &self.users {
-            if user.name.is_empty() {
-                anyhow::bail!("User '{}' has empty name", user_id);
+            self.validate_user_config(user_id, user)?;
+        }
+
+        Ok(())
+    }
+
+    /// 验证单个Provider配置的有效性
+    fn validate_provider_config(&self, provider_id: &str, provider: &Provider) -> Result<()> {
+        // 基本字段验证
+        if provider.name.is_empty() {
+            anyhow::bail!("Provider '{}' has empty name", provider_id);
+        }
+
+        if provider.base_url.is_empty() {
+            anyhow::bail!("Provider '{}' has empty base_url", provider_id);
+        }
+
+        if provider.api_key.is_empty() {
+            anyhow::bail!("Provider '{}' has empty api_key", provider_id);
+        }
+
+        if provider.models.is_empty() {
+            anyhow::bail!("Provider '{}' has no models defined", provider_id);
+        }
+
+        // URL格式验证
+        if !provider.base_url.starts_with("http://") && !provider.base_url.starts_with("https://") {
+            anyhow::bail!("Provider '{}' has invalid base_url format: '{}'. Must start with http:// or https://",
+                provider_id, provider.base_url);
+        }
+
+        // API密钥格式验证（基本长度检查）
+        if provider.api_key.len() < 10 {
+            anyhow::bail!("Provider '{}' has API key that is too short (minimum 10 characters)", provider_id);
+        }
+
+        // 超时值验证
+        if provider.timeout_seconds == 0 {
+            anyhow::bail!("Provider '{}' has invalid timeout_seconds: cannot be 0", provider_id);
+        }
+
+        if provider.timeout_seconds > 300 {
+            anyhow::bail!("Provider '{}' has timeout_seconds too large: {} (maximum 300 seconds)",
+                provider_id, provider.timeout_seconds);
+        }
+
+        // 重试次数验证
+        if provider.max_retries > 10 {
+            anyhow::bail!("Provider '{}' has max_retries too large: {} (maximum 10)",
+                provider_id, provider.max_retries);
+        }
+
+        // 验证模型名称不为空
+        for model_name in &provider.models {
+            if model_name.is_empty() {
+                anyhow::bail!("Provider '{}' has empty model name in models list", provider_id);
             }
-            if user.token.is_empty() {
-                anyhow::bail!("User '{}' has empty token", user_id);
+        }
+
+        // 验证自定义头部格式
+        for (header_name, header_value) in &provider.headers {
+            if header_name.is_empty() {
+                anyhow::bail!("Provider '{}' has empty header name", provider_id);
+            }
+            if header_value.is_empty() {
+                anyhow::bail!("Provider '{}' has empty header value for header '{}'", provider_id, header_name);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 验证单个Model配置的有效性
+    fn validate_model_config(&self, model_id: &str, model: &ModelMapping) -> Result<()> {
+        // 基本字段验证
+        if model.name.is_empty() {
+            anyhow::bail!("Model '{}' has empty name", model_id);
+        }
+
+        if model.backends.is_empty() {
+            anyhow::bail!("Model '{}' has no backends defined", model_id);
+        }
+
+        // 验证模型名称格式（不能包含特殊字符）
+        if model.name.contains(' ') || model.name.contains('\t') || model.name.contains('\n') {
+            anyhow::bail!("Model '{}' has invalid name format: '{}' (cannot contain whitespace)",
+                model_id, model.name);
+        }
+
+        // 验证backends
+        let mut total_weight = 0.0;
+        for backend in &model.backends {
+            self.validate_backend_config(model_id, backend)?;
+            if backend.enabled {
+                total_weight += backend.weight;
+            }
+        }
+
+        // 检查是否有可用的后端
+        if total_weight <= 0.0 {
+            anyhow::bail!("Model '{}' has no enabled backends with positive weight", model_id);
+        }
+
+        Ok(())
+    }
+
+    /// 验证单个Backend配置的有效性
+    fn validate_backend_config(&self, model_id: &str, backend: &Backend) -> Result<()> {
+        // 验证provider引用
+        if !self.providers.contains_key(&backend.provider) {
+            anyhow::bail!(
+                "Model '{}' references unknown provider '{}'",
+                model_id, backend.provider
+            );
+        }
+
+        let provider = &self.providers[&backend.provider];
+
+        // 验证模型在provider中存在
+        if !provider.models.contains(&backend.model) {
+            anyhow::bail!(
+                "Model '{}' backend references model '{}' not available in provider '{}'",
+                model_id, backend.model, backend.provider
+            );
+        }
+
+        // 验证权重
+        if backend.weight <= 0.0 {
+            anyhow::bail!(
+                "Model '{}' backend has invalid weight: {} (must be positive)",
+                model_id, backend.weight
+            );
+        }
+
+        if backend.weight > 100.0 {
+            anyhow::bail!(
+                "Model '{}' backend has weight too large: {} (maximum 100.0)",
+                model_id, backend.weight
+            );
+        }
+
+        // 验证优先级
+        if backend.priority > 10 {
+            anyhow::bail!(
+                "Model '{}' backend has priority too high: {} (maximum 10)",
+                model_id, backend.priority
+            );
+        }
+
+        // 验证标签格式
+        for tag in &backend.tags {
+            if tag.is_empty() {
+                anyhow::bail!("Model '{}' backend has empty tag", model_id);
+            }
+            if tag.contains(' ') {
+                anyhow::bail!("Model '{}' backend has invalid tag format: '{}' (cannot contain spaces)",
+                    model_id, tag);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 验证单个User配置的有效性
+    fn validate_user_config(&self, user_id: &str, user: &UserToken) -> Result<()> {
+        // 基本字段验证
+        if user.name.is_empty() {
+            anyhow::bail!("User '{}' has empty name", user_id);
+        }
+
+        if user.token.is_empty() {
+            anyhow::bail!("User '{}' has empty token", user_id);
+        }
+
+        // Token格式验证（基本长度和格式检查）
+        if user.token.len() < 16 {
+            anyhow::bail!("User '{}' has token that is too short (minimum 16 characters)", user_id);
+        }
+
+        if user.token.contains(' ') || user.token.contains('\t') || user.token.contains('\n') {
+            anyhow::bail!("User '{}' has invalid token format (cannot contain whitespace)", user_id);
+        }
+
+        // 验证允许的模型是否存在
+        for model_name in &user.allowed_models {
+            if model_name.is_empty() {
+                anyhow::bail!("User '{}' has empty model name in allowed_models", user_id);
             }
 
-            // 验证允许的模型是否存在
-            for model_name in &user.allowed_models {
-                if !self.models.contains_key(model_name) {
-                    anyhow::bail!(
-                        "User '{}' references unknown model '{}'",
-                        user_id, model_name
-                    );
-                }
+            if !self.models.contains_key(model_name) {
+                anyhow::bail!(
+                    "User '{}' references unknown model '{}'",
+                    user_id, model_name
+                );
             }
+        }
+
+        // 验证速率限制配置
+        if let Some(rate_limit) = &user.rate_limit {
+            self.validate_rate_limit_config(user_id, rate_limit)?;
+        }
+
+        // 验证标签格式
+        for tag in &user.tags {
+            if tag.is_empty() {
+                anyhow::bail!("User '{}' has empty tag", user_id);
+            }
+            if tag.contains(' ') {
+                anyhow::bail!("User '{}' has invalid tag format: '{}' (cannot contain spaces)",
+                    user_id, tag);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 验证速率限制配置的有效性
+    fn validate_rate_limit_config(&self, user_id: &str, rate_limit: &RateLimit) -> Result<()> {
+        if rate_limit.requests_per_minute == 0 {
+            anyhow::bail!("User '{}' has invalid requests_per_minute: cannot be 0", user_id);
+        }
+
+        if rate_limit.requests_per_hour == 0 {
+            anyhow::bail!("User '{}' has invalid requests_per_hour: cannot be 0", user_id);
+        }
+
+        if rate_limit.requests_per_day == 0 {
+            anyhow::bail!("User '{}' has invalid requests_per_day: cannot be 0", user_id);
+        }
+
+        // 逻辑一致性检查
+        if rate_limit.requests_per_minute > rate_limit.requests_per_hour {
+            anyhow::bail!("User '{}' has inconsistent rate limits: requests_per_minute ({}) > requests_per_hour ({})",
+                user_id, rate_limit.requests_per_minute, rate_limit.requests_per_hour);
+        }
+
+        if rate_limit.requests_per_hour > rate_limit.requests_per_day {
+            anyhow::bail!("User '{}' has inconsistent rate limits: requests_per_hour ({}) > requests_per_day ({})",
+                user_id, rate_limit.requests_per_hour, rate_limit.requests_per_day);
+        }
+
+        // 合理性检查（防止过大的值）
+        if rate_limit.requests_per_minute > 1000 {
+            anyhow::bail!("User '{}' has requests_per_minute too large: {} (maximum 1000)",
+                user_id, rate_limit.requests_per_minute);
+        }
+
+        if rate_limit.requests_per_hour > 60000 {
+            anyhow::bail!("User '{}' has requests_per_hour too large: {} (maximum 60000)",
+                user_id, rate_limit.requests_per_hour);
+        }
+
+        if rate_limit.requests_per_day > 1440000 {
+            anyhow::bail!("User '{}' has requests_per_day too large: {} (maximum 1440000)",
+                user_id, rate_limit.requests_per_day);
         }
 
         Ok(())

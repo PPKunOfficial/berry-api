@@ -41,7 +41,7 @@ mod tests {
     fn create_test_user_token() -> UserToken {
         UserToken {
             name: "Test User".to_string(),
-            token: "test-token-123".to_string(),
+            token: "test-token-123456789".to_string(), // 增加长度到16+字符
             allowed_models: vec!["test-model".to_string()],
             enabled: true,
             rate_limit: Some(RateLimit {
@@ -255,10 +255,10 @@ mod tests {
     fn test_validate_user_token() {
         let config = create_test_config();
         
-        let user = config.validate_user_token("test-token-123");
+        let user = config.validate_user_token("test-token-123456789");
         assert!(user.is_some());
         assert_eq!(user.unwrap().name, "Test User");
-        
+
         let no_user = config.validate_user_token("invalid-token");
         assert!(no_user.is_none());
     }
@@ -268,23 +268,23 @@ mod tests {
         let mut config = create_test_config();
         config.users.get_mut("test-user").unwrap().enabled = false;
         
-        let user = config.validate_user_token("test-token-123");
+        let user = config.validate_user_token("test-token-123456789");
         assert!(user.is_none()); // 禁用的用户不应该通过验证
     }
 
     #[test]
     fn test_user_can_access_model_allowed() {
         let config = create_test_config();
-        let user = config.validate_user_token("test-token-123").unwrap();
-        
+        let user = config.validate_user_token("test-token-123456789").unwrap();
+
         assert!(config.user_can_access_model(user, "test-model"));
     }
 
     #[test]
     fn test_user_can_access_model_denied() {
         let config = create_test_config();
-        let user = config.validate_user_token("test-token-123").unwrap();
-        
+        let user = config.validate_user_token("test-token-123456789").unwrap();
+
         assert!(!config.user_can_access_model(user, "nonexistent-model"));
     }
 
@@ -295,14 +295,14 @@ mod tests {
         // 添加管理员用户（allowed_models为空）
         config.users.insert("admin-user".to_string(), UserToken {
             name: "Admin User".to_string(),
-            token: "admin-token-456".to_string(),
+            token: "admin-token-456789012".to_string(), // 增加长度到16+字符
             allowed_models: vec![], // 空表示允许所有模型
             enabled: true,
             rate_limit: None,
             tags: vec!["admin".to_string()],
         });
-        
-        let admin_user = config.validate_user_token("admin-token-456").unwrap();
+
+        let admin_user = config.validate_user_token("admin-token-456789012").unwrap();
         assert!(config.user_can_access_model(admin_user, "test-model"));
         assert!(config.user_can_access_model(admin_user, "any-model")); // 管理员可以访问任何模型名称
     }
@@ -310,8 +310,8 @@ mod tests {
     #[test]
     fn test_get_user_available_models() {
         let config = create_test_config();
-        let user = config.validate_user_token("test-token-123").unwrap();
-        
+        let user = config.validate_user_token("test-token-123456789").unwrap();
+
         let models = config.get_user_available_models(user);
         assert_eq!(models.len(), 1);
         assert!(models.contains(&"test-model".to_string()));
@@ -324,14 +324,14 @@ mod tests {
         // 添加管理员用户
         config.users.insert("admin-user".to_string(), UserToken {
             name: "Admin User".to_string(),
-            token: "admin-token-456".to_string(),
+            token: "admin-token-456789012".to_string(), // 增加长度到16+字符
             allowed_models: vec![], // 空表示允许所有模型
             enabled: true,
             rate_limit: None,
             tags: vec!["admin".to_string()],
         });
-        
-        let admin_user = config.validate_user_token("admin-token-456").unwrap();
+
+        let admin_user = config.validate_user_token("admin-token-456789012").unwrap();
         let models = config.get_user_available_models(admin_user);
         assert_eq!(models.len(), 1); // 应该返回所有可用模型
         assert!(models.contains(&"test-model".to_string()));

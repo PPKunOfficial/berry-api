@@ -43,31 +43,61 @@ async fn serve_file(path: &str) -> Response {
                 .to_string();
 
             // 创建响应
-            Response::builder()
+            match Response::builder()
                 .status(StatusCode::OK)
                 .header(header::CONTENT_TYPE, mime_type)
                 .header(header::CACHE_CONTROL, "public, max-age=3600") // 缓存1小时
                 .body(contents.into())
-                .unwrap()
+            {
+                Ok(response) => response,
+                Err(e) => {
+                    tracing::error!("Failed to build response for file '{}': {}", file_path, e);
+                    Response::builder()
+                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                        .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
+                        .body("Internal Server Error".into())
+                        .unwrap_or_else(|_| {
+                            // 如果连错误响应都构建失败，返回最基本的响应
+                            Response::new("Internal Server Error".into())
+                        })
+                }
+            }
         }
         None => {
             // 文件不存在，尝试返回 404.html
             match STATIC_DIR.get_file("404.html") {
                 Some(not_found_file) => {
                     let contents = not_found_file.contents();
-                    Response::builder()
+                    match Response::builder()
                         .status(StatusCode::NOT_FOUND)
                         .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
                         .body(contents.into())
-                        .unwrap()
+                    {
+                        Ok(response) => response,
+                        Err(e) => {
+                            tracing::error!("Failed to build 404 response: {}", e);
+                            Response::builder()
+                                .status(StatusCode::NOT_FOUND)
+                                .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
+                                .body("404 - File Not Found".into())
+                                .unwrap_or_else(|_| Response::new("404 - File Not Found".into()))
+                        }
+                    }
                 }
                 None => {
                     // 如果连 404.html 都没有，返回简单的文本响应
-                    Response::builder()
+                    match Response::builder()
                         .status(StatusCode::NOT_FOUND)
                         .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
                         .body("404 - File Not Found".into())
-                        .unwrap()
+                    {
+                        Ok(response) => response,
+                        Err(e) => {
+                            tracing::error!("Failed to build fallback 404 response: {}", e);
+                            // 最后的备用方案
+                            Response::new("404 - File Not Found".into())
+                        }
+                    }
                 }
             }
         }
