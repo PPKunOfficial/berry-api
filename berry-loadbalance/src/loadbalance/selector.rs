@@ -1,12 +1,12 @@
 use berry_core::config::model::{Backend, LoadBalanceStrategy, ModelMapping};
 use anyhow::Result;
 use rand::Rng;
-use rand::distr::Distribution;
-use rand::distr::weighted::WeightedIndex;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
+use tracing::{debug, warn, error, trace};
+use super::cache::{BackendSelectionCache, CacheStats};
 
 /// 后端选择错误类型
 #[derive(Debug, Clone)]
@@ -43,6 +43,10 @@ pub struct BackendSelector {
     mapping: ModelMapping,
     round_robin_counter: AtomicUsize,
     metrics: Arc<MetricsCollector>,
+    // 性能优化：缓存后端键以避免重复的字符串格式化
+    backend_keys: Vec<String>,
+    // 后端选择缓存
+    selection_cache: Arc<BackendSelectionCache>,
 }
 
 /// 指标收集器，用于收集后端性能数据
@@ -507,6 +511,41 @@ impl MetricsCollector {
         original_weight
     }
 
+    /// 批量获取多个backend的有效权重（性能优化）
+    pub fn get_effective_weights_batch(&self, backend_keys: &[String], original_weights: &[f64]) -> Vec<f64> {
+        let mut effective_weights = Vec::with_capacity(backend_keys.len());
+
+        // 一次性获取读锁，避免重复锁操作
+        let recovery_states = self.weight_recovery_states.read().ok();
+        let unhealthy_backends = self.unhealthy_backends.read().ok();
+
+        for (i, backend_key) in backend_keys.iter().enumerate() {
+            let original_weight = original_weights[i];
+
+            // 检查恢复状态
+            if let Some(ref states) = recovery_states {
+                if let Some(state) = states.get(backend_key) {
+                    effective_weights.push(state.current_weight);
+                    continue;
+                }
+            }
+
+            // 检查是否在不健康列表中
+            let is_unhealthy = unhealthy_backends
+                .as_ref()
+                .map(|ub| ub.contains_key(backend_key))
+                .unwrap_or(false);
+
+            if is_unhealthy {
+                effective_weights.push(original_weight * 0.1);
+            } else {
+                effective_weights.push(original_weight);
+            }
+        }
+
+        effective_weights
+    }
+
     /// 初始化按请求计费provider的权重恢复状态
     pub fn initialize_per_request_recovery(&self, backend_key: &str, original_weight: f64) {
         tracing::debug!(
@@ -721,10 +760,18 @@ impl Default for MetricsCollector {
 
 impl BackendSelector {
     pub fn new(mapping: ModelMapping, metrics: Arc<MetricsCollector>) -> Self {
+        // 预计算所有后端键以提高性能
+        let backend_keys: Vec<String> = mapping.backends
+            .iter()
+            .map(|backend| format!("{}:{}", backend.provider, backend.model))
+            .collect();
+
         Self {
             mapping,
             round_robin_counter: AtomicUsize::new(0),
             metrics,
+            backend_keys,
+            selection_cache: Arc::new(BackendSelectionCache::default()),
         }
     }
 
@@ -765,6 +812,7 @@ impl BackendSelector {
 
     /// 内部选择方法，支持用户标签过滤
     fn select_with_user_filter(&self, enabled_backends: &[Backend], user_tags: Option<&[String]>) -> Result<Backend> {
+
         // 根据用户标签过滤后端
         let filtered_backends = if let Some(tags) = user_tags {
             self.filter_backends_by_tags(enabled_backends, tags)
@@ -802,13 +850,24 @@ impl BackendSelector {
             }
         };
 
-        // 如果选择失败，创建详细的错误信息
-        if let Err(e) = &result {
+        // 如果选择成功，将结果存入缓存
+        if let Ok(ref backend) = result {
+            // 异步存储到缓存，不阻塞当前选择
+            let cache = self.selection_cache.clone();
+            let model_name = self.mapping.name.clone();
+            let user_tags_clone = user_tags.map(|tags| tags.to_vec());
+            let backend_clone = backend.clone();
+
+            tokio::spawn(async move {
+                cache.put(&model_name, user_tags_clone.as_deref(), backend_clone).await;
+            });
+        } else {
+            // 如果选择失败，创建详细的错误信息
             tracing::error!(
                 "Backend selection failed for model '{}' using strategy '{:?}': {}",
                 self.mapping.name,
                 self.mapping.strategy,
-                e
+                result.as_ref().unwrap_err()
             );
         }
 
@@ -838,10 +897,31 @@ impl BackendSelector {
     }
 
     fn select_weighted_random(&self, backends: &[Backend]) -> Result<Backend> {
-        let weights: Vec<f64> = backends.iter().map(|b| b.weight).collect();
-        let dist = WeightedIndex::new(&weights)?;
-        let mut rng = rand::rng();
-        Ok(backends[dist.sample(&mut rng)].clone())
+        if backends.is_empty() {
+            return Err(anyhow::anyhow!("No backends available for weighted random selection"));
+        }
+
+        if backends.len() == 1 {
+            return Ok(backends[0].clone());
+        }
+
+        // 使用更高效的累积权重算法
+        let total_weight: f64 = backends.iter().map(|b| b.weight).sum();
+        if total_weight <= 0.0 {
+            return Err(anyhow::anyhow!("Total weight is zero or negative"));
+        }
+
+        let mut random_value = rand::random::<f64>() * total_weight;
+
+        for backend in backends {
+            random_value -= backend.weight;
+            if random_value <= 0.0 {
+                return Ok(backend.clone());
+            }
+        }
+
+        // 兜底返回最后一个（处理浮点精度问题）
+        Ok(backends[backends.len() - 1].clone())
     }
 
     fn select_round_robin(&self, backends: &[Backend]) -> Result<Backend> {
@@ -964,14 +1044,15 @@ impl BackendSelector {
 
     fn select_smart_weighted_failover(&self, backends: &[Backend]) -> Result<Backend> {
         // 智能权重故障转移：考虑权重恢复状态
-        let mut adjusted_backends = Vec::new();
+        let mut adjusted_backends = Vec::with_capacity(backends.len());
         let mut total_effective_weight = 0.0;
 
-        for backend in backends {
-            let backend_key = format!("{}:{}", backend.provider, backend.model);
+        // 使用缓存的后端键和批量查询来提高性能
+        for (i, backend) in backends.iter().enumerate() {
+            let backend_key = &self.backend_keys[i];
             let effective_weight = self
                 .metrics
-                .get_effective_weight(&backend_key, backend.weight);
+                .get_effective_weight(backend_key, backend.weight);
 
             // 创建调整权重后的backend副本
             let mut adjusted_backend = backend.clone();
@@ -1042,12 +1123,12 @@ impl BackendSelector {
     fn select_smart_ai(&self, backends: &[Backend]) -> Result<Backend> {
         tracing::debug!("SmartAI selection for model '{}' with {} backends", self.mapping.name, backends.len());
 
-        // 计算每个后端的有效权重
-        let mut weighted_backends: Vec<(Backend, f64)> = Vec::new();
+        // 计算每个后端的有效权重（使用缓存的后端键）
+        let mut weighted_backends: Vec<(Backend, f64)> = Vec::with_capacity(backends.len());
 
-        for backend in backends {
-            let backend_key = format!("{}:{}", backend.provider, backend.model);
-            let confidence = self.metrics.get_smart_ai_confidence(&backend_key);
+        for (i, backend) in backends.iter().enumerate() {
+            let backend_key = &self.backend_keys[i];
+            let confidence = self.metrics.get_smart_ai_confidence(backend_key);
             let effective_weight = self.calculate_smart_ai_effective_weight(backend, confidence);
 
             if effective_weight > 0.01 {
@@ -1232,10 +1313,10 @@ impl BackendSelector {
 
     /// 收集后端状态信息用于错误报告
     fn collect_backend_status(&self, backends: &[Backend]) -> Vec<FailedAttempt> {
-        let mut attempts = Vec::new();
+        let mut attempts = Vec::with_capacity(backends.len());
 
-        for backend in backends {
-            let backend_key = format!("{}:{}", backend.provider, backend.model);
+        for (i, backend) in backends.iter().enumerate() {
+            let backend_key = &self.backend_keys[i];
             let is_healthy = self.metrics.is_healthy(&backend.provider, &backend.model);
             let failure_count = self.metrics.get_failure_count(&backend.provider, &backend.model);
 
@@ -1249,13 +1330,13 @@ impl BackendSelector {
 
             // 从metrics中获取真实的last_failure_time
             let last_failure_time = if let Ok(unhealthy_backends) = self.metrics.unhealthy_backends.read() {
-                unhealthy_backends.get(&backend_key).map(|ub| ub.last_failure_time)
+                unhealthy_backends.get(backend_key).map(|ub| ub.last_failure_time)
             } else {
                 None
             };
 
             attempts.push(FailedAttempt {
-                backend_key,
+                backend_key: backend_key.clone(),
                 provider: backend.provider.clone(),
                 model: backend.model.clone(),
                 reason,
@@ -1266,6 +1347,21 @@ impl BackendSelector {
         }
 
         attempts
+    }
+
+    /// 获取缓存统计信息
+    pub fn get_cache_stats(&self) -> CacheStats {
+        self.selection_cache.get_stats()
+    }
+
+    /// 清空选择缓存
+    pub async fn clear_cache(&self) {
+        self.selection_cache.clear().await;
+    }
+
+    /// 获取缓存大小
+    pub async fn get_cache_size(&self) -> usize {
+        self.selection_cache.size().await
     }
 }
 

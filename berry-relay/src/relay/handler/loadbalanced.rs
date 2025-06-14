@@ -84,8 +84,16 @@ impl LoadBalancedHandler {
                     e
                 );
 
-                // 使用统一的错误处理器
-                ErrorHandler::from_anyhow_error(&e, Some(&format!("Request processing failed for model '{}'", model_name))).into_response()
+                // 检查是否为流式请求
+                let is_stream = body.get("stream").and_then(|v| v.as_bool()).unwrap_or(false);
+
+                if is_stream {
+                    // 使用流式错误处理器
+                    ErrorHandler::streaming_from_anyhow_error(&e, Some(&format!("Streaming request processing failed for model '{}'", model_name))).into_response()
+                } else {
+                    // 使用非流式错误处理器
+                    ErrorHandler::from_anyhow_error(&e, Some(&format!("Request processing failed for model '{}'", model_name))).into_response()
+                }
             }
         }
     }

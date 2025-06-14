@@ -203,6 +203,16 @@ impl LoadBalanceManager {
     pub fn get_config(&self) -> Arc<Config> {
         self.config.clone()
     }
+
+    /// 获取缓存统计信息
+    pub async fn get_cache_stats(&self) -> Option<super::cache::CacheStats> {
+        let selectors = self.selectors.read().await;
+        if let Some(selector) = selectors.values().next() {
+            Some(selector.get_cache_stats())
+        } else {
+            None
+        }
+    }
 }
 
 /// 健康状态统计

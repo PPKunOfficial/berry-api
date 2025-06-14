@@ -142,6 +142,38 @@ pub fn create_client_error_response(error: &ClientError) -> impl IntoResponse {
     (status_code, Json(error_json))
 }
 
+/// 创建统一的流式错误响应
+pub fn create_streaming_error_response(error_type: ErrorType, message: &str, details: Option<String>) -> impl IntoResponse {
+    use axum::response::Sse;
+    use futures::stream;
+
+    let status_code = error_type.status_code();
+
+    let error_event = json!({
+        "error": {
+            "message": message,
+            "type": format!("{:?}", error_type),
+            "code": status_code.as_u16(),
+            "details": details
+        }
+    });
+
+    // 创建包含错误信息的SSE流
+    let error_stream = stream::once(async move {
+        Ok::<Event, std::convert::Infallible>(
+            Event::default()
+                .event("error")
+                .data(error_event.to_string())
+        )
+    });
+
+    // 返回带有正确HTTP状态码的SSE响应
+    (
+        status_code,
+        Sse::new(Box::pin(error_stream) as futures::stream::BoxStream<'static, Result<Event, std::convert::Infallible>>)
+    ).into_response()
+}
+
 /// 创建服务不可用错误响应
 pub fn create_service_unavailable_response(message: &str, details: Option<String>) -> impl IntoResponse {
     create_error_response(ErrorType::ServiceUnavailable, message, details)
@@ -213,6 +245,40 @@ impl ErrorHandler {
         let err_type = error_type.unwrap_or(ErrorType::Unauthorized);
         tracing::warn!("Authentication error: {}", message);
         create_error_response(err_type, message, None)
+    }
+
+    /// 从anyhow::Error创建流式HTTP响应
+    pub fn streaming_from_anyhow_error(error: &anyhow::Error, context: Option<&str>) -> impl IntoResponse {
+        let error_str = error.to_string();
+        let error_type = ErrorType::from_error_message(&error_str);
+
+        let message = if let Some(ctx) = context {
+            format!("{}: {}", ctx, Self::extract_user_friendly_message(&error_str))
+        } else {
+            Self::extract_user_friendly_message(&error_str)
+        };
+
+        // 记录错误日志
+        tracing::error!("Streaming error occurred: {} - Details: {}", message, error_str);
+
+        create_streaming_error_response(error_type, &message, Some(error_str))
+    }
+
+    /// 从HTTP状态码和响应体创建流式错误响应
+    pub fn streaming_from_http_error(status_code: u16, response_body: &str, context: Option<&str>) -> impl IntoResponse {
+        let error_type = Self::status_code_to_error_type(status_code);
+        let backend_error = Self::parse_backend_error_message(response_body);
+
+        let message = if let Some(ctx) = context {
+            format!("{}: {}", ctx, backend_error.message)
+        } else {
+            backend_error.message
+        };
+
+        // 记录错误日志
+        tracing::debug!("Streaming HTTP error {}: {} - Body: {}", status_code, message, response_body);
+
+        create_streaming_error_response(error_type, &message, Some(format!("Backend error: {}", backend_error.details)))
     }
 
     /// 创建后端不可用错误响应

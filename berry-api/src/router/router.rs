@@ -1,8 +1,10 @@
 use crate::app::AppState;
 use crate::static_files::{serve_index, serve_static_file};
+use crate::middleware::metrics_middleware;
 use axum::{
     Router,
     routing::{get, post},
+    middleware,
 };
 use tower_http::trace::TraceLayer;
 
@@ -13,6 +15,8 @@ use super::{
     models::{list_models, list_models_v1},
     smart_ai::{get_smart_ai_weights, get_model_smart_ai_weights},
     admin::{get_model_weights, get_rate_limit_usage, get_backend_health, get_system_stats},
+    monitoring::{get_monitoring_info, get_model_weights as get_monitoring_model_weights,
+                clear_cache, get_performance_metrics, health_check as monitoring_health_check},
 };
 use crate::observability::prometheus_metrics::prometheus_metrics_handler;
 
@@ -28,9 +32,12 @@ pub fn create_app_router() -> Router<AppState> {
         .route("/smart-ai/models/{model}/weights", get(get_model_smart_ai_weights))
         .nest("/v1", create_v1_routes())
         .nest("/admin", create_admin_routes())
+        .nest("/monitoring", create_monitoring_routes())
         // 静态文件路由 - 使用嵌入的文件
         .route("/status", get(serve_index))
         .route("/status/{*path}", get(serve_static_file))
+        // 添加指标中间件
+        .layer(middleware::from_fn(metrics_middleware))
         .layer(TraceLayer::new_for_http())
 }
 
@@ -51,7 +58,20 @@ fn create_admin_routes() -> Router<AppState> {
         .route("/system-stats", get(get_system_stats))
 }
 
+/// 创建监控 API 路由
+fn create_monitoring_routes() -> Router<AppState> {
+    Router::new()
+        .route("/", get(get_monitoring_info))
+        .route("/info", get(get_monitoring_info))
+        .route("/model-weights", get(get_monitoring_model_weights))
+        .route("/performance", get(get_performance_metrics))
+        .route("/health", get(monitoring_health_check))
+        .route("/cache/clear", post(clear_cache))
+}
+
 /// 首页处理器
 pub async fn index() -> &'static str {
     "Berry API - Load Balanced AI Gateway"
 }
+
+

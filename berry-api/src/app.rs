@@ -21,6 +21,7 @@ pub struct AppState {
     pub prometheus_metrics: Option<crate::observability::prometheus_metrics::PrometheusMetrics>,
     #[cfg(not(feature = "observability"))]
     pub prometheus_metrics: Option<()>,
+    pub batch_metrics: Arc<crate::observability::batch_metrics::BatchMetricsCollector>,
 }
 
 impl AppState {
@@ -60,13 +61,28 @@ impl AppState {
         #[cfg(not(feature = "observability"))]
         let prometheus_metrics = None;
 
-        Ok(Self {
+        // 创建批量指标收集器
+        let batch_metrics = Arc::new(crate::observability::batch_metrics::BatchMetricsCollector::default());
+        info!("Batch metrics collector initialized");
+
+        let app_state = Self {
             load_balancer,
             handler,
             config: Arc::new(config),
             rate_limiter,
             prometheus_metrics,
-        })
+            batch_metrics,
+        };
+
+        // 初始化Prometheus指标
+        #[cfg(feature = "observability")]
+        if let Some(ref metrics) = app_state.prometheus_metrics {
+            metrics.initialize_metrics(&app_state).await;
+            metrics.start_background_updater(app_state.clone());
+            info!("Prometheus metrics initialized and background updater started");
+        }
+
+        Ok(app_state)
     }
 
     /// 停止应用

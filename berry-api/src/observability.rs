@@ -135,7 +135,7 @@ pub mod prometheus_metrics {
             // Update backend health status
             for (backend_key, stats) in &health.model_stats {
                 self.update_backend_health(backend_key, stats.is_healthy());
-                
+
                 // Update latency if available
                 if let Some(latency) = metrics.get_latency_by_key(backend_key) {
                     self.record_backend_latency(backend_key, latency.as_secs_f64());
@@ -148,6 +148,86 @@ pub mod prometheus_metrics {
                 // Note: Prometheus counters are cumulative, so we don't set absolute values
                 // The actual incrementing should happen in the request handlers
             }
+        }
+
+        /// Initialize metrics with default values to ensure they appear in Prometheus
+        pub async fn initialize_metrics(&self, state: &AppState) {
+            // Initialize backend health metrics for all configured backends
+            let config = &state.config;
+            for (_model_key, model_mapping) in &config.models {
+                for backend in &model_mapping.backends {
+                    let backend_key = format!("{}:{}", backend.provider, backend.model);
+
+                    // Initialize health status (will be updated by health checker)
+                    self.backend_health_status
+                        .with_label_values(&[&backend_key])
+                        .set(0.0); // Start as unhealthy until first check
+
+                    // Initialize counters with 0 to make them visible
+                    self.backend_request_count_total
+                        .with_label_values(&[&backend_key])
+                        .inc_by(0.0);
+
+                    self.backend_error_count_total
+                        .with_label_values(&[&backend_key])
+                        .inc_by(0.0);
+
+                    // Initialize histogram with a sample to make it visible
+                    self.backend_latency_seconds
+                        .with_label_values(&[&backend_key])
+                        .observe(0.0);
+                }
+            }
+
+            // Initialize HTTP metrics
+            let common_endpoints = ["/v1/chat/completions", "/health", "/metrics"];
+            let methods = ["GET", "POST", "PUT", "DELETE"];
+            let status_codes = ["200", "400", "401", "403", "404", "500", "502", "503"];
+
+            for endpoint in &common_endpoints {
+                for method in &methods {
+                    for status in &status_codes {
+                        // Initialize HTTP request counters
+                        self.http_requests_total
+                            .with_label_values(&[method, endpoint, status])
+                            .inc_by(0.0);
+                    }
+
+                    // Initialize HTTP duration histograms
+                    self.http_request_duration_seconds
+                        .with_label_values(&[method, endpoint])
+                        .observe(0.0);
+
+                    // Initialize in-flight gauges
+                    self.http_requests_in_flight
+                        .with_label_values(&[method, endpoint])
+                        .set(0.0);
+                }
+            }
+
+            tracing::info!("Prometheus metrics initialized with default values");
+        }
+
+        /// Start background metrics updater
+        pub fn start_background_updater(&self, state: AppState) {
+            let metrics = self.clone();
+
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
+
+                loop {
+                    interval.tick().await;
+
+                    // Update metrics from load balancer
+                    metrics.update_from_load_balancer(&state).await;
+
+                    // Update cache metrics if available
+                    if let Some(cache_stats) = state.load_balancer.get_cache_stats().await {
+                        // Add cache-specific metrics here
+                        tracing::debug!("Cache stats: {}", cache_stats);
+                    }
+                }
+            });
         }
     }
 
@@ -202,3 +282,5 @@ pub mod prometheus_metrics {
         )
     }
 }
+
+pub mod batch_metrics;

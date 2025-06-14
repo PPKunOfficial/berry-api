@@ -443,6 +443,11 @@ impl LoadBalanceService {
         *self.is_running.read().await
     }
 
+    /// 获取缓存统计信息
+    pub async fn get_cache_stats(&self) -> Option<super::cache::CacheStats> {
+        self.manager.get_cache_stats().await
+    }
+
     /// 获取backend的原始权重
     fn get_backend_original_weight(&self, provider: &str, model: &str) -> Option<f64> {
         let config = self.manager.get_config();
