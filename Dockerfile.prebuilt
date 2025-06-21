@@ -11,7 +11,6 @@ WORKDIR /app
 
 # 从宿主机复制预编译的二进制文件
 COPY ./docker-binaries/berry-api /usr/local/bin/berry-api
-COPY ./docker-binaries/berry-cli /usr/local/bin/berry-cli
 
 # 暴露端口
 EXPOSE 3000

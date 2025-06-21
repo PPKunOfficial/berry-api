@@ -332,12 +332,11 @@ Berry API 提供了两种 Docker 构建方式，以满足不同的性能和使�
 
 ```bash
 # 1. 预编译二进制文件
-cargo build --workspace --release --features observability --target x86_64-unknown-linux-gnu
+cargo build --bin berry-api --release --target x86_64-unknown-linux-gnu
 
 # 2. 准备 Docker 构建文件
 mkdir -p ./docker-binaries
 cp target/x86_64-unknown-linux-gnu/release/berry-api ./docker-binaries/
-cp target/x86_64-unknown-linux-gnu/release/berry-cli ./docker-binaries/
 
 # 3. 构建 Docker 镜像
 docker build -f Dockerfile.prebuilt -t berry-api:latest .

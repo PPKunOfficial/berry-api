@@ -18,12 +18,11 @@
 ### 构建流程
 ```bash
 # 1. 在宿主机编译二进制文件
-cargo build --workspace --release --features observability --target x86_64-unknown-linux-gnu
+cargo build --bin berry-api --release --target x86_64-unknown-linux-gnu
 
 # 2. 复制二进制文件到临时目录
 mkdir -p ./docker-binaries
 cp target/x86_64-unknown-linux-gnu/release/berry-api ./docker-binaries/
-cp target/x86_64-unknown-linux-gnu/release/berry-cli ./docker-binaries/
 
 # 3. 使用预编译 Dockerfile 构建镜像
 docker build -f Dockerfile.prebuilt -t berry-api:latest .
@@ -35,18 +34,16 @@ docker build -f Dockerfile.prebuilt -t berry-api:latest .
 ```yaml
 - name: 编译 Rust 二进制文件
   run: |
-    cargo build --workspace --release --features observability --target x86_64-unknown-linux-gnu
+    cargo build --bin berry-api --release --target x86_64-unknown-linux-gnu
     mkdir -p ./docker-binaries
     cp target/x86_64-unknown-linux-gnu/release/berry-api ./docker-binaries/
-    cp target/x86_64-unknown-linux-gnu/release/berry-cli ./docker-binaries/
 
 - name: 准备 Release 文件
   run: |
     mkdir -p ./release-assets
     cp target/x86_64-unknown-linux-gnu/release/berry-api ./release-assets/berry-api-linux-x86_64
-    cp target/x86_64-unknown-linux-gnu/release/berry-cli ./release-assets/berry-cli-linux-x86_64
     cd release-assets
-    tar -czf berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz berry-api-linux-x86_64 berry-cli-linux-x86_64
+    tar -czf berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz berry-api-linux-x86_64
     sha256sum berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz > berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz.sha256
 
 - name: 构建并推送 Docker 镜像
@@ -63,7 +60,7 @@ docker build -f Dockerfile.prebuilt -t berry-api:latest .
 ```
 
 **自动化流程包括：**
-1. ✅ 预编译二进制文件（启用 observability 功能）
+1. ✅ 预编译 berry-api 二进制文件
 2. ✅ 构建并推送 Docker 镜像到 Docker Hub
 3. ✅ 创建 GitHub Release 并上传二进制文件包
 4. ✅ 生成 SHA256 校验和文件
@@ -167,7 +164,7 @@ docker build -f Dockerfile.prebuilt -t berry-api:prod .
 
 | 文件名 | 说明 |
 |--------|------|
-| `berry-api-{version}-linux-x86_64.tar.gz` | 包含 `berry-api` 和 `berry-cli` 的二进制文件包 |
+| `berry-api-{version}-linux-x86_64.tar.gz` | 包含 `berry-api` 二进制文件的压缩包 |
 | `berry-api-{version}-linux-x86_64.tar.gz.sha256` | SHA256 校验和文件 |
 
 ### 🧪 本地测试 Release 构建
@@ -192,14 +189,14 @@ sha256sum -c berry-api-v1.0.0-linux-x86_64.tar.gz.sha256
 
 # 3. 解压并运行
 tar -xzf berry-api-v1.0.0-linux-x86_64.tar.gz
-chmod +x berry-api-linux-x86_64 berry-cli-linux-x86_64
+chmod +x berry-api-linux-x86_64
 ./berry-api-linux-x86_64 --version
 ```
 
 ## 📝 注意事项
 
-1. **功能特性**：两种构建方式都默认启用 `observability` 功能
-2. **二进制文件**：预编译方式会同时构建 `berry-api` 和 `berry-cli`
+1. **二进制文件**：只编译 `berry-api` 主服务，不包含 `berry-cli`
+2. **功能特性**：使用默认功能，不启用 `observability` 功能（避免不成熟的功能）
 3. **缓存策略**：GitHub Actions 使用 `Swatinem/rust-cache` 优化编译缓存
 4. **安全性**：两种方式都使用 `gcr.io/distroless/cc-debian12` 作为运行时镜像
 5. **Release 触发**：只有推送符合 `v*.*.*` 格式的标签才会触发 Release 构建

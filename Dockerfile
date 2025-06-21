@@ -17,8 +17,8 @@ WORKDIR /app
 # 复制整个项目，确保所有必要的文件都存在
 COPY . .
 
-# 直接构建项目，启用 observability 功能
-RUN cargo build --workspace --release --features observability
+# 直接构建 berry-api 项目
+RUN cargo build --bin berry-api --release
 
 # =================================================================
 # Stage 2: Runner - 运行你的应用
@@ -31,7 +31,6 @@ WORKDIR /app
 
 # 从 builder 阶段复制编译好的二进制文件
 COPY --from=builder /app/target/release/berry-api /usr/local/bin/berry-api
-COPY --from=builder /app/target/release/berry-cli /usr/local/bin/berry-cli
 
 # 暴露端口
 EXPOSE 3000

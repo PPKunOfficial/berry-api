@@ -26,8 +26,8 @@ jobs:
 
       - name: 编译 Rust 二进制文件
         run: |
-          # 编译所有二进制文件，启用 observability 功能
-          cargo build --workspace --release --features observability --target x86_64-unknown-linux-gnu
+          # 编译 berry-api 二进制文件
+          cargo build --bin berry-api --release --target x86_64-unknown-linux-gnu
 
           # 验证二进制文件存在
           ls -la target/x86_64-unknown-linux-gnu/release/
@@ -35,11 +35,9 @@ jobs:
           # 创建临时目录存放二进制文件
           mkdir -p ./docker-binaries
           cp target/x86_64-unknown-linux-gnu/release/berry-api ./docker-binaries/
-          cp target/x86_64-unknown-linux-gnu/release/berry-cli ./docker-binaries/
 
           # 验证二进制文件可执行
           file ./docker-binaries/berry-api
-          file ./docker-binaries/berry-cli
 
       - name: 准备 Release 文件
         run: |
@@ -48,11 +46,10 @@ jobs:
 
           # 复制二进制文件并重命名
           cp target/x86_64-unknown-linux-gnu/release/berry-api ./release-assets/berry-api-linux-x86_64
-          cp target/x86_64-unknown-linux-gnu/release/berry-cli ./release-assets/berry-cli-linux-x86_64
 
           # 创建压缩包
           cd release-assets
-          tar -czf berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz berry-api-linux-x86_64 berry-cli-linux-x86_64
+          tar -czf berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz berry-api-linux-x86_64
 
           # 计算校验和
           sha256sum berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz > berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz.sha256
@@ -96,7 +93,7 @@ jobs:
             - 详细更新内容请查看 [CHANGELOG.md](CHANGELOG.md)
 
             ### 📦 下载说明
-            - `berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz`: Linux x86_64 二进制文件包
+            - `berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz`: Linux x86_64 berry-api 二进制文件包
             - `berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz.sha256`: SHA256 校验和文件
 
             ### 🐳 Docker 镜像
