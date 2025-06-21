@@ -41,3 +41,6 @@ observability = ["prometheus", "axum-prometheus"]
 
 [dev-dependencies]
 axum-test = { workspace = true }
+
+[lints]
+workspace = true

@@ -21,3 +21,6 @@ reqwest = { workspace = true }
 
 [dev-dependencies]
 axum-test = { workspace = true }
+
+[lints]
+workspace = true

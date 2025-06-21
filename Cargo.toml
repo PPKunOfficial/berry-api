@@ -58,3 +58,6 @@ vergen-git2 = { version = "1.0", features = ["build", "cargo", "rustc", "si"] }
 default = []
 observability = ["prometheus", "axum-prometheus"]
 
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
