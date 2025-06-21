@@ -30,7 +30,7 @@ docker build -f Dockerfile.prebuilt -t berry-api:latest .
 ```
 
 ### GitHub Actions 自动化
-项目的 `.github/workflows/docker_release.yml` 已配置为使用此方式：
+项目的 `.github/workflows/docker_release.yml` 已配置为使用此方式，并自动发布到 GitHub Release：
 
 ```yaml
 - name: 编译 Rust 二进制文件
@@ -40,11 +40,33 @@ docker build -f Dockerfile.prebuilt -t berry-api:latest .
     cp target/x86_64-unknown-linux-gnu/release/berry-api ./docker-binaries/
     cp target/x86_64-unknown-linux-gnu/release/berry-cli ./docker-binaries/
 
+- name: 准备 Release 文件
+  run: |
+    mkdir -p ./release-assets
+    cp target/x86_64-unknown-linux-gnu/release/berry-api ./release-assets/berry-api-linux-x86_64
+    cp target/x86_64-unknown-linux-gnu/release/berry-cli ./release-assets/berry-cli-linux-x86_64
+    cd release-assets
+    tar -czf berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz berry-api-linux-x86_64 berry-cli-linux-x86_64
+    sha256sum berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz > berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz.sha256
+
 - name: 构建并推送 Docker 镜像
   uses: docker/build-push-action@v5
   with:
     file: ./Dockerfile.prebuilt
+
+- name: 创建 GitHub Release
+  uses: softprops/action-gh-release@v1
+  with:
+    files: |
+      release-assets/berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz
+      release-assets/berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz.sha256
 ```
+
+**自动化流程包括：**
+1. ✅ 预编译二进制文件（启用 observability 功能）
+2. ✅ 构建并推送 Docker 镜像到 Docker Hub
+3. ✅ 创建 GitHub Release 并上传二进制文件包
+4. ✅ 生成 SHA256 校验和文件
 
 ## 🔧 方式二：传统多阶段构建（备选方案）
 
@@ -127,9 +149,58 @@ docker build -f Dockerfile.prebuilt -t berry-api:prod .
    - 增加 Docker 内存限制
    - 使用 `--no-default-features` 减少编译负担
 
+## 📦 GitHub Release 自动发布
+
+### 🚀 自动化发布流程
+
+当推送版本标签（如 `v1.0.0`）时，GitHub Actions 会自动：
+
+1. **编译二进制文件**：使用预编译方式构建 Linux x86_64 二进制文件
+2. **创建压缩包**：将 `berry-api` 和 `berry-cli` 打包为 `.tar.gz` 文件
+3. **生成校验和**：创建 SHA256 校验和文件
+4. **发布 Release**：自动创建 GitHub Release 并上传文件
+5. **推送 Docker 镜像**：同时推送到 Docker Hub
+
+### 📋 Release 文件说明
+
+每个 Release 包含以下文件：
+
+| 文件名 | 说明 |
+|--------|------|
+| `berry-api-{version}-linux-x86_64.tar.gz` | 包含 `berry-api` 和 `berry-cli` 的二进制文件包 |
+| `berry-api-{version}-linux-x86_64.tar.gz.sha256` | SHA256 校验和文件 |
+
+### 🧪 本地测试 Release 构建
+
+```bash
+# 测试 Release 构建流程
+./scripts/test-release-build.sh v1.0.0-test
+
+# 验证生成的文件
+ls -la release-assets/
+```
+
+### 📥 下载和使用 Release
+
+```bash
+# 1. 下载最新版本
+wget https://github.com/PPKunOfficial/berry-api/releases/latest/download/berry-api-v1.0.0-linux-x86_64.tar.gz
+
+# 2. 验证校验和（可选）
+wget https://github.com/PPKunOfficial/berry-api/releases/latest/download/berry-api-v1.0.0-linux-x86_64.tar.gz.sha256
+sha256sum -c berry-api-v1.0.0-linux-x86_64.tar.gz.sha256
+
+# 3. 解压并运行
+tar -xzf berry-api-v1.0.0-linux-x86_64.tar.gz
+chmod +x berry-api-linux-x86_64 berry-cli-linux-x86_64
+./berry-api-linux-x86_64 --version
+```
+
 ## 📝 注意事项
 
 1. **功能特性**：两种构建方式都默认启用 `observability` 功能
 2. **二进制文件**：预编译方式会同时构建 `berry-api` 和 `berry-cli`
 3. **缓存策略**：GitHub Actions 使用 `Swatinem/rust-cache` 优化编译缓存
 4. **安全性**：两种方式都使用 `gcr.io/distroless/cc-debian12` 作为运行时镜像
+5. **Release 触发**：只有推送符合 `v*.*.*` 格式的标签才会触发 Release 构建
+6. **权限要求**：GitHub Actions 需要 `GITHUB_TOKEN` 权限来创建 Release

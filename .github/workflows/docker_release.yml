@@ -41,6 +41,26 @@ jobs:
           file ./docker-binaries/berry-api
           file ./docker-binaries/berry-cli
 
+      - name: 准备 Release 文件
+        run: |
+          # 创建 release 目录
+          mkdir -p ./release-assets
+
+          # 复制二进制文件并重命名
+          cp target/x86_64-unknown-linux-gnu/release/berry-api ./release-assets/berry-api-linux-x86_64
+          cp target/x86_64-unknown-linux-gnu/release/berry-cli ./release-assets/berry-cli-linux-x86_64
+
+          # 创建压缩包
+          cd release-assets
+          tar -czf berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz berry-api-linux-x86_64 berry-cli-linux-x86_64
+
+          # 计算校验和
+          sha256sum berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz > berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz.sha256
+
+          # 显示文件信息
+          ls -la
+          cat berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz.sha256
+
       - name: 设置 Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -62,3 +82,40 @@ jobs:
             ppkun00/berry-api:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: 创建 GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            release-assets/berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz
+            release-assets/berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz.sha256
+          body: |
+            ## Berry API ${{ github.ref_name }}
+
+            ### 🚀 新功能和改进
+            - 详细更新内容请查看 [CHANGELOG.md](CHANGELOG.md)
+
+            ### 📦 下载说明
+            - `berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz`: Linux x86_64 二进制文件包
+            - `berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz.sha256`: SHA256 校验和文件
+
+            ### 🐳 Docker 镜像
+            ```bash
+            docker pull ppkun00/berry-api:${{ github.ref_name }}
+            docker pull ppkun00/berry-api:latest
+            ```
+
+            ### ⚡ 快速使用
+            ```bash
+            # 下载并解压
+            wget https://github.com/PPKunOfficial/berry-api/releases/download/${{ github.ref_name }}/berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz
+            tar -xzf berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz
+
+            # 运行服务
+            chmod +x berry-api-linux-x86_64
+            ./berry-api-linux-x86_64
+            ```
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
