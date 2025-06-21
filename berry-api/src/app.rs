@@ -152,9 +152,10 @@ pub async fn start_server() -> Result<()> {
 
     // 设置优雅关闭
     let shutdown_signal = async {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("Failed to install CTRL+C signal handler");
+        if let Err(e) = tokio::signal::ctrl_c().await {
+            error!("Failed to install CTRL+C signal handler: {}", e);
+            return;
+        }
         info!("Shutdown signal received");
     };
 

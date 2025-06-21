@@ -27,7 +27,7 @@ impl HealthChecker {
         let client = Client::builder()
             .timeout(timeout)
             .build()
-            .expect("Failed to create HTTP client");
+            .unwrap_or_else(|_| Client::new());
 
         Self {
             config,
@@ -62,9 +62,12 @@ impl HealthChecker {
         debug!("Starting health check for {} enabled providers", enabled_providers.len());
 
         // 检查是否是初始检查
-        let is_initial_check = {
-            let initial_done = self.initial_check_done.read().unwrap();
-            !*initial_done
+        let is_initial_check = match self.initial_check_done.read() {
+            Ok(initial_done) => !*initial_done,
+            Err(_) => {
+                warn!("Failed to acquire read lock for initial_check_done, assuming not initial");
+                false
+            }
         };
 
         if is_initial_check {
@@ -107,9 +110,15 @@ impl HealthChecker {
 
         // 标记初始检查已完成
         if is_initial_check {
-            let mut initial_done = self.initial_check_done.write().unwrap();
-            *initial_done = true;
-            info!("Initial health check completed - subsequent checks will require chat validation for recovery");
+            match self.initial_check_done.write() {
+                Ok(mut initial_done) => {
+                    *initial_done = true;
+                    info!("Initial health check completed - subsequent checks will require chat validation for recovery");
+                }
+                Err(e) => {
+                    error!("Failed to acquire write lock for initial_check_done: {}", e);
+                }
+            }
         }
 
         debug!("Completed health check for all providers");
@@ -150,7 +159,7 @@ impl HealthChecker {
         let mut per_request_models = Vec::new();
 
         // 遍历所有模型映射，找到使用此provider的backends
-        for (_, model_mapping) in &config.models {
+        for model_mapping in config.models.values() {
             for backend in &model_mapping.backends {
                 if backend.provider == provider_id && provider.models.contains(&backend.model) {
                     match backend.billing_mode {
@@ -174,12 +183,10 @@ impl HealthChecker {
 
             // 获取per-token模型列表
             let mut per_token_models = Vec::new();
-            for (_, model_mapping) in &config.models {
+            for model_mapping in config.models.values() {
                 for backend in &model_mapping.backends {
-                    if backend.provider == provider_id && provider.models.contains(&backend.model) {
-                        if backend.billing_mode == BillingMode::PerToken {
-                            per_token_models.push(backend.model.clone());
-                        }
+                    if backend.provider == provider_id && provider.models.contains(&backend.model) && backend.billing_mode == BillingMode::PerToken {
+                        per_token_models.push(backend.model.clone());
                     }
                 }
             }
@@ -492,7 +499,7 @@ impl HealthChecker {
                         let mut backend_billing_mode = BillingMode::PerToken; // 默认值
                         let mut found_backend = false;
 
-                        for (_, model_mapping) in &self.config.models {
+                        for model_mapping in self.config.models.values() {
                             for backend in &model_mapping.backends {
                                 if backend.provider == provider_id && backend.model == model_name {
                                     backend_billing_mode = backend.billing_mode.clone();
@@ -608,10 +615,15 @@ impl HealthChecker {
 
         // 添加认证头
         if !provider.api_key.is_empty() {
-            headers.insert(
-                "Authorization",
-                format!("Bearer {}", provider.api_key).parse().unwrap(),
-            );
+            match format!("Bearer {}", provider.api_key).parse() {
+                Ok(auth_value) => {
+                    headers.insert("Authorization", auth_value);
+                }
+                Err(e) => {
+                    error!("Failed to parse authorization header for provider {}: {}", provider_id, e);
+                    return;
+                }
+            }
         }
 
         // 添加自定义头部

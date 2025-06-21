@@ -894,12 +894,14 @@ impl BackendSelector {
             });
         } else {
             // 如果选择失败，创建详细的错误信息
-            tracing::error!(
-                "Backend selection failed for model '{}' using strategy '{:?}': {}",
-                self.mapping.name,
-                self.mapping.strategy,
-                result.as_ref().unwrap_err()
-            );
+            if let Err(ref error) = result {
+                tracing::error!(
+                    "Backend selection failed for model '{}' using strategy '{:?}': {}",
+                    self.mapping.name,
+                    self.mapping.strategy,
+                    error
+                );
+            }
         }
 
         result

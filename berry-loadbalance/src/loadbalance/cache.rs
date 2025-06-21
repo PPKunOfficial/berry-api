@@ -66,6 +66,15 @@ pub struct BackendSelectionCache {
     evictions: AtomicU64,
 }
 
+impl Default for BackendSelectionCache {
+    fn default() -> Self {
+        Self::new(
+            Duration::from_secs(30), // 30秒TTL
+            1000, // 最大1000个条目
+        )
+    }
+}
+
 impl BackendSelectionCache {
     /// 创建新的缓存实例
     pub fn new(ttl: Duration, max_entries: usize) -> Self {
@@ -80,13 +89,7 @@ impl BackendSelectionCache {
         }
     }
 
-    /// 创建默认配置的缓存
-    pub fn default() -> Self {
-        Self::new(
-            Duration::from_secs(30), // 30秒TTL
-            1000, // 最大1000个条目
-        )
-    }
+
 
     /// 生成缓存键
     fn generate_cache_key(&self, model: &str, user_tags: Option<&[String]>) -> String {

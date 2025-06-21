@@ -25,7 +25,7 @@ impl ClaudeClient {
         let client = Client::builder()
             .timeout(timeout)
             .build()
-            .expect("Failed to create HTTP client");
+            .unwrap_or_else(|_| Client::new());
 
         Self {
             client,
@@ -37,7 +37,7 @@ impl ClaudeClient {
         let client = Client::builder()
             .connect_timeout(connect_timeout)
             .build()
-            .expect("Failed to create HTTP client");
+            .unwrap_or_else(|_| Client::new());
 
         Self {
             client,
@@ -226,7 +226,7 @@ impl AIBackendClient for ClaudeClient {
         // 转换为Claude格式
         let openai_json = config.to_openai_json();
         self.convert_openai_to_claude_format(&openai_json)
-            .unwrap_or_else(|_| openai_json)
+            .unwrap_or(openai_json)
     }
 
     fn supports_model(&self, _model: &str) -> bool {

@@ -29,8 +29,8 @@ impl AuthMiddleware {
 
         let token = match auth_header {
             Some(header) => {
-                if header.starts_with("Bearer ") {
-                    &header[7..] // 移除 "Bearer " 前缀
+                if let Some(stripped) = header.strip_prefix("Bearer ") {
+                    stripped // 移除 "Bearer " 前缀
                 } else {
                     return Err(create_auth_error_response(AuthError::missing_token()));
                 }
@@ -74,7 +74,7 @@ impl AuthMiddleware {
     ) -> Result<(), AuthError> {
         // 检查模型是否存在且启用
         let model = config.get_model(model_name);
-        if model.is_none() || !model.unwrap().enabled {
+        if model.is_none_or(|m| !m.enabled) {
             return Err(AuthError::model_access_denied(model_name));
         }
 

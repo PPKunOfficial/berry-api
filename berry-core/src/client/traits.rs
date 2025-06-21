@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use reqwest::header::HeaderMap;
-use serde_json::Value;
+use serde_json::{json, Value};
+use std::fmt;
 use std::time::Duration;
 use super::types::{ClientError, ClientResponse};
 
@@ -11,6 +12,17 @@ pub enum BackendType {
     Claude,
     Gemini,
     Custom(String),
+}
+
+impl fmt::Display for BackendType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BackendType::OpenAI => write!(f, "OpenAI"),
+            BackendType::Claude => write!(f, "Claude"),
+            BackendType::Gemini => write!(f, "Gemini"),
+            BackendType::Custom(name) => write!(f, "Custom({})", name),
+        }
+    }
 }
 
 impl BackendType {
@@ -33,15 +45,7 @@ impl BackendType {
         }
     }
 
-    /// 转换为字符串表示
-    pub fn to_string(&self) -> String {
-        match self {
-            BackendType::OpenAI => "OpenAI".to_string(),
-            BackendType::Claude => "Claude".to_string(),
-            BackendType::Gemini => "Gemini".to_string(),
-            BackendType::Custom(name) => format!("Custom({})", name),
-        }
-    }
+
 }
 
 /// 聊天消息角色
@@ -152,13 +156,13 @@ impl ChatCompletionConfig {
     /// 转换为OpenAI格式的JSON
     pub fn to_openai_json(&self) -> Value {
         let messages: Vec<Value> = self.messages.iter().map(|msg| {
-            serde_json::json!({
+            json!({
                 "role": msg.role.as_str(),
                 "content": msg.content
             })
         }).collect();
 
-        let mut json = serde_json::json!({
+        let mut json = json!({
             "model": self.model,
             "messages": messages
         });

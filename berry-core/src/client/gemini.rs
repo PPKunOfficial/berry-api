@@ -14,6 +14,12 @@ pub struct GeminiClient {
     timeout: Duration,
 }
 
+impl Default for GeminiClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GeminiClient {
     /// 创建新的Gemini客户端
     pub fn new() -> Self {
@@ -113,8 +119,8 @@ impl GeminiClient {
             let auth_str = auth_header.to_str()
                 .map_err(|e| ClientError::HeaderParseError(format!("Invalid Authorization header: {}", e)))?;
             
-            if auth_str.starts_with("Bearer ") {
-                return Ok(auth_str[7..].to_string());
+            if let Some(stripped) = auth_str.strip_prefix("Bearer ") {
+                return Ok(stripped.to_string());
             }
         }
 
@@ -186,11 +192,11 @@ impl GeminiClient {
 
         if !status.is_success() {
             // 错误响应直接返回原始文本
-            return Ok(response.text().await.map_err(|e| ClientError::RequestError(e))?);
+            return response.text().await.map_err(ClientError::RequestError);
         }
 
         let body_text = response.text().await
-            .map_err(|e| ClientError::RequestError(e))?;
+            .map_err(ClientError::RequestError)?;
 
         debug!("Original Gemini response: {}", body_text);
 
@@ -223,7 +229,7 @@ impl GeminiClient {
         let content = first_candidate.get("content")
             .and_then(|c| c.get("parts"))
             .and_then(|p| p.as_array())
-            .and_then(|parts| parts.get(0))
+            .and_then(|parts| parts.first())
             .and_then(|part| part.get("text"))
             .and_then(|t| t.as_str())
             .unwrap_or("");
@@ -299,7 +305,7 @@ impl AIBackendClient for GeminiClient {
         let response = self.models(token).await?;
         let status = response.status().as_u16();
         let body = response.text().await
-            .map_err(|e| ClientError::RequestError(e))?;
+            .map_err(ClientError::RequestError)?;
 
         Ok(ClientResponse::new(status, body))
     }

@@ -304,7 +304,7 @@ impl LoadBalanceService {
         let mut found_backend = false;
 
         // 查找对应的backend配置和负载均衡策略
-        for (_, model_mapping) in &config.models {
+        for model_mapping in config.models.values() {
             for backend in &model_mapping.backends {
                 if backend.provider == provider && backend.model == model {
                     backend_billing_mode = backend.billing_mode.clone();
@@ -475,7 +475,7 @@ impl LoadBalanceService {
         let config = self.manager.get_config();
 
         // 遍历所有模型映射，找到匹配的backend
-        for (_, model_mapping) in &config.models {
+        for model_mapping in config.models.values() {
             for backend in &model_mapping.backends {
                 if backend.provider == provider && backend.model == model {
                     return Some(backend.weight);

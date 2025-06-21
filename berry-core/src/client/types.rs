@@ -29,7 +29,7 @@ impl ClientResponse {
         Self {
             status_code: status,
             body,
-            is_success: status >= 200 && status < 300,
+            is_success: (200..300).contains(&status),
         }
     }
 }

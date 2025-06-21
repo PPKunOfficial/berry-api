@@ -21,7 +21,7 @@ impl SmartAiHealthChecker {
         let client = Client::builder()
             .timeout(Duration::from_secs(15))
             .build()
-            .expect("Failed to create HTTP client for SmartAI health checker");
+            .unwrap_or_else(|_| Client::new());
 
         Self {
             config,

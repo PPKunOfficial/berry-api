@@ -161,7 +161,7 @@ static GLOBAL_REGISTRY: std::sync::OnceLock<ClientRegistry> = std::sync::OnceLoc
 
 /// 获取全局客户端注册表
 pub fn get_global_registry() -> &'static ClientRegistry {
-    GLOBAL_REGISTRY.get_or_init(|| ClientRegistry::new())
+    GLOBAL_REGISTRY.get_or_init(ClientRegistry::new)
 }
 
 /// 注册全局客户端类型

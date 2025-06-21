@@ -25,7 +25,7 @@ impl OpenAIClient {
         let client = Client::builder()
             .timeout(timeout)
             .build()
-            .expect("Failed to create HTTP client");
+            .unwrap_or_else(|_| Client::new());
 
         Self {
             client,
@@ -37,7 +37,7 @@ impl OpenAIClient {
         let client = Client::builder()
             .connect_timeout(connect_timeout)  // 只设置连接超时，不限制总请求时间
             .build()
-            .expect("Failed to create HTTP client");
+            .unwrap_or_else(|_| Client::new());
 
         Self {
             client,
