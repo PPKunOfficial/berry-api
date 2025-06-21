@@ -90,32 +90,7 @@ jobs:
           files: |
             release-assets/berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz
             release-assets/berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz.sha256
-          body: |
-            ## Berry API ${{ github.ref_name }}
-
-            ### 🚀 新功能和改进
-            - 详细更新内容请查看 [CHANGELOG.md](CHANGELOG.md)
-
-            ### 📦 下载说明
-            - `berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz`: Linux x86_64 berry-api 二进制文件包
-            - `berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz.sha256`: SHA256 校验和文件
-
-            ### 🐳 Docker 镜像
-            ```bash
-            docker pull ppkun00/berry-api:${{ github.ref_name }}
-            docker pull ppkun00/berry-api:latest
-            ```
-
-            ### ⚡ 快速使用
-            ```bash
-            # 下载并解压
-            wget https://github.com/PPKunOfficial/berry-api/releases/download/${{ github.ref_name }}/berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz
-            tar -xzf berry-api-${{ github.ref_name }}-linux-x86_64.tar.gz
-
-            # 运行服务
-            chmod +x berry-api-linux-x86_64
-            ./berry-api-linux-x86_64
-            ```
+          generate_release_notes: true
           draft: false
           prerelease: false
         env:
