@@ -1190,22 +1190,14 @@ impl BackendSelector {
             ).into());
         }
 
-        // 小流量优化的选择策略
+        // 小流量优化的选择策略：使用纯加权随机避免过度偏向
         let selected_backend = if weighted_backends.len() == 1 {
             // 只有一个可用后端
             weighted_backends[0].0.clone()
         } else {
-            // 80%选择最佳，20%探索其他（避免过度集中）
-            if rand::random::<f64>() < 0.8 {
-                // 选择权重最高的
-                let best = weighted_backends.iter()
-                    .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
-                    .unwrap();
-                best.0.clone()
-            } else {
-                // 加权随机选择（探索其他后端）
-                self.weighted_random_select_smart_ai(&weighted_backends)?
-            }
+            // 使用加权随机选择，避免80/20策略导致的过度偏向
+            // 这样既能利用信心度信息，又能确保所有后端都有合理的选择机会
+            self.weighted_random_select_smart_ai(&weighted_backends)?
         };
 
         tracing::debug!(
@@ -1225,19 +1217,23 @@ impl BackendSelector {
         // 检查是否为premium后端
         let is_premium = backend.tags.contains(&"premium".to_string());
 
-        // 信心度到权重的映射
-        let confidence_weight = match confidence {
-            c if c >= 0.8 => c,           // 高信心度：按比例
-            c if c >= 0.6 => c * 0.8,     // 中等信心度：适度降权
-            c if c >= 0.3 => c * 0.5,     // 低信心度：大幅降权
-            _ => 0.05,                    // 极低信心度：保留恢复机会
+        // 平滑的信心度到权重映射，避免极端差距
+        // 使用平方根函数来平滑信心度差距，减少马太效应
+        let confidence_weight = if confidence >= 0.1 {
+            // 对于正常信心度，使用平方根平滑 + 基础权重保证
+            let smoothed = confidence.sqrt();
+            // 确保最小权重不低于0.3，最大权重不超过1.0
+            (smoothed * 0.7 + 0.3).min(1.0)
+        } else {
+            // 极低信心度：保留恢复机会
+            0.1
         };
 
-        // 只有非premium后端才能获得稳定性加成
-        let stability_bonus = if !is_premium && confidence > 0.9 {
-            1.1  // 非premium后端稳定时给予10%加成
+        // 温和的稳定性加成，避免过度偏向
+        let stability_bonus = if !is_premium && confidence > 0.95 {
+            1.05  // 非premium后端极度稳定时给予5%加成（降低从10%到5%）
         } else {
-            1.0  // premium后端不给加成，凭原始权重竞争
+            1.0   // premium后端不给加成，凭原始权重竞争
         };
 
         let effective_weight = base_weight * confidence_weight * stability_bonus;
