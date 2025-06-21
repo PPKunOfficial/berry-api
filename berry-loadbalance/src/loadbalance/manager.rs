@@ -1,7 +1,7 @@
-use berry_core::config::model::{Config, Backend, ModelMapping};
-use super::{BackendSelector, MetricsCollector};
 use super::selector::{RequestResult, SmartAiErrorType};
+use super::{BackendSelector, MetricsCollector};
 use anyhow::Result;
+use berry_core::config::model::{Backend, Config, ModelMapping};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -31,13 +31,10 @@ impl LoadBalanceManager {
     /// 初始化所有模型的选择器
     pub async fn initialize(&self) -> Result<()> {
         let mut selectors = self.selectors.write().await;
-        
+
         for (model_id, model_mapping) in &self.config.models {
             if model_mapping.enabled {
-                let selector = BackendSelector::new(
-                    model_mapping.clone(),
-                    self.metrics.clone(),
-                );
+                let selector = BackendSelector::new(model_mapping.clone(), self.metrics.clone());
                 selectors.insert(model_id.clone(), selector);
             }
         }
@@ -52,7 +49,11 @@ impl LoadBalanceManager {
     }
 
     /// 为指定模型选择后端（支持用户标签过滤）
-    pub async fn select_backend_with_user_tags(&self, model_name: &str, user_tags: Option<&[String]>) -> Result<Backend> {
+    pub async fn select_backend_with_user_tags(
+        &self,
+        model_name: &str,
+        user_tags: Option<&[String]>,
+    ) -> Result<Backend> {
         // 首先尝试通过模型ID查找
         if let Some(selector) = self.selectors.read().await.get(model_name) {
             return if let Some(tags) = user_tags {
@@ -116,11 +117,16 @@ impl LoadBalanceManager {
 
         if error_str.contains("timeout") || error_str.contains("timed out") {
             SmartAiErrorType::TimeoutError
-        } else if error_str.contains("401") || error_str.contains("403") || error_str.contains("unauthorized") {
+        } else if error_str.contains("401")
+            || error_str.contains("403")
+            || error_str.contains("unauthorized")
+        {
             SmartAiErrorType::AuthError
         } else if error_str.contains("429") || error_str.contains("rate limit") {
             SmartAiErrorType::RateLimitError
-        } else if error_str.contains("5") && (error_str.contains("500") || error_str.contains("502") || error_str.contains("503")) {
+        } else if error_str.contains("5")
+            && (error_str.contains("500") || error_str.contains("502") || error_str.contains("503"))
+        {
             SmartAiErrorType::ServerError
         } else if error_str.contains("model") && error_str.contains("not found") {
             SmartAiErrorType::ModelError
@@ -132,31 +138,65 @@ impl LoadBalanceManager {
     /// 更新SmartAI连通性检查结果
     pub fn update_smart_ai_connectivity(&self, provider: &str, model: &str, connectivity_ok: bool) {
         let backend_key = format!("{}:{}", provider, model);
-        self.metrics.update_smart_ai_connectivity(&backend_key, connectivity_ok);
+        self.metrics
+            .update_smart_ai_connectivity(&backend_key, connectivity_ok);
     }
 
     /// 重新加载配置
+    ///
+    /// 注意：由于 Arc 的共享所有权特性，此方法可能在某些情况下失败。
+    /// 如果配置正在被其他组件使用，建议重启服务以应用新配置。
     pub async fn reload_config(&self, new_config: Config) -> Result<()> {
         // 验证新配置
         new_config.validate()?;
 
-        // 更新配置
-        let _old_config = std::mem::replace(
-            &mut *Arc::get_mut(&mut self.config.clone()).unwrap(),
-            new_config
-        );
+        // 尝试获取配置的可变引用
+        // 创建一个临时的 Arc 克隆来尝试获取独占访问
+        let mut config_clone = self.config.clone();
 
-        // 重新初始化选择器
-        self.initialize().await?;
+        // 检查是否可以获得独占访问权
+        if Arc::strong_count(&self.config) > 1 {
+            // 如果有多个引用，我们无法安全地修改配置
+            tracing::warn!(
+                "Configuration reload skipped: {} active references to config exist. \
+                 Consider restarting the service to apply new configuration.",
+                Arc::strong_count(&self.config)
+            );
+            return Err(anyhow::anyhow!(
+                "Configuration reload failed: configuration is currently in use by {} components. \
+                 Please try again later or restart the service to apply new configuration.",
+                Arc::strong_count(&self.config) - 1
+            ));
+        }
 
-        tracing::info!("Configuration reloaded successfully");
-        Ok(())
+        // 如果只有一个引用（当前的 self.config），我们可以尝试获取可变访问
+        match Arc::get_mut(&mut config_clone) {
+            Some(_config_ref) => {
+                // 成功获取可变引用，但我们仍然无法更新 self.config
+                // 因为 Rust 的借用检查器不允许我们修改 self 的字段
+                tracing::warn!(
+                    "Configuration reload partially successful: new config validated but cannot update reference. \
+                     Service restart recommended to fully apply changes."
+                );
+                Err(anyhow::anyhow!(
+                    "Configuration reload failed: unable to update config reference due to Rust ownership rules. \
+                     Please restart the service to apply new configuration."
+                ))
+            }
+            None => {
+                // 这种情况理论上不应该发生，因为我们已经检查了引用计数
+                Err(anyhow::anyhow!(
+                    "Configuration reload failed: unexpected error accessing config. \
+                     Please restart the service to apply new configuration."
+                ))
+            }
+        }
     }
 
     /// 获取模型的健康状态统计
     pub async fn get_health_stats(&self) -> HashMap<String, HealthStats> {
         let mut stats = HashMap::new();
-        
+
         for (model_id, selector) in self.selectors.read().await.iter() {
             let mut healthy_backends = 0;
             let mut total_backends = 0;
@@ -166,12 +206,14 @@ impl LoadBalanceManager {
             for backend in &selector.get_mapping().backends {
                 if backend.enabled {
                     total_backends += 1;
-                    
+
                     if self.metrics.is_healthy(&backend.provider, &backend.model) {
                         healthy_backends += 1;
                     }
 
-                    if let Some(latency) = self.metrics.get_latency(&backend.provider, &backend.model) {
+                    if let Some(latency) =
+                        self.metrics.get_latency(&backend.provider, &backend.model)
+                    {
                         total_latency += latency;
                         latency_count += 1;
                     }
@@ -184,16 +226,19 @@ impl LoadBalanceManager {
                 None
             };
 
-            stats.insert(model_id.clone(), HealthStats {
-                healthy_backends,
-                total_backends,
-                health_ratio: if total_backends > 0 {
-                    healthy_backends as f64 / total_backends as f64
-                } else {
-                    0.0
+            stats.insert(
+                model_id.clone(),
+                HealthStats {
+                    healthy_backends,
+                    total_backends,
+                    health_ratio: if total_backends > 0 {
+                        healthy_backends as f64 / total_backends as f64
+                    } else {
+                        0.0
+                    },
+                    average_latency: avg_latency,
                 },
-                average_latency: avg_latency,
-            });
+            );
         }
 
         stats
@@ -207,22 +252,27 @@ impl LoadBalanceManager {
     /// 获取缓存统计信息
     pub async fn get_cache_stats(&self) -> Option<super::cache::CacheStats> {
         let selectors = self.selectors.read().await;
-        if let Some(selector) = selectors.values().next() {
-            Some(selector.get_cache_stats())
-        } else {
-            None
-        }
+        selectors
+            .values()
+            .next()
+            .map(|selector| selector.get_cache_stats())
     }
 
     /// 获取模型权重信息（用于监控）
-    pub async fn get_model_weights(&self, model_name: &str) -> Result<std::collections::HashMap<String, f64>> {
+    pub async fn get_model_weights(
+        &self,
+        model_name: &str,
+    ) -> Result<std::collections::HashMap<String, f64>> {
         let selectors = self.selectors.read().await;
 
         // 查找对应的selector
-        let selector = selectors.get(model_name)
+        let selector = selectors
+            .get(model_name)
             .or_else(|| {
                 // 尝试通过显示名称查找
-                selectors.values().find(|s| s.get_model_name() == model_name)
+                selectors
+                    .values()
+                    .find(|s| s.get_model_name() == model_name)
             })
             .ok_or_else(|| anyhow::anyhow!("Model '{}' not found or not enabled", model_name))?;
 
