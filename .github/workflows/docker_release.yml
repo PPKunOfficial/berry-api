@@ -6,13 +6,42 @@ on:
       - 'v*.*.*'
 
 jobs:
-  docker:
+  build-and-docker:
     runs-on: ubuntu-latest
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 设置 Buildx
+      - name: 设置 Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: x86_64-unknown-linux-gnu
+
+      - name: 设置 Rust 缓存
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "."
+          cache-on-failure: true
+
+      - name: 编译 Rust 二进制文件
+        run: |
+          # 编译所有二进制文件，启用 observability 功能
+          cargo build --workspace --release --features observability --target x86_64-unknown-linux-gnu
+
+          # 验证二进制文件存在
+          ls -la target/x86_64-unknown-linux-gnu/release/
+
+          # 创建临时目录存放二进制文件
+          mkdir -p ./docker-binaries
+          cp target/x86_64-unknown-linux-gnu/release/berry-api ./docker-binaries/
+          cp target/x86_64-unknown-linux-gnu/release/berry-cli ./docker-binaries/
+
+          # 验证二进制文件可执行
+          file ./docker-binaries/berry-api
+          file ./docker-binaries/berry-cli
+
+      - name: 设置 Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: 登录到 Docker Hub
@@ -25,8 +54,11 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
+          file: ./Dockerfile.prebuilt
           push: true
           platforms: linux/amd64
           tags: |
             ppkun00/berry-api:${{ github.ref_name }}
             ppkun00/berry-api:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

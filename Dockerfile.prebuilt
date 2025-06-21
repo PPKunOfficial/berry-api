@@ -1,0 +1,25 @@
+# =================================================================
+# Dockerfile for pre-built binaries
+# 使用预编译的二进制文件构建 Docker 镜像，避免在容器内编译
+# =================================================================
+
+# 使用 Google 的 Distroless 镜像，它极小且安全，不包含 shell 和包管理器
+FROM gcr.io/distroless/cc-debian12
+
+# 设置工作目录
+WORKDIR /app
+
+# 从宿主机复制预编译的二进制文件
+COPY ./docker-binaries/berry-api /usr/local/bin/berry-api
+COPY ./docker-binaries/berry-cli /usr/local/bin/berry-cli
+
+# 暴露端口
+EXPOSE 3000
+
+# 设置环境变量
+ENV RUST_LOG=info
+ENV BIND_ADDRESS=0.0.0.0:3000
+ENV CONFIG_PATH=/app/config.toml
+
+# 启动命令
+CMD ["/usr/local/bin/berry-api"]

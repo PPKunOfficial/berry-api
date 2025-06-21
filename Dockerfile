@@ -1,4 +1,11 @@
 # =================================================================
+# 传统多阶段构建 Dockerfile (备选方案)
+# 在容器内编译 Rust 应用，适用于本地开发或无法预编译的场景
+#
+# 使用方法: docker build -f Dockerfile .
+# =================================================================
+
+# =================================================================
 # Stage 1: Builder - 编译你的 Rust 应用
 # 使用 slim 镜像并固定版本以保证构建的稳定性
 # =================================================================
@@ -10,8 +17,8 @@ WORKDIR /app
 # 复制整个项目，确保所有必要的文件都存在
 COPY . .
 
-# 直接构建项目，不使用虚拟源码方式
-RUN cargo build --workspace --release
+# 直接构建项目，启用 observability 功能
+RUN cargo build --workspace --release --features observability
 
 # =================================================================
 # Stage 2: Runner - 运行你的应用
@@ -24,6 +31,7 @@ WORKDIR /app
 
 # 从 builder 阶段复制编译好的二进制文件
 COPY --from=builder /app/target/release/berry-api /usr/local/bin/berry-api
+COPY --from=builder /app/target/release/berry-cli /usr/local/bin/berry-cli
 
 # 暴露端口
 EXPOSE 3000

@@ -324,13 +324,51 @@ curl -X POST http://localhost:3000/v1/chat/completions \
 
 ### 🐳 Docker部署
 
-使用Docker Compose快速部署：
+Berry API 提供了两种 Docker 构建方式，以满足不同的性能和使用需求：
+
+#### 🚀 方式一：预编译构建（推荐）
+
+**特点：** 在宿主机预编译，避免 Docker 内编译的性能损失
+
+```bash
+# 1. 预编译二进制文件
+cargo build --workspace --release --features observability --target x86_64-unknown-linux-gnu
+
+# 2. 准备 Docker 构建文件
+mkdir -p ./docker-binaries
+cp target/x86_64-unknown-linux-gnu/release/berry-api ./docker-binaries/
+cp target/x86_64-unknown-linux-gnu/release/berry-cli ./docker-binaries/
+
+# 3. 构建 Docker 镜像
+docker build -f Dockerfile.prebuilt -t berry-api:latest .
+
+# 4. 运行容器
+docker run -p 3000:3000 -v ./config.toml:/app/config.toml:ro berry-api:latest
+```
+
+**或使用便捷脚本：**
+```bash
+# 一键预编译构建
+./scripts/build-precompiled-docker.sh
+```
+
+#### 🔧 方式二：传统多阶段构建
+
+**特点：** 完全在容器内编译，适合本地开发
+
+```bash
+# 使用传统 Dockerfile 构建
+docker build -f Dockerfile -t berry-api:latest .
+```
+
+#### 📦 Docker Compose 部署
 
 ```yaml
 # docker-compose.yml
 services:
   berry-api:
-    build: .
+    image: ppkun00/berry-api:latest  # 使用预构建镜像
+    # 或者本地构建: build: .
     ports:
       - "3000:3000"
     environment:
@@ -340,6 +378,8 @@ services:
       - ./config.toml:/app/config.toml:ro
     restart: unless-stopped
 ```
+
+> 📖 **详细说明：** 查看 [DOCKER_BUILD.md](DOCKER_BUILD.md) 了解两种构建方式的详细对比和使用指南
 
 ```bash
 # 启动服务
@@ -1644,18 +1684,28 @@ MAX_CONNECTIONS=1000
 
 ### 🐳 Docker 生产部署
 
-**多阶段构建优化**
+**推荐：预编译构建（性能优化）**
+```bash
+# CI/CD 流水线中的构建步骤
+cargo build --workspace --release --features observability --target x86_64-unknown-linux-gnu
+mkdir -p ./docker-binaries
+cp target/x86_64-unknown-linux-gnu/release/berry-api ./docker-binaries/
+cp target/x86_64-unknown-linux-gnu/release/berry-cli ./docker-binaries/
+docker build -f Dockerfile.prebuilt -t berry-api:prod .
+```
+
+**备选：传统多阶段构建**
 ```dockerfile
-# Dockerfile.prod
-FROM rust:1.75-slim AS builder
+# Dockerfile (已优化)
+FROM rust:1.87-slim-bookworm AS builder
 WORKDIR /app
 COPY . .
-RUN cargo build --release --features observability
+RUN cargo build --workspace --release --features observability
 
 FROM gcr.io/distroless/cc-debian12
 WORKDIR /app
 COPY --from=builder /app/target/release/berry-api /usr/local/bin/
-COPY --from=builder /app/config /app/config
+COPY --from=builder /app/target/release/berry-cli /usr/local/bin/
 EXPOSE 3000
 CMD ["/usr/local/bin/berry-api"]
 ```
