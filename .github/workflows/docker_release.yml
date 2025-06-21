@@ -5,6 +5,10 @@ on:
     tags:
       - 'v*.*.*'
 
+permissions:
+  contents: write  # 允许创建 Release
+  packages: write  # 允许推送到 GitHub Packages (可选)
+
 jobs:
   build-and-docker:
     runs-on: ubuntu-latest
