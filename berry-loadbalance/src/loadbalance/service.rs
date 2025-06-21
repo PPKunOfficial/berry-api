@@ -297,32 +297,64 @@ impl LoadBalanceService {
         model: &str,
         result: RequestResult,
     ) {
+        // 首先检查是否需要记录SmartAI信心度
+        let config = self.manager.get_config();
+        let mut is_smart_ai_model = false;
+        let mut backend_billing_mode = berry_core::BillingMode::PerToken; // 默认值
+        let mut found_backend = false;
+
+        // 查找对应的backend配置和负载均衡策略
+        for (_, model_mapping) in &config.models {
+            for backend in &model_mapping.backends {
+                if backend.provider == provider && backend.model == model {
+                    backend_billing_mode = backend.billing_mode.clone();
+                    is_smart_ai_model = model_mapping.strategy == berry_core::LoadBalanceStrategy::SmartAi;
+                    found_backend = true;
+                    break;
+                }
+            }
+            if found_backend {
+                break;
+            }
+        }
+
+        if !found_backend {
+            warn!("Backend configuration not found for {}:{}, using default per-token billing", provider, model);
+        }
+
+        // 如果是SmartAI模型，记录SmartAI信心度
+        if is_smart_ai_model {
+            let smart_ai_result = match &result {
+                RequestResult::Success { latency } => {
+                    super::selector::RequestResult {
+                        success: true,
+                        latency: *latency,
+                        error_type: None,
+                        timestamp: std::time::Instant::now(),
+                    }
+                }
+                RequestResult::Failure { error } => {
+                    let error_type = LoadBalanceManager::classify_error(&anyhow::anyhow!("{}", error));
+                    super::selector::RequestResult {
+                        success: false,
+                        latency: std::time::Duration::from_millis(0),
+                        error_type: Some(error_type),
+                        timestamp: std::time::Instant::now(),
+                    }
+                }
+            };
+
+            let is_success = smart_ai_result.success;
+            self.manager.record_smart_ai_request(provider, model, smart_ai_result);
+            debug!(
+                "Recorded SmartAI request for {}:{}: success={}",
+                provider, model, is_success
+            );
+        }
+
         match result {
             RequestResult::Success { latency } => {
                 let backend_key = format!("{}:{}", provider, model);
-
-                // 检查backend的计费模式
-                let config = self.manager.get_config();
-                let mut backend_billing_mode = berry_core::BillingMode::PerToken; // 默认值
-                let mut found_backend = false;
-
-                // 查找对应的backend配置
-                for (_, model_mapping) in &config.models {
-                    for backend in &model_mapping.backends {
-                        if backend.provider == provider && backend.model == model {
-                            backend_billing_mode = backend.billing_mode.clone();
-                            found_backend = true;
-                            break;
-                        }
-                    }
-                    if found_backend {
-                        break;
-                    }
-                }
-
-                if !found_backend {
-                    warn!("Backend configuration not found for {}:{}, using default per-token billing", provider, model);
-                }
 
                 match backend_billing_mode {
                     berry_core::BillingMode::PerToken => {
@@ -368,24 +400,6 @@ impl LoadBalanceService {
                 );
 
                 // 对于按请求计费的backend，失败时需要初始化权重恢复状态
-                let config = self.manager.get_config();
-                let mut backend_billing_mode = berry_core::BillingMode::PerToken; // 默认值
-                let mut found_backend = false;
-
-                // 查找对应的backend配置
-                for (_, model_mapping) in &config.models {
-                    for backend in &model_mapping.backends {
-                        if backend.provider == provider && backend.model == model {
-                            backend_billing_mode = backend.billing_mode.clone();
-                            found_backend = true;
-                            break;
-                        }
-                    }
-                    if found_backend {
-                        break;
-                    }
-                }
-
                 if found_backend && backend_billing_mode == berry_core::BillingMode::PerRequest {
                     let backend_key = format!("{}:{}", provider, model);
                     let original_weight = self.get_backend_original_weight(provider, model).unwrap_or(1.0);
@@ -448,6 +462,12 @@ impl LoadBalanceService {
     /// 获取缓存统计信息
     pub async fn get_cache_stats(&self) -> Option<super::cache::CacheStats> {
         self.manager.get_cache_stats().await
+    }
+
+    /// 获取模型权重信息（用于监控）
+    pub async fn get_model_weights(&self, model_name: &str) -> Result<std::collections::HashMap<String, f64>> {
+        // 委托给manager来获取权重信息
+        self.manager.get_model_weights(model_name).await
     }
 
     /// 获取backend的原始权重

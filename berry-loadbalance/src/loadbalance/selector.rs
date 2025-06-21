@@ -784,6 +784,38 @@ impl BackendSelector {
         &self.mapping.name
     }
 
+    /// 获取当前模型的权重信息（用于监控）
+    pub fn get_current_weights(&self) -> std::collections::HashMap<String, f64> {
+        let mut weights = std::collections::HashMap::new();
+
+        for (i, backend) in self.mapping.backends.iter().enumerate() {
+            if backend.enabled {
+                let backend_key = &self.backend_keys[i];
+
+                // 根据负载均衡策略计算有效权重
+                let effective_weight = match self.mapping.strategy {
+                    LoadBalanceStrategy::SmartAi => {
+                        // SmartAI策略：使用信心度计算有效权重
+                        let confidence = self.metrics.get_smart_ai_confidence(backend_key);
+                        self.calculate_smart_ai_effective_weight(backend, confidence)
+                    }
+                    LoadBalanceStrategy::SmartWeightedFailover => {
+                        // 智能权重故障转移：考虑权重恢复状态
+                        self.metrics.get_effective_weight(backend_key, backend.weight)
+                    }
+                    _ => {
+                        // 其他策略：使用原始权重
+                        backend.weight
+                    }
+                };
+
+                weights.insert(backend_key.clone(), effective_weight);
+            }
+        }
+
+        weights
+    }
+
     pub fn select(&self) -> Result<Backend> {
         let enabled_backends: Vec<Backend> = self
             .mapping

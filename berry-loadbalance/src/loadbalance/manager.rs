@@ -213,6 +213,22 @@ impl LoadBalanceManager {
             None
         }
     }
+
+    /// 获取模型权重信息（用于监控）
+    pub async fn get_model_weights(&self, model_name: &str) -> Result<std::collections::HashMap<String, f64>> {
+        let selectors = self.selectors.read().await;
+
+        // 查找对应的selector
+        let selector = selectors.get(model_name)
+            .or_else(|| {
+                // 尝试通过显示名称查找
+                selectors.values().find(|s| s.get_model_name() == model_name)
+            })
+            .ok_or_else(|| anyhow::anyhow!("Model '{}' not found or not enabled", model_name))?;
+
+        // 直接使用selector的权重计算方法
+        Ok(selector.get_current_weights())
+    }
 }
 
 /// 健康状态统计
