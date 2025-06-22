@@ -528,7 +528,7 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
         use futures::StreamExt;
         let stream = futures::stream::unfold(
             (data_stream, tokio::time::interval(std::time::Duration::from_secs(30)), false),
-            move |(mut data_stream, mut keepalive_interval, data_ended)| async move {
+            move |(mut data_stream, keepalive_interval, data_ended)| async move {
                 if data_ended {
                     return None;
                 }
@@ -549,10 +549,10 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
                         }
                     }
                     // 发送保活信号
-                    _ = keepalive_interval.tick() => {
-                        tracing::debug!("Sending keep-alive comment");
-                        Some((Ok(Event::default().comment("keep-alive")), (data_stream, keepalive_interval, false)))
-                    }
+                    // _ = keepalive_interval.tick() => {
+                    //     tracing::debug!("Sending keep-alive comment");
+                    //     Some((Ok(Event::default().comment("keep-alive")), (data_stream, keepalive_interval, false)))
+                    // }
                 }
             }
         ).boxed();
