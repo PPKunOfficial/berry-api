@@ -1,4 +1,4 @@
-pub mod router;
+pub mod routes;
 pub mod admin;
 pub mod health;
 pub mod models;

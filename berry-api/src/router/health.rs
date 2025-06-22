@@ -89,7 +89,7 @@ pub async fn detailed_health_check(State(state): State<AppState>) -> impl IntoRe
                 "backends": model_backends,
                 "total_backends": model_mapping.backends.iter().filter(|b| b.enabled).count(),
                 "healthy_backends": healthy_backends,
-                "health_ratio": if model_mapping.backends.len() > 0 {
+                "health_ratio": if !model_mapping.backends.is_empty() {
                     healthy_backends as f64 / model_mapping.backends.iter().filter(|b| b.enabled).count() as f64
                 } else {
                     0.0
@@ -163,7 +163,7 @@ pub async fn simple_health_check(State(state): State<AppState>) -> impl IntoResp
     let mut healthy_backends = 0;
     let mut total_backends = 0;
 
-    for (_, model_mapping) in &config.models {
+    for model_mapping in config.models.values() {
         if model_mapping.enabled {
             for backend in &model_mapping.backends {
                 if backend.enabled {

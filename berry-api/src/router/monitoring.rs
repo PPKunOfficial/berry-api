@@ -139,7 +139,7 @@ pub async fn get_performance_metrics(
     // 获取所有后端的详细指标
     let mut backend_metrics = Vec::new();
     
-    for (model_key, _model_stats) in &service_health.model_stats {
+    for model_key in service_health.model_stats.keys() {
         let config = &state.config;
         
         // 查找对应的模型配置
@@ -151,11 +151,7 @@ pub async fn get_performance_metrics(
                     // 获取该后端的详细指标
                     let request_count = metrics_collector.get_backend_request_count(&backend_key);
                     let failure_count = metrics_collector.get_failure_count(&backend.provider, &backend.model);
-                    let success_count = if request_count > failure_count as u64 {
-                        request_count - failure_count as u64
-                    } else {
-                        0
-                    };
+                    let success_count = request_count.saturating_sub(failure_count as u64);
                     let latency = metrics_collector.get_latency(&backend.provider, &backend.model);
                     let is_healthy = metrics_collector.is_healthy(&backend.provider, &backend.model);
                     

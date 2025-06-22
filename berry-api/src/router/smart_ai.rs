@@ -161,7 +161,7 @@ pub async fn get_model_smart_ai_weights(
     let config = &state.config;
 
     // 查找模型 - 支持通过键名或显示名称查找
-    let (_found_key, model_mapping) = match find_model_by_name(&config, &model_name) {
+    let (_found_key, model_mapping) = match find_model_by_name(config, &model_name) {
         Some((key, mapping)) => (key, mapping),
         None => {
             return Json(json!({

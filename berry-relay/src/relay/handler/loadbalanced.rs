@@ -218,14 +218,12 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
                     ).await;
 
                     // 使用统一的重试错误处理器
-                    if let Err(final_error) = RetryErrorHandler::handle_retry_error(
+                    RetryErrorHandler::handle_retry_error(
                         attempt,
                         max_retries,
                         &anyhow::anyhow!("{}", e),
                         &format!("API key configuration error for model '{}'", model_name),
-                    ) {
-                        return Err(final_error);
-                    }
+                    )?;
                     continue;
                 }
             };
@@ -249,20 +247,18 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
                     ).await;
 
                     // 使用统一的重试错误处理器
-                    if let Err(final_error) = RetryErrorHandler::handle_retry_error(
+                    RetryErrorHandler::handle_retry_error(
                         attempt,
                         max_retries,
                         &anyhow::anyhow!("{}", e),
                         &format!("Failed to create client for model '{}'", model_name),
-                    ) {
-                        return Err(final_error);
-                    }
+                    )?;
                     continue;
                 }
             };
 
             // 构建请求头
-            let headers = match client.build_request_headers(&authorization, &content_type) {
+            let headers = match client.build_request_headers(authorization, content_type) {
                 Ok(mut h) => {
                     // 使用选中后端的API密钥
                     match format!("Bearer {}", api_key).parse() {
@@ -281,14 +277,12 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
                                 &anyhow::anyhow!("Authorization header parse error: {}", e),
                             ).await;
 
-                            if let Err(final_error) = RetryErrorHandler::handle_retry_error(
+                            RetryErrorHandler::handle_retry_error(
                                 attempt,
                                 max_retries,
                                 &anyhow::anyhow!("Authorization header parse error: {}", e),
                                 &format!("Authorization header configuration error for model '{}'", model_name),
-                            ) {
-                                return Err(final_error);
-                            }
+                            )?;
                             continue;
                         }
                     }
@@ -673,7 +667,7 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
         let provider_clone = provider.clone();
         let model_clone = model.clone();
         let load_balancer_clone = self.load_balancer.clone();
-        let start_time_clone = start_time.clone();
+        let start_time_clone = start_time;
 
         tokio::spawn(async move {
             let response = match client_clone.chat_completions_raw(headers_clone, &body_clone).await {

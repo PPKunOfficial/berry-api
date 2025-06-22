@@ -111,7 +111,7 @@ impl BatchMetricsCollector {
     }
 
     /// 创建默认配置的收集器
-    pub fn default() -> Self {
+    pub fn with_default_config() -> Self {
         Self::new(BatchMetricsConfig::default())
     }
 
@@ -119,7 +119,7 @@ impl BatchMetricsCollector {
     pub fn record_event(&self, event: MetricEvent) {
         self.total_events.fetch_add(1, Ordering::Relaxed);
         
-        if let Err(_) = self.sender.send(event) {
+        if self.sender.send(event).is_err() {
             self.dropped_events.fetch_add(1, Ordering::Relaxed);
             warn!("Failed to send metric event: channel closed");
         }

@@ -1,7 +1,7 @@
 use berry_core::config::loader::load_config;
 use berry_loadbalance::LoadBalanceService;
 use berry_relay::relay::handler::loadbalanced::ConcreteLoadBalancedHandler;
-use crate::router::router::create_app_router;
+use crate::router::routes::create_app_router;
 use berry_core::auth::rate_limit::RateLimitService;
 
 use anyhow::Result;
@@ -62,7 +62,7 @@ impl AppState {
         let prometheus_metrics = None;
 
         // 创建批量指标收集器
-        let batch_metrics = Arc::new(crate::observability::batch_metrics::BatchMetricsCollector::default());
+        let batch_metrics = Arc::new(crate::observability::batch_metrics::BatchMetricsCollector::with_default_config());
         info!("Batch metrics collector initialized");
 
         let app_state = Self {
@@ -204,7 +204,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_index_endpoint() {
-        use crate::router::router::index;
+        use crate::router::routes::index;
         use axum::routing::get;
 
         // 创建一个简单的测试，不需要真实的配置
