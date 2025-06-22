@@ -6,7 +6,7 @@ use axum::{
     routing::{get, post},
     middleware,
 };
-use tower_http::trace::TraceLayer;
+use tower_http::{trace::TraceLayer, cors::CorsLayer};
 
 use super::{
     chat::chat_completions,
@@ -47,6 +47,24 @@ fn create_v1_routes() -> Router<AppState> {
         .route("/chat/completions", post(chat_completions))
         .route("/models", get(list_models_v1))
         .route("/health", get(simple_health_check))
+        // 为v1 API添加CORS支持
+        .layer(
+            CorsLayer::new()
+                .allow_origin(tower_http::cors::Any)
+                .allow_methods([
+                    axum::http::Method::GET,
+                    axum::http::Method::POST,
+                    axum::http::Method::OPTIONS,
+                ])
+                .allow_headers([
+                    axum::http::header::AUTHORIZATION,
+                    axum::http::header::CONTENT_TYPE,
+                    axum::http::header::ACCEPT,
+                ])
+                .expose_headers([
+                    axum::http::header::CONTENT_TYPE,
+                ])
+        )
 }
 
 /// 创建管理 API 路由
