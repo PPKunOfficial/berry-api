@@ -366,7 +366,7 @@ impl ErrorHandler {
 
     /// 创建后端不可用错误响应
     pub fn backend_unavailable(model_name: &str, details: Option<String>) -> impl IntoResponse {
-        let message = format!("Service temporarily unavailable for model '{}'", model_name);
+        let message = format!("Service temporarily unavailable for model '{model_name}'");
         tracing::error!("Backend unavailable: {} - Details: {:?}", message, details);
         create_error_response(ErrorType::ServiceUnavailable, &message, details)
     }
@@ -503,7 +503,7 @@ impl ErrorRecorder {
         status_code: u16,
         response_body: &str,
     ) {
-        let error_message = format!("HTTP {} - {}", status_code, response_body);
+        let error_message = format!("HTTP {status_code} - {response_body}");
         Self::record_failure_with_message(load_balancer, provider, model, error_message).await;
     }
 }

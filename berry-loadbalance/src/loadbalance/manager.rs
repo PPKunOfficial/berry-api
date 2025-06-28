@@ -89,14 +89,14 @@ impl LoadBalanceManager {
 
     /// 记录请求成功
     pub fn record_success(&self, provider: &str, model: &str, latency: std::time::Duration) {
-        let backend_key = format!("{}:{}", provider, model);
+        let backend_key = format!("{provider}:{model}");
         self.metrics.record_latency(&backend_key, latency);
         self.metrics.record_success(&backend_key);
     }
 
     /// 记录请求失败
     pub fn record_failure(&self, provider: &str, model: &str) {
-        let backend_key = format!("{}:{}", provider, model);
+        let backend_key = format!("{provider}:{model}");
         self.metrics.record_failure(&backend_key);
     }
 
@@ -107,7 +107,7 @@ impl LoadBalanceManager {
 
     /// 记录SmartAI请求结果
     pub fn record_smart_ai_request(&self, provider: &str, model: &str, result: RequestResult) {
-        let backend_key = format!("{}:{}", provider, model);
+        let backend_key = format!("{provider}:{model}");
         self.metrics.record_smart_ai_request(&backend_key, result);
     }
 
@@ -137,7 +137,7 @@ impl LoadBalanceManager {
 
     /// 更新SmartAI连通性检查结果
     pub fn update_smart_ai_connectivity(&self, provider: &str, model: &str, connectivity_ok: bool) {
-        let backend_key = format!("{}:{}", provider, model);
+        let backend_key = format!("{provider}:{model}");
         self.metrics
             .update_smart_ai_connectivity(&backend_key, connectivity_ok);
     }

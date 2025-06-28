@@ -76,8 +76,7 @@ impl ClaudeClient {
                 }
                 _ => {
                     return Err(ClientError::HeaderParseError(format!(
-                        "Unsupported role: {}",
-                        role
+                        "Unsupported role: {role}"
                     )));
                 }
             }
@@ -190,14 +189,14 @@ impl AIBackendClient for ClaudeClient {
             authorization
                 .token()
                 .parse()
-                .map_err(|e| ClientError::HeaderParseError(format!("Invalid API key: {}", e)))?,
+                .map_err(|e| ClientError::HeaderParseError(format!("Invalid API key: {e}")))?,
         );
 
         // 添加Claude特定的头部
         headers.insert(
             "anthropic-version",
             "2023-06-01".parse().map_err(|e| {
-                ClientError::HeaderParseError(format!("Invalid anthropic-version header: {}", e))
+                ClientError::HeaderParseError(format!("Invalid anthropic-version header: {e}"))
             })?,
         );
 
@@ -205,7 +204,7 @@ impl AIBackendClient for ClaudeClient {
         headers.insert(
             reqwest::header::CONTENT_TYPE,
             content_type.to_string().parse().map_err(|e| {
-                ClientError::HeaderParseError(format!("Invalid content-type header: {}", e))
+                ClientError::HeaderParseError(format!("Invalid content-type header: {e}"))
             })?,
         );
 

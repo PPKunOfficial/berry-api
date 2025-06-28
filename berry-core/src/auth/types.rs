@@ -81,7 +81,7 @@ impl AuthError {
     pub fn model_access_denied(model_name: &str) -> Self {
         Self {
             error: "model_access_denied".to_string(),
-            message: format!("Access denied for model: {}", model_name),
+            message: format!("Access denied for model: {model_name}"),
             status: 403,
         }
     }

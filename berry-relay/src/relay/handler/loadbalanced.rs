@@ -115,8 +115,7 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
                     ErrorHandler::streaming_from_anyhow_error(
                         &e,
                         Some(&format!(
-                            "Streaming request processing failed for model '{}'",
-                            model_name
+                            "Streaming request processing failed for model '{model_name}'"
                         )),
                     )
                     .into_response()
@@ -125,8 +124,7 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
                     ErrorHandler::from_anyhow_error(
                         &e,
                         Some(&format!(
-                            "Request processing failed for model '{}'",
-                            model_name
+                            "Request processing failed for model '{model_name}'"
                         )),
                     )
                     .into_response()
@@ -258,7 +256,7 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
                         attempt,
                         max_retries,
                         &anyhow::anyhow!("{}", e),
-                        &format!("API key configuration error for model '{}'", model_name),
+                        &format!("API key configuration error for model '{model_name}'"),
                     )?;
                     continue;
                 }
@@ -289,7 +287,7 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
                         attempt,
                         max_retries,
                         &anyhow::anyhow!("{}", e),
-                        &format!("Failed to create client for model '{}'", model_name),
+                        &format!("Failed to create client for model '{model_name}'"),
                     )?;
                     continue;
                 }
@@ -299,7 +297,7 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
             let headers = match client.build_request_headers(authorization, content_type) {
                 Ok(mut h) => {
                     // 使用选中后端的API密钥
-                    match format!("Bearer {}", api_key).parse() {
+                    match format!("Bearer {api_key}").parse() {
                         Ok(auth_value) => {
                             h.insert("Authorization", auth_value);
                         }
@@ -324,8 +322,7 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
                                 max_retries,
                                 &anyhow::anyhow!("Authorization header parse error: {}", e),
                                 &format!(
-                                    "Authorization header configuration error for model '{}'",
-                                    model_name
+                                    "Authorization header configuration error for model '{model_name}'"
                                 ),
                             )?;
                             continue;
@@ -526,7 +523,7 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
         let latency = start_time.elapsed();
 
         // 检查backend是否在不健康列表中
-        let backend_key = format!("{}:{}", provider, model);
+        let backend_key = format!("{provider}:{model}");
         let metrics = load_balancer.get_metrics();
 
         if metrics.is_in_unhealthy_list(&backend_key) {
@@ -645,7 +642,7 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
         // 处理响应
         if response.status().is_success() {
             // 检查backend是否在不健康列表中
-            let backend_key = format!("{}:{}", provider, model);
+            let backend_key = format!("{provider}:{model}");
             let metrics = self.load_balancer.get_metrics();
 
             if metrics.is_in_unhealthy_list(&backend_key) {
@@ -748,7 +745,7 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
             // 处理响应
             if response.status().is_success() {
                 // 检查backend是否在不健康列表中
-                let backend_key = format!("{}:{}", provider_clone, model_clone);
+                let backend_key = format!("{provider_clone}:{model_clone}");
                 let metrics = load_balancer_clone.get_metrics();
 
                 if metrics.is_in_unhealthy_list(&backend_key) {

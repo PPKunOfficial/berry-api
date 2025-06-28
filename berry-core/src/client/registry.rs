@@ -100,13 +100,12 @@ impl ClientRegistry {
         timeout: Duration,
     ) -> Result<UnifiedClient, ClientError> {
         let builders = self.builders.read().map_err(|e| {
-            ClientError::HeaderParseError(format!("Failed to acquire read lock: {}", e))
+            ClientError::HeaderParseError(format!("Failed to acquire read lock: {e}"))
         })?;
 
         let builder = builders.get(&backend_type).ok_or_else(|| {
             ClientError::HeaderParseError(format!(
-                "No client builder registered for backend type: {:?}",
-                backend_type
+                "No client builder registered for backend type: {backend_type:?}"
             ))
         })?;
 

@@ -20,7 +20,7 @@ impl fmt::Display for BackendType {
             BackendType::OpenAI => write!(f, "OpenAI"),
             BackendType::Claude => write!(f, "Claude"),
             BackendType::Gemini => write!(f, "Gemini"),
-            BackendType::Custom(name) => write!(f, "Custom({})", name),
+            BackendType::Custom(name) => write!(f, "Custom({name})"),
         }
     }
 }
@@ -113,8 +113,7 @@ impl ChatCompletionConfig {
                 "assistant" => ChatRole::Assistant,
                 _ => {
                     return Err(ClientError::HeaderParseError(format!(
-                        "Invalid role: {}",
-                        role_str
+                        "Invalid role: {role_str}"
                     )))
                 }
             };

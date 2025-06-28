@@ -162,7 +162,7 @@ impl HealthChecker {
             );
             // 标记所有模型为不健康
             for model in &provider.models {
-                let backend_key = format!("{}:{}", provider_id, model);
+                let backend_key = format!("{provider_id}:{model}");
                 debug!(
                     "Marking backend {} as unhealthy (empty API key)",
                     backend_key
@@ -262,7 +262,7 @@ impl HealthChecker {
                 provider_id
             );
             for model in &per_request_models {
-                let backend_key = format!("{}:{}", provider_id, model);
+                let backend_key = format!("{provider_id}:{model}");
 
                 if is_initial_check {
                     debug!(
@@ -370,7 +370,7 @@ impl HealthChecker {
 
                         // 初始检查：只标记per-token模型为健康
                         for model in per_token_models {
-                            let backend_key = format!("{}:{}", provider_id, model);
+                            let backend_key = format!("{provider_id}:{model}");
                             debug!("Initial check: Marking per-token backend {} as healthy (latency: {}ms)", backend_key, latency.as_millis());
                             metrics.record_latency(&backend_key, latency);
                             metrics.record_success(&backend_key);
@@ -380,7 +380,7 @@ impl HealthChecker {
                         debug!("Provider {} routine health check passed, but not marking as healthy (requires chat validation)", provider_id);
                         // 后续检查：成功但不自动标记为健康，只更新延迟
                         for model in per_token_models {
-                            let backend_key = format!("{}:{}", provider_id, model);
+                            let backend_key = format!("{provider_id}:{model}");
 
                             // 检查当前是否在不健康列表中
                             if metrics.is_in_unhealthy_list(&backend_key) {
@@ -410,7 +410,7 @@ impl HealthChecker {
 
                     // 无论初始还是后续检查，失败都只标记per-token模型为不健康
                     for model in per_token_models {
-                        let backend_key = format!("{}:{}", provider_id, model);
+                        let backend_key = format!("{provider_id}:{model}");
                         debug!(
                             "Marking per-token backend {} as unhealthy (HTTP {})",
                             backend_key, status
@@ -429,7 +429,7 @@ impl HealthChecker {
 
                 // 只标记per-token模型为不健康
                 for model in per_token_models {
-                    let backend_key = format!("{}:{}", provider_id, model);
+                    let backend_key = format!("{provider_id}:{model}");
                     debug!(
                         "Marking per-token backend {} as unhealthy (network error: {})",
                         backend_key, e
@@ -466,7 +466,7 @@ impl HealthChecker {
                 );
                 // 只标记per-token模型为不健康
                 for model in per_token_models {
-                    let backend_key = format!("{}:{}", provider_id, model);
+                    let backend_key = format!("{provider_id}:{model}");
                     debug!(
                         "Marking per-token backend {} as unhealthy (client creation failed)",
                         backend_key
@@ -502,7 +502,7 @@ impl HealthChecker {
 
                         // 初始检查：只标记per-token模型为健康
                         for model in per_token_models {
-                            let backend_key = format!("{}:{}", provider_id, model);
+                            let backend_key = format!("{provider_id}:{model}");
                             debug!("Initial check: Marking per-token backend {} as healthy (models API success, latency: {}ms)",
                                    backend_key, latency.as_millis());
                             metrics.record_latency(&backend_key, latency);
@@ -514,7 +514,7 @@ impl HealthChecker {
                                provider_id);
                         // 后续检查：成功但不自动标记为健康，只更新延迟
                         for model in per_token_models {
-                            let backend_key = format!("{}:{}", provider_id, model);
+                            let backend_key = format!("{provider_id}:{model}");
 
                             // 检查当前是否在不健康列表中
                             if metrics.is_in_unhealthy_list(&backend_key) {
@@ -541,7 +541,7 @@ impl HealthChecker {
 
                     // 无论初始还是后续检查，失败都只标记per-token模型为不健康
                     for model in per_token_models {
-                        let backend_key = format!("{}:{}", provider_id, model);
+                        let backend_key = format!("{provider_id}:{model}");
                         debug!("Marking per-token backend {} as unhealthy (models API failed with status {})",
                                backend_key, status);
                         metrics
@@ -559,7 +559,7 @@ impl HealthChecker {
 
                 // 只标记per-token模型为不健康
                 for model in per_token_models {
-                    let backend_key = format!("{}:{}", provider_id, model);
+                    let backend_key = format!("{provider_id}:{model}");
                     debug!(
                         "Marking per-token backend {} as unhealthy (API error: {})",
                         backend_key, e
@@ -861,7 +861,7 @@ impl HealthChecker {
         match client.chat_completions(headers, &config).await {
             Ok(response) => {
                 let latency = start_time.elapsed();
-                let backend_key = format!("{}:{}", provider_id, model_name);
+                let backend_key = format!("{provider_id}:{model_name}");
                 let status = response.status();
 
                 debug!(
@@ -963,7 +963,7 @@ impl HealthChecker {
         match client.models(&provider.api_key).await {
             Ok(response) => {
                 let latency = start_time.elapsed();
-                let backend_key = format!("{}:{}", provider_id, model_name);
+                let backend_key = format!("{provider_id}:{model_name}");
                 let status = response.status_code;
 
                 debug!(
@@ -1013,7 +1013,7 @@ impl HealthChecker {
                     "Network/API error during model list recovery check for {}:{}: {}",
                     provider_id, model_name, e
                 );
-                let backend_key = format!("{}:{}", provider_id, model_name);
+                let backend_key = format!("{provider_id}:{model_name}");
                 // 保持不健康状态，记录失败
                 self.metrics
                     .record_failure_with_method(&backend_key, HealthCheckMethod::ModelList);

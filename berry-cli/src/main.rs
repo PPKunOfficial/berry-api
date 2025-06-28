@@ -70,7 +70,7 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::ValidateConfig { config } => {
-            println!("Validating configuration file: {}", config);
+            println!("Validating configuration file: {config}");
             match berry_core::config::loader::load_config_from_path(&config) {
                 Ok(cfg) => {
                     println!("✅ Configuration is valid");
@@ -79,7 +79,7 @@ async fn main() -> Result<()> {
                     println!("  - {} users configured", cfg.users.len());
                 }
                 Err(e) => {
-                    eprintln!("❌ Configuration validation failed: {}", e);
+                    eprintln!("❌ Configuration validation failed: {e}");
                     std::process::exit(1);
                 }
             }
@@ -93,11 +93,11 @@ async fn main() -> Result<()> {
             );
 
             if let Some(provider_id) = provider {
-                println!("Checking provider: {}", provider_id);
+                println!("Checking provider: {provider_id}");
                 match health_checker.check_provider(&provider_id).await {
-                    Ok(_) => println!("✅ Provider {} is healthy", provider_id),
+                    Ok(_) => println!("✅ Provider {provider_id} is healthy"),
                     Err(e) => {
-                        eprintln!("❌ Provider {} health check failed: {}", provider_id, e);
+                        eprintln!("❌ Provider {provider_id} health check failed: {e}");
                         std::process::exit(1);
                     }
                 }
@@ -106,14 +106,14 @@ async fn main() -> Result<()> {
                 match health_checker.check_now().await {
                     Ok(_) => println!("✅ Health check completed"),
                     Err(e) => {
-                        eprintln!("❌ Health check failed: {}", e);
+                        eprintln!("❌ Health check failed: {e}");
                         std::process::exit(1);
                     }
                 }
             }
         }
         Commands::GenerateConfig { output, advanced } => {
-            println!("Generating configuration file: {}", output);
+            println!("Generating configuration file: {output}");
             generate_config_file(&output, advanced)?;
             println!("✅ Configuration file generated successfully");
         }
@@ -127,7 +127,7 @@ async fn main() -> Result<()> {
             provider,
             model,
         } => {
-            println!("Testing backend connectivity: {}:{}", provider, model);
+            println!("Testing backend connectivity: {provider}:{model}");
             let cfg = berry_core::config::loader::load_config_from_path(&config)?;
             test_backend_connectivity(cfg, &provider, &model).await?;
         }
@@ -399,7 +399,7 @@ async fn show_service_metrics(config: berry_core::Config, detailed: bool) -> Res
                 let failure_count = metrics.get_failure_count(provider, model);
                 let latency = metrics.get_latency(provider, model);
 
-                println!("Backend: {}", backend_key);
+                println!("Backend: {backend_key}");
                 println!(
                     "  Status: {}",
                     if is_healthy {
@@ -408,8 +408,8 @@ async fn show_service_metrics(config: berry_core::Config, detailed: bool) -> Res
                         "🔴 Unhealthy"
                     }
                 );
-                println!("  Requests: {}", count);
-                println!("  Failures: {}", failure_count);
+                println!("  Requests: {count}");
+                println!("  Failures: {failure_count}");
                 if let Some(lat) = latency {
                     println!("  Latency: {}ms", lat.as_millis());
                 }
@@ -435,23 +435,17 @@ async fn test_backend_connectivity(
         .ok_or_else(|| anyhow::anyhow!("Provider '{}' not found", provider_name))?;
 
     if !provider.enabled {
-        println!("❌ Provider '{}' is disabled", provider_name);
+        println!("❌ Provider '{provider_name}' is disabled");
         return Ok(());
     }
 
     if !provider.models.contains(&model_name.to_string()) {
-        println!(
-            "❌ Model '{}' not found in provider '{}'",
-            model_name, provider_name
-        );
+        println!("❌ Model '{model_name}' not found in provider '{provider_name}'");
         println!("Available models: {:?}", provider.models);
         return Ok(());
     }
 
-    println!(
-        "🔍 Testing connectivity to {}:{}",
-        provider_name, model_name
-    );
+    println!("🔍 Testing connectivity to {provider_name}:{model_name}");
     println!("Base URL: {}", provider.base_url);
     println!();
 
@@ -462,7 +456,7 @@ async fn test_backend_connectivity(
 
     // 测试models API
     let models_url = format!("{}/v1/models", provider.base_url.trim_end_matches('/'));
-    println!("Testing models API: {}", models_url);
+    println!("Testing models API: {models_url}");
 
     let mut request = client.get(&models_url);
     if !provider.api_key.is_empty() {
@@ -483,12 +477,12 @@ async fn test_backend_connectivity(
             } else {
                 println!("❌ Models API test failed");
                 if let Ok(body) = response.text().await {
-                    println!("Response: {}", body);
+                    println!("Response: {body}");
                 }
             }
         }
         Err(e) => {
-            println!("❌ Models API test failed: {}", e);
+            println!("❌ Models API test failed: {e}");
         }
     }
 
@@ -499,7 +493,7 @@ async fn test_backend_connectivity(
         "{}/v1/chat/completions",
         provider.base_url.trim_end_matches('/')
     );
-    println!("Testing chat completions API: {}", chat_url);
+    println!("Testing chat completions API: {chat_url}");
 
     let test_body = serde_json::json!({
         "model": model_name,
@@ -533,19 +527,16 @@ async fn test_backend_connectivity(
 
             if status.is_success() {
                 println!("✅ Chat API test passed");
-                println!(
-                    "🎉 Backend {}:{} is fully functional!",
-                    provider_name, model_name
-                );
+                println!("🎉 Backend {provider_name}:{model_name} is fully functional!");
             } else {
                 println!("❌ Chat API test failed");
                 if let Ok(body) = response.text().await {
-                    println!("Response: {}", body);
+                    println!("Response: {body}");
                 }
             }
         }
         Err(e) => {
-            println!("❌ Chat API test failed: {}", e);
+            println!("❌ Chat API test failed: {e}");
         }
     }
 

@@ -86,7 +86,7 @@ impl SmartAiHealthChecker {
 
         // 更新所有模型的连通性状态
         for model in &provider.models {
-            let backend_key = format!("{}:{}", provider_id, model);
+            let backend_key = format!("{provider_id}:{model}");
             self.metrics
                 .update_smart_ai_connectivity(&backend_key, overall_connectivity);
 

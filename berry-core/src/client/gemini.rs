@@ -120,7 +120,7 @@ impl GeminiClient {
     fn extract_api_key(&self, headers: &reqwest::header::HeaderMap) -> Result<String, ClientError> {
         if let Some(auth_header) = headers.get("Authorization") {
             let auth_str = auth_header.to_str().map_err(|e| {
-                ClientError::HeaderParseError(format!("Invalid Authorization header: {}", e))
+                ClientError::HeaderParseError(format!("Invalid Authorization header: {e}"))
             })?;
 
             if let Some(stripped) = auth_str.strip_prefix("Bearer ") {
@@ -131,7 +131,7 @@ impl GeminiClient {
         // 也尝试从x-api-key header中获取
         if let Some(api_key_header) = headers.get("x-api-key") {
             let api_key = api_key_header.to_str().map_err(|e| {
-                ClientError::HeaderParseError(format!("Invalid x-api-key header: {}", e))
+                ClientError::HeaderParseError(format!("Invalid x-api-key header: {e}"))
             })?;
             return Ok(api_key.to_string());
         }
@@ -214,7 +214,7 @@ impl GeminiClient {
 
         // 解析Gemini响应
         let gemini_response: Value = serde_json::from_str(&body_text).map_err(|e| {
-            ClientError::HeaderParseError(format!("Failed to parse Gemini response: {}", e))
+            ClientError::HeaderParseError(format!("Failed to parse Gemini response: {e}"))
         })?;
 
         // 转换为OpenAI格式
@@ -227,7 +227,7 @@ impl GeminiClient {
 
         // 返回JSON字符串
         serde_json::to_string(&openai_response).map_err(|e| {
-            ClientError::HeaderParseError(format!("Failed to serialize response: {}", e))
+            ClientError::HeaderParseError(format!("Failed to serialize response: {e}"))
         })
     }
 
@@ -264,7 +264,7 @@ impl GeminiClient {
         let now = std::time::SystemTime::now();
         let timestamp = now
             .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|e| ClientError::HeaderParseError(format!("System time error: {}", e)))?;
+            .map_err(|e| ClientError::HeaderParseError(format!("System time error: {e}")))?;
 
         let openai_response = json!({
             "id": format!("chatcmpl-{}", timestamp.as_nanos()),
@@ -316,9 +316,9 @@ impl AIBackendClient for GeminiClient {
         // 只设置Content-Type
         headers.insert(
             "Content-Type",
-            "application/json".parse().map_err(|e| {
-                ClientError::HeaderParseError(format!("Invalid content type: {}", e))
-            })?,
+            "application/json"
+                .parse()
+                .map_err(|e| ClientError::HeaderParseError(format!("Invalid content type: {e}")))?,
         );
 
         Ok(headers)

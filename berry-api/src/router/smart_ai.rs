@@ -339,7 +339,7 @@ async fn build_health_details(backend_key: &str, state: &AppState) -> Option<Bac
         let error_counts: HashMap<String, u32> = health
             .error_counts
             .into_iter()
-            .map(|(error_type, count)| (format!("{:?}", error_type), count))
+            .map(|(error_type, count)| (format!("{error_type:?}"), count))
             .collect();
 
         Some(BackendHealthDetails {

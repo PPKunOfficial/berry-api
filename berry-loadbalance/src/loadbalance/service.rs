@@ -405,7 +405,7 @@ impl LoadBalanceService {
 
         match result {
             RequestResult::Success { latency } => {
-                let backend_key = format!("{}:{}", provider, model);
+                let backend_key = format!("{provider}:{model}");
 
                 match backend_billing_mode {
                     berry_core::BillingMode::PerToken => {
@@ -453,7 +453,7 @@ impl LoadBalanceService {
 
                 // 对于按请求计费的backend，失败时需要初始化权重恢复状态
                 if found_backend && backend_billing_mode == berry_core::BillingMode::PerRequest {
-                    let backend_key = format!("{}:{}", provider, model);
+                    let backend_key = format!("{provider}:{model}");
                     let original_weight = self
                         .get_backend_original_weight(provider, model)
                         .unwrap_or(1.0);

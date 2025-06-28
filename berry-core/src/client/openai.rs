@@ -58,7 +58,7 @@ impl OpenAIClient {
 
     // 获取模型列表
     pub async fn models(&self, token: &str) -> Result<ClientResponse, ClientError> {
-        let auth_header_value = format!("Bearer {}", token);
+        let auth_header_value = format!("Bearer {token}");
         let response = self
             .client
             .get(format!("{}/v1/models", self.base_url))
@@ -100,7 +100,7 @@ impl AIBackendClient for OpenAIClient {
         headers.insert(
             reqwest::header::AUTHORIZATION,
             auth_value.parse().map_err(|e| {
-                ClientError::HeaderParseError(format!("Invalid authorization header: {}", e))
+                ClientError::HeaderParseError(format!("Invalid authorization header: {e}"))
             })?,
         );
 
@@ -108,7 +108,7 @@ impl AIBackendClient for OpenAIClient {
         headers.insert(
             reqwest::header::CONTENT_TYPE,
             content_type.to_string().parse().map_err(|e| {
-                ClientError::HeaderParseError(format!("Invalid content-type header: {}", e))
+                ClientError::HeaderParseError(format!("Invalid content-type header: {e}"))
             })?,
         );
 

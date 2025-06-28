@@ -325,7 +325,7 @@ impl MetricsCollector {
 
     /// 检查后端是否健康
     pub fn is_healthy(&self, provider: &str, model: &str) -> bool {
-        let backend_key = format!("{}:{}", provider, model);
+        let backend_key = format!("{provider}:{model}");
 
         if let Ok(health) = self.health_status.read() {
             health.get(&backend_key).copied().unwrap_or(true) // 默认认为是健康的
@@ -336,7 +336,7 @@ impl MetricsCollector {
 
     /// 获取后端延迟
     pub fn get_latency(&self, provider: &str, model: &str) -> Option<Duration> {
-        let backend_key = format!("{}:{}", provider, model);
+        let backend_key = format!("{provider}:{model}");
 
         if let Ok(latencies) = self.latencies.read() {
             latencies.get(&backend_key).copied()
@@ -347,7 +347,7 @@ impl MetricsCollector {
 
     /// 获取失败计数
     pub fn get_failure_count(&self, provider: &str, model: &str) -> u32 {
-        let backend_key = format!("{}:{}", provider, model);
+        let backend_key = format!("{provider}:{model}");
         self.get_failure_count_by_key(&backend_key)
     }
 
@@ -1192,7 +1192,7 @@ impl BackendSelector {
 
                 Err(self
                     .create_detailed_error(
-                        &format!("Smart weighted failover selection failed: {}", e),
+                        &format!("Smart weighted failover selection failed: {e}"),
                         backends,
                         &failed_attempts,
                     )
@@ -1348,21 +1348,18 @@ impl BackendSelector {
             error_message.push_str(". No backends configured for this model.");
         } else if enabled_backends == 0 {
             error_message.push_str(&format!(
-                ". All {} configured backends are disabled.",
-                total_backends
+                ". All {total_backends} configured backends are disabled."
             ));
         } else if healthy_backends == 0 {
             error_message.push_str(&format!(
-                ". All {} enabled backends are currently unhealthy.",
-                enabled_backends
+                ". All {enabled_backends} enabled backends are currently unhealthy."
             ));
 
             // 添加恢复建议
             error_message.push_str(" Please check backend health status and wait for automatic recovery, or contact system administrator.");
         } else {
             error_message.push_str(&format!(
-                ". {} total backends, {} enabled, {} healthy.",
-                total_backends, enabled_backends, healthy_backends
+                ". {total_backends} total backends, {enabled_backends} enabled, {healthy_backends} healthy."
             ));
         }
 
@@ -1410,7 +1407,7 @@ impl BackendSelector {
             let reason = if !backend.enabled {
                 "Backend disabled".to_string()
             } else if !is_healthy {
-                format!("Unhealthy (failures: {})", failure_count)
+                format!("Unhealthy (failures: {failure_count})")
             } else {
                 "Available".to_string()
             };
