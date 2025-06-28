@@ -55,17 +55,19 @@ jobs:
           cargo build --bin berry-api --release --target x86_64-unknown-linux-gnu
           cargo build --bin berry-api --release --target aarch64-unknown-linux-gnu
 
-          # 复制二进制文件到 Dockerfile 期望的路径
-          mkdir -p target/amd64/release
-          cp target/x86_64-unknown-linux-gnu/release/berry-api target/amd64/release/berry-api
+          # 创建 Docker 构建上下文目录
+          mkdir -p docker_build_context/target/amd64/release
+          mkdir -p docker_build_context/target/arm64/release
 
-          mkdir -p target/arm64/release
-          cp target/aarch64-unknown-linux-gnu/release/berry-api target/arm64/release/berry-api
+          # 复制 Dockerfile 到构建上下文
+          cp Dockerfile.prebuilt docker_build_context/
 
-          ls -la target/x86_64-unknown-linux-gnu/release/
-          ls -la target/aarch64-unknown-linux-gnu/release/
-          ls -la target/amd64/release/
-          ls -la target/arm64/release/
+          # 复制二进制文件到 Docker 构建上下文期望的路径
+          cp target/x86_64-unknown-linux-gnu/release/berry-api docker_build_context/target/amd64/release/berry-api
+          cp target/aarch64-unknown-linux-gnu/release/berry-api docker_build_context/target/arm64/release/berry-api
+
+          ls -la docker_build_context/target/amd64/release/
+          ls -la docker_build_context/target/arm64/release/
 
       - name: 准备 Linux Release 文件
         id: prepare_linux_assets
@@ -104,8 +106,8 @@ jobs:
       - name: 构建并推送 Docker 镜像
         uses: docker/build-push-action@v5
         with:
-          context: .
-          file: ./Dockerfile.prebuilt
+          context: ./docker_build_context
+          file: ./docker_build_context/Dockerfile.prebuilt
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
