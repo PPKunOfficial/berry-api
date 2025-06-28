@@ -327,14 +327,14 @@ time curl -X POST http://localhost:3000/v1/chat/completions \
 
 ## 📚 下一步
 
-- 阅读完整的 [README.md](README.md) 了解所有功能
-- 查看 [ARCHITECTURE.md](ARCHITECTURE.md) 了解系统架构
+- 阅读完整的 [README.md](../README.md) 了解所有功能
+- 查看 [架构设计](architecture.md) 了解系统架构
 - 浏览 `smart_ai_example.toml` 学习高级配置
 - 加入 [GitHub Discussions](https://github.com/PPKunOfficial/berry-api/discussions) 参与社区讨论
 
 ## 🆘 获取帮助
 
-- 📖 [完整文档](README.md)
+- 📖 [完整文档](../README.md)
 - 🐛 [问题反馈](https://github.com/PPKunOfficial/berry-api/issues)
 - 💬 [社区讨论](https://github.com/PPKunOfficial/berry-api/discussions)
 - 📧 联系维护者

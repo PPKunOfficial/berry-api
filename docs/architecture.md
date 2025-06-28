@@ -1,42 +1,4 @@
-# Berry API - 智能AI负载均衡网关
-
-[![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
-[![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
-[![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](Dockerfile)
-[![OpenAI Compatible](https://img.shields.io/badge/OpenAI-Compatible-green.svg)](https://platform.openai.com/docs/api-reference)
-
-Berry API 是一个高性能、生产就绪的AI服务负载均衡网关，专为多AI提供商环境设计。它提供智能负载均衡、自动故障转移、健康检查和成本优化功能，完全兼容OpenAI API格式。
-
-## ✨ 核心特性
-
-- **智能负载均衡**: 支持加权随机、轮询、最低延迟、故障转移、SmartAI等8种策略。
-- **智能健康检查**: 差异化检查策略，自动故障恢复和熔断机制。
-- **企业级认证**: 基于Bearer Token的用户认证、细粒度权限控制和速率限制。
-- **高性能架构**: 基于Tokio的异步处理、流式支持、连接保活和配置热重载。
-- **可观测性**: 提供Prometheus指标、结构化日志和健康检查端点。
-
-## 📚 文档导航
-
-所有详细文档都已迁移至 `docs/` 目录。
-
-- **[🚀 快速开始](docs/quickstart.md)**: 5分钟部署运行指南。
-- **[⚙️ 配置指南](docs/configuration.md)**: 详细的配置文件结构和参数说明。
-- **[🔌 API 使用指南](docs/api-guide.md)**: 兼容OpenAI API的接口使用说明。
-- **[⚖️ 负载均衡策略](docs/load-balancing-strategies.md)**: 深入了解各种负载均衡策略。
-- **[🏥 健康检查与故障处理](docs/health-checks-and-fault-handling.md)**: 健康检查机制和故障转移流程。
-- **[🛠️ 命令行工具 (berry-cli)](docs/cli-tool.md)**: 运维管理工具的使用。
-- **[📈 性能优化与部署](docs/performance-optimization.md)**: 性能调优建议和生产部署指南。
-- **[📊 监控与可观测性](docs/monitoring-and-observability.md)**: Prometheus集成、日志管理和告警配置。
-- **[🔧 故障排除](docs/troubleshooting.md)**: 常见问题诊断和解决方案。
-- **[🏗️ 架构设计](docs/architecture.md)**: 系统架构和组件设计。
-- **[🤝 贡献指南](docs/contributing.md)**: 开发环境设置和贡献流程。
-- **[🐳 Docker 构建指南](docs/docker-build.md)**: 详细的Docker构建方式。
-
-## 🚀 快速开始
-
-请参阅 [快速开始指南](docs/quickstart.md) 获取详细的部署和运行说明。
-
-## 🏗️ 系统架构
+# 🏛️ 架构设计
 
 Berry API 采用模块化架构设计，由5个核心模块组成：
 
@@ -91,6 +53,12 @@ graph TD
     N --> K
 ```
 
-## 许可证
+### 🧩 核心组件
 
-本项目采用 GPL-3.0 许可证。详情请参阅 [LICENSE](LICENSE) 文件。
+| 组件 | 功能 | 技术栈 |
+|------|------|--------|
+| **berry-api** | Web服务层，提供HTTP API | Axum, Tower |
+| **berry-relay** | 请求转发层，处理上游请求 | Reqwest, Tokio |
+| **berry-loadbalance** | 负载均衡层，实现选择策略 | 自研算法, Metrics |
+| **berry-core** | 核心库，配置和认证管理 | Serde, TOML |
+| **berry-cli** | 命令行工具，运维管理 | Clap, 配置验证 |
