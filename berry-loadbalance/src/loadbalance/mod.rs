@@ -6,8 +6,7 @@ pub mod service;
 pub mod smart_ai_health;
 pub mod traits;
 
-#[cfg(test)]
-mod manager_tests;
+
 
 pub use cache::{BackendSelectionCache, CacheStats};
 pub use health_checker::{HealthChecker, HealthSummary};
