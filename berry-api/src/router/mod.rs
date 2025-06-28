@@ -6,5 +6,3 @@ pub mod models;
 pub mod monitoring;
 pub mod routes;
 pub mod smart_ai;
-
-

@@ -6,8 +6,6 @@ pub mod service;
 pub mod smart_ai_health;
 pub mod traits;
 
-
-
 pub use cache::{BackendSelectionCache, CacheStats};
 pub use health_checker::{HealthChecker, HealthSummary};
 pub use manager::{HealthStats, LoadBalanceManager};
