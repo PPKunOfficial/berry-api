@@ -1,0 +1,51 @@
+# gitleaks.toml
+
+# 全局配置，例如是否启用颜色输出等
+[global]
+no_color = false
+
+# 允许列表 (Allowlist)
+# 在这里定义你希望 Gitleaks 忽略的模式。
+# 这对于示例代码、占位符或已知不会造成安全问题的字符串非常有用。
+[allowlist]
+description = "Allowlist for common placeholder keys and example values."
+
+# 正则表达式列表，匹配到这些模式的字符串将被忽略。
+# 注意：这里的正则表达式是 Go 语言的 RE2 语法。
+# 我们使用 ''' 三引号来包含字符串，这样可以避免转义特殊字符。
+regex = [
+    '''your-api-key''',
+    '''example-api-key''',
+    '''dummy-api-key''',
+    '''<YOUR_API_KEY>''', # 常见的占位符格式
+    '''API_KEY_HERE''',   # 常见的占位符格式
+    '''YOUR_SECRET_KEY''',
+    '''YOUR_ACCESS_KEY''',
+    '''YOUR_PRIVATE_KEY''',
+    '''berry-admin-token-12345''',
+    '''sk-your-key''',
+    # 如果你有其他类似的占位符，可以继续添加在这里
+]
+
+# 文件路径列表，匹配到这些路径的文件将被完全忽略。
+# 例如，如果你有一个专门存放示例配置的文件，可以将其添加到这里。
+paths = [
+    # '''path/to/your/example_config.py''',
+    '''docs/''', # 忽略整个目录
+]
+
+# 提交哈希列表，匹配到这些哈希的提交将被完全忽略。
+# 这通常用于忽略历史中已经存在的、你无法修改的泄露。
+# commits = [
+#     '''abcdef1234567890abcdef1234567890abcdef12''',
+# ]
+
+# 规则 (Rules)
+# Gitleaks 默认包含了一套丰富的内置规则来检测各种秘密。
+# 你也可以在这里定义自己的自定义规则，或者禁用内置规则。
+# 例如，如果你想禁用某个内置规则，可以这样：
+# [[rules]]
+# description = "Disable AWS Access Key rule"
+# regex = '''(A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}'''
+# tags = ["aws"]
+# allowlist = true # 将其设置为 allowlist=true 相当于禁用此规则
