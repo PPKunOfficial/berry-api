@@ -1,9 +1,13 @@
 use std::collections::HashMap;
 use std::sync::{Arc, atomic::{AtomicU64, Ordering}};
 use std::time::{Duration, Instant};
+use rand::Rng;
 use tokio::sync::RwLock;
 use berry_core::Backend;
-use tracing::{debug, trace};
+use tracing::{debug, trace, error};
+use once_cell::sync::Lazy; // Added
+
+static INSTANT_EPOCH: Lazy<Instant> = Lazy::new(Instant::now); // Added
 
 /// 缓存条目
 #[derive(Debug)]
@@ -11,29 +15,28 @@ struct CacheEntry {
     backend: Backend,
     created_at: Instant,
     hit_count: AtomicU64,
-    last_access: Arc<RwLock<Instant>>,
+    last_access: AtomicU64, // Changed to AtomicU64
 }
 
 impl Clone for CacheEntry {
     fn clone(&self) -> Self {
-        let now = Instant::now();
         Self {
             backend: self.backend.clone(),
             created_at: self.created_at,
             hit_count: AtomicU64::new(self.hit_count.load(Ordering::Relaxed)),
-            last_access: Arc::new(RwLock::new(now)),
+            last_access: AtomicU64::new(self.last_access.load(Ordering::Relaxed)), // Clone the atomic value
         }
     }
 }
 
 impl CacheEntry {
     fn new(backend: Backend) -> Self {
-        let now = Instant::now();
+        let now_nanos = Instant::now().duration_since(*INSTANT_EPOCH).as_nanos() as u64; // Fixed
         Self {
             backend,
-            created_at: now,
+            created_at: Instant::now(),
             hit_count: AtomicU64::new(0),
-            last_access: Arc::new(RwLock::new(now)),
+            last_access: AtomicU64::new(now_nanos),
         }
     }
 
@@ -41,9 +44,9 @@ impl CacheEntry {
         self.created_at.elapsed() > ttl
     }
 
-    async fn touch(&self) {
-        let mut last_access = self.last_access.write().await;
-        *last_access = Instant::now();
+    fn touch(&self) { // No longer async
+        let now_nanos = Instant::now().duration_since(*INSTANT_EPOCH).as_nanos() as u64; // Fixed
+        self.last_access.store(now_nanos, Ordering::Relaxed);
         self.hit_count.fetch_add(1, Ordering::Relaxed);
     }
 
@@ -113,7 +116,7 @@ impl BackendSelectionCache {
         if let Some(entry) = cache.get(&cache_key) {
             if !entry.is_expired(self.ttl) {
                 // 缓存命中
-                entry.touch().await;
+                entry.touch();
                 self.cache_hits.fetch_add(1, Ordering::Relaxed);
                 
                 trace!(
@@ -171,28 +174,41 @@ impl BackendSelectionCache {
         }
     }
 
-    /// 驱逐最少使用的条目
+    /// 驱逐最少使用的条目 (随机采样)
     async fn evict_lru_entry(&self, cache: &mut HashMap<String, CacheEntry>) {
         if cache.is_empty() {
             return;
         }
 
-        // 找到最少访问的条目
-        let mut lru_key = String::new();
-        let mut min_last_access = Instant::now();
-        
-        for (key, entry) in cache.iter() {
-            let last_access = *entry.last_access.read().await;
-            if last_access < min_last_access {
-                min_last_access = last_access;
-                lru_key = key.clone();
+        const SAMPLE_SIZE: usize = 5; // 随机采样大小
+        let mut candidates = Vec::with_capacity(SAMPLE_SIZE);
+
+        // 随机选择N个条目作为候选
+        let keys: Vec<&String> = cache.keys().collect();
+        let mut rng = rand::rng();
+
+        for _ in 0..SAMPLE_SIZE {
+            if keys.is_empty() { break; }
+            let random_index = rng.random_range(0..keys.len());
+            let key = keys[random_index];
+            if let Some(entry) = cache.get(key) {
+                candidates.push((key.clone(), entry.last_access.load(Ordering::Relaxed)));
             }
         }
-        
-        if !lru_key.is_empty() {
+
+        if candidates.is_empty() { return; }
+
+        // 找到采样中最近最少使用的条目
+        if let Some((lru_key, _)) = candidates.into_iter()
+            .min_by_key(|&(_, last_access)| last_access)
+        {
             cache.remove(&lru_key);
             self.evictions.fetch_add(1, Ordering::Relaxed);
             debug!("Evicted LRU cache entry: {}", lru_key);
+        } else {
+            // This case should theoretically not be reached because `candidates` is checked for emptiness above.
+            // If it is reached, it indicates a deeper logic error.
+            error!("LRU eviction: min_by_key returned None despite candidates not being empty. This is unexpected.");
         }
     }
 

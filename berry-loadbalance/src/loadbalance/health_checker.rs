@@ -5,7 +5,6 @@ use anyhow::Result;
 use reqwest::Client;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::time::interval;
 use tracing::{debug, error, info, warn};
 
 /// 健康检查器
@@ -14,14 +13,12 @@ pub struct HealthChecker {
     config: Arc<Config>,
     metrics: Arc<MetricsCollector>,
     client: Client,
-    check_interval: Duration,
     initial_check_done: Arc<std::sync::RwLock<bool>>,
 }
 
 impl HealthChecker {
     /// 创建新的健康检查器
     pub fn new(config: Arc<Config>, metrics: Arc<MetricsCollector>) -> Self {
-        let check_interval = Duration::from_secs(config.settings.health_check_interval_seconds);
         let timeout = Duration::from_secs(config.settings.request_timeout_seconds);
         
         let client = Client::builder()
@@ -33,25 +30,11 @@ impl HealthChecker {
             config,
             metrics,
             client,
-            check_interval,
             initial_check_done: Arc::new(std::sync::RwLock::new(false)),
         }
     }
 
-    /// 启动健康检查循环
-    pub async fn start(&self) {
-        info!("Starting health checker with interval: {:?}", self.check_interval);
-        
-        let mut interval = interval(self.check_interval);
-        
-        loop {
-            interval.tick().await;
-            
-            if let Err(e) = self.check_all_providers().await {
-                error!("Health check failed: {}", e);
-            }
-        }
-    }
+    
 
     /// 检查所有provider的健康状态
     async fn check_all_providers(&self) -> Result<()> {

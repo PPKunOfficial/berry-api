@@ -435,19 +435,7 @@ impl LoadBalanceService {
         self.health_checker.check_now().await
     }
 
-    /// 重新加载配置
-    pub async fn reload_config(&self, new_config: Config) -> Result<()> {
-        info!("Reloading load balance service configuration");
-        
-        // 验证新配置
-        new_config.validate()?;
-        
-        // 重新加载管理器配置
-        self.manager.reload_config(new_config).await?;
-        
-        info!("Configuration reloaded successfully");
-        Ok(())
-    }
+    
 
     /// 获取指标收集器
     pub fn get_metrics(&self) -> Arc<MetricsCollector> {
@@ -620,9 +608,7 @@ impl LoadBalancer for LoadBalanceService {
         LoadBalanceService::trigger_health_check(self).await
     }
 
-    async fn reload_config(&self, new_config: berry_core::Config) -> Result<()> {
-        LoadBalanceService::reload_config(self, new_config).await
-    }
+    
 
     async fn is_running(&self) -> bool {
         LoadBalanceService::is_running(self).await

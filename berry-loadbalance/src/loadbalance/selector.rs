@@ -333,9 +333,13 @@ impl MetricsCollector {
     /// 获取失败计数
     pub fn get_failure_count(&self, provider: &str, model: &str) -> u32 {
         let backend_key = format!("{}:{}", provider, model);
+        self.get_failure_count_by_key(&backend_key)
+    }
 
+    /// 根据backend key获取失败计数
+    pub fn get_failure_count_by_key(&self, backend_key: &str) -> u32 {
         if let Ok(failures) = self.failure_counts.read() {
-            failures.get(&backend_key).copied().unwrap_or(0)
+            failures.get(backend_key).copied().unwrap_or(0)
         } else {
             0
         }

@@ -142,56 +142,7 @@ impl LoadBalanceManager {
             .update_smart_ai_connectivity(&backend_key, connectivity_ok);
     }
 
-    /// 重新加载配置
-    ///
-    /// 注意：由于 Arc 的共享所有权特性，此方法可能在某些情况下失败。
-    /// 如果配置正在被其他组件使用，建议重启服务以应用新配置。
-    pub async fn reload_config(&self, new_config: Config) -> Result<()> {
-        // 验证新配置
-        new_config.validate()?;
-
-        // 尝试获取配置的可变引用
-        // 创建一个临时的 Arc 克隆来尝试获取独占访问
-        let mut config_clone = self.config.clone();
-
-        // 检查是否可以获得独占访问权
-        if Arc::strong_count(&self.config) > 1 {
-            // 如果有多个引用，我们无法安全地修改配置
-            tracing::warn!(
-                "Configuration reload skipped: {} active references to config exist. \
-                 Consider restarting the service to apply new configuration.",
-                Arc::strong_count(&self.config)
-            );
-            return Err(anyhow::anyhow!(
-                "Configuration reload failed: configuration is currently in use by {} components. \
-                 Please try again later or restart the service to apply new configuration.",
-                Arc::strong_count(&self.config) - 1
-            ));
-        }
-
-        // 如果只有一个引用（当前的 self.config），我们可以尝试获取可变访问
-        match Arc::get_mut(&mut config_clone) {
-            Some(_config_ref) => {
-                // 成功获取可变引用，但我们仍然无法更新 self.config
-                // 因为 Rust 的借用检查器不允许我们修改 self 的字段
-                tracing::warn!(
-                    "Configuration reload partially successful: new config validated but cannot update reference. \
-                     Service restart recommended to fully apply changes."
-                );
-                Err(anyhow::anyhow!(
-                    "Configuration reload failed: unable to update config reference due to Rust ownership rules. \
-                     Please restart the service to apply new configuration."
-                ))
-            }
-            None => {
-                // 这种情况理论上不应该发生，因为我们已经检查了引用计数
-                Err(anyhow::anyhow!(
-                    "Configuration reload failed: unexpected error accessing config. \
-                     Please restart the service to apply new configuration."
-                ))
-            }
-        }
-    }
+    
 
     /// 获取模型的健康状态统计
     pub async fn get_health_stats(&self) -> HashMap<String, HealthStats> {

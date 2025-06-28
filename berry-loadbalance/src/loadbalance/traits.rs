@@ -45,8 +45,7 @@ pub trait LoadBalancer: Send + Sync {
     /// 手动触发健康检查
     async fn trigger_health_check(&self) -> Result<()>;
 
-    /// 重新加载配置
-    async fn reload_config(&self, new_config: berry_core::Config) -> Result<()>;
+    
 
     /// 检查服务是否正在运行
     async fn is_running(&self) -> bool;
@@ -118,12 +117,7 @@ impl LoadBalancerMetrics for MetricsCollector {
     }
 
     fn get_backend_error_count(&self, backend_key: &str) -> u64 {
-        // 从 backend_key 解析出 provider 和 model
-        if let Some((provider, model)) = backend_key.split_once(':') {
-            self.get_failure_count(provider, model) as u64
-        } else {
-            0
-        }
+        self.get_failure_count_by_key(backend_key) as u64
     }
 
     fn get_backend_request_count(&self, backend_key: &str) -> u64 {
