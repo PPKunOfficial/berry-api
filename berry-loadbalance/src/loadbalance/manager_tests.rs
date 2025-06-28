@@ -31,7 +31,10 @@ mod tests {
         }
     }
 
-    fn create_test_model_mapping(backends: Vec<Backend>, strategy: LoadBalanceStrategy) -> ModelMapping {
+    fn create_test_model_mapping(
+        backends: Vec<Backend>,
+        strategy: LoadBalanceStrategy,
+    ) -> ModelMapping {
         ModelMapping {
             name: "test-model".to_string(),
             backends,
@@ -51,7 +54,10 @@ mod tests {
         ];
 
         let mut models = HashMap::new();
-        models.insert("test-model".to_string(), create_test_model_mapping(backends, LoadBalanceStrategy::WeightedRandom));
+        models.insert(
+            "test-model".to_string(),
+            create_test_model_mapping(backends, LoadBalanceStrategy::WeightedRandom),
+        );
 
         Config {
             providers,
@@ -65,12 +71,13 @@ mod tests {
         let mut providers = HashMap::new();
         providers.insert("provider1".to_string(), create_test_provider());
 
-        let backends = vec![
-            create_test_backend("provider1", "model1", 1.0, 1),
-        ];
+        let backends = vec![create_test_backend("provider1", "model1", 1.0, 1)];
 
         let mut models = HashMap::new();
-        models.insert("test-model".to_string(), create_test_model_mapping(backends, LoadBalanceStrategy::WeightedRandom));
+        models.insert(
+            "test-model".to_string(),
+            create_test_model_mapping(backends, LoadBalanceStrategy::WeightedRandom),
+        );
 
         Config {
             providers,
@@ -107,12 +114,12 @@ mod tests {
     async fn test_select_backend_single() {
         let config = create_test_config_single_backend();
         let manager = LoadBalanceManager::new(config);
-        
+
         manager.initialize().await.unwrap();
-        
+
         let result = manager.select_backend("test-model").await;
         assert!(result.is_ok());
-        
+
         let backend = result.unwrap();
         assert_eq!(backend.provider, "provider1");
         assert_eq!(backend.model, "model1");
@@ -122,17 +129,17 @@ mod tests {
     async fn test_select_backend_multiple() {
         let config = create_test_config_with_multiple_backends();
         let manager = LoadBalanceManager::new(config);
-        
+
         manager.initialize().await.unwrap();
-        
+
         // 多次选择，应该根据权重分配
         let mut provider1_count = 0;
         let mut provider2_count = 0;
-        
+
         for _ in 0..100 {
             let result = manager.select_backend("test-model").await;
             assert!(result.is_ok());
-            
+
             let backend = result.unwrap();
             if backend.provider == "provider1" {
                 provider1_count += 1;
@@ -140,7 +147,7 @@ mod tests {
                 provider2_count += 1;
             }
         }
-        
+
         // 由于权重是0.7和0.3，provider1应该被选择更多次
         assert!(provider1_count > provider2_count);
         assert!(provider1_count + provider2_count == 100);
@@ -150,9 +157,9 @@ mod tests {
     async fn test_select_backend_nonexistent_model() {
         let config = create_test_config_single_backend();
         let manager = LoadBalanceManager::new(config);
-        
+
         manager.initialize().await.unwrap();
-        
+
         let result = manager.select_backend("nonexistent-model").await;
         assert!(result.is_err());
     }
@@ -161,7 +168,7 @@ mod tests {
     async fn test_select_backend_before_initialization() {
         let config = create_test_config_single_backend();
         let manager = LoadBalanceManager::new(config);
-        
+
         let result = manager.select_backend("test-model").await;
         assert!(result.is_err());
     }
@@ -170,7 +177,7 @@ mod tests {
     async fn test_get_available_models() {
         let config = create_test_config_single_backend();
         let manager = LoadBalanceManager::new(config);
-        
+
         let models = manager.get_available_models();
         assert_eq!(models.len(), 1);
         assert!(models.contains(&"test-model".to_string()));
@@ -181,12 +188,12 @@ mod tests {
         let mut config = create_test_config_single_backend();
 
         // 添加第二个模型
-        let backends2 = vec![
-            create_test_backend("provider1", "model2", 1.0, 1),
-        ];
+        let backends2 = vec![create_test_backend("provider1", "model2", 1.0, 1)];
         let mut model_mapping2 = create_test_model_mapping(backends2, LoadBalanceStrategy::Random);
         model_mapping2.name = "test-model-2".to_string(); // 设置面向客户的模型名称
-        config.models.insert("test-model-2-id".to_string(), model_mapping2);
+        config
+            .models
+            .insert("test-model-2-id".to_string(), model_mapping2);
 
         let manager = LoadBalanceManager::new(config);
 
@@ -200,9 +207,9 @@ mod tests {
     async fn test_get_available_models_disabled() {
         let mut config = create_test_config_single_backend();
         config.models.get_mut("test-model").unwrap().enabled = false;
-        
+
         let manager = LoadBalanceManager::new(config);
-        
+
         let models = manager.get_available_models();
         assert_eq!(models.len(), 0); // 禁用的模型不应该出现
     }
@@ -245,7 +252,11 @@ mod tests {
         manager.initialize().await.unwrap();
 
         let backend = manager.select_backend("test-model").await.unwrap();
-        manager.record_success(&backend.provider, &backend.model, std::time::Duration::from_millis(100));
+        manager.record_success(
+            &backend.provider,
+            &backend.model,
+            std::time::Duration::from_millis(100),
+        );
 
         // 验证指标收集器记录了成功请求
         let metrics = manager.get_metrics();
@@ -278,7 +289,11 @@ mod tests {
 
         // 记录多个成功和失败请求
         for _ in 0..3 {
-            manager.record_success(&backend.provider, &backend.model, std::time::Duration::from_millis(100));
+            manager.record_success(
+                &backend.provider,
+                &backend.model,
+                std::time::Duration::from_millis(100),
+            );
         }
         for _ in 0..2 {
             manager.record_failure(&backend.provider, &backend.model);
@@ -293,10 +308,10 @@ mod tests {
     async fn test_failover_strategy() {
         let mut config = create_test_config_with_multiple_backends();
         config.models.get_mut("test-model").unwrap().strategy = LoadBalanceStrategy::Failover;
-        
+
         let manager = LoadBalanceManager::new(config);
         manager.initialize().await.unwrap();
-        
+
         // Failover策略应该优先选择priority较低的backend
         let backend = manager.select_backend("test-model").await.unwrap();
         assert_eq!(backend.priority, 1); // 应该选择priority为1的backend
@@ -306,17 +321,17 @@ mod tests {
     async fn test_random_strategy() {
         let mut config = create_test_config_with_multiple_backends();
         config.models.get_mut("test-model").unwrap().strategy = LoadBalanceStrategy::Random;
-        
+
         let manager = LoadBalanceManager::new(config);
         manager.initialize().await.unwrap();
-        
+
         // Random策略应该能选择到不同的backend
         let mut providers = std::collections::HashSet::new();
         for _ in 0..20 {
             let backend = manager.select_backend("test-model").await.unwrap();
             providers.insert(backend.provider.clone());
         }
-        
+
         // 在20次选择中，应该至少选择到一个不同的provider
         // 注意：这是概率性测试，极小概率可能失败
         assert!(providers.len() >= 1);

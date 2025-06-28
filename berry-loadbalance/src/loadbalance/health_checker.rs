@@ -1,7 +1,9 @@
-use berry_core::config::model::{Config, Provider, BillingMode};
-use berry_core::client::{ClientFactory, AIBackendClient, ChatCompletionConfig, ChatMessage, ChatRole};
-use super::{MetricsCollector, selector::HealthCheckMethod};
+use super::{selector::HealthCheckMethod, MetricsCollector};
 use anyhow::Result;
+use berry_core::client::{
+    AIBackendClient, ChatCompletionConfig, ChatMessage, ChatRole, ClientFactory,
+};
+use berry_core::config::model::{BillingMode, Config, Provider};
 use reqwest::Client;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -20,7 +22,7 @@ impl HealthChecker {
     /// 创建新的健康检查器
     pub fn new(config: Arc<Config>, metrics: Arc<MetricsCollector>) -> Self {
         let timeout = Duration::from_secs(config.settings.request_timeout_seconds);
-        
+
         let client = Client::builder()
             .timeout(timeout)
             .build()
@@ -34,15 +36,19 @@ impl HealthChecker {
         }
     }
 
-    
-
     /// 检查所有provider的健康状态
     async fn check_all_providers(&self) -> Result<()> {
-        let enabled_providers: Vec<_> = self.config.providers.iter()
+        let enabled_providers: Vec<_> = self
+            .config
+            .providers
+            .iter()
             .filter(|(_, provider)| provider.enabled)
             .collect();
 
-        debug!("Starting health check for {} enabled providers", enabled_providers.len());
+        debug!(
+            "Starting health check for {} enabled providers",
+            enabled_providers.len()
+        );
 
         // 检查是否是初始检查
         let is_initial_check = match self.initial_check_done.read() {
@@ -62,8 +68,10 @@ impl HealthChecker {
         let mut tasks = Vec::new();
 
         for (provider_id, provider) in enabled_providers {
-            debug!("Scheduling health check for provider: {} ({})",
-                   provider_id, provider.name);
+            debug!(
+                "Scheduling health check for provider: {} ({})",
+                provider_id, provider.name
+            );
 
             let provider_id_clone = provider_id.clone();
             let provider_clone = provider.clone();
@@ -73,9 +81,23 @@ impl HealthChecker {
             let is_initial = is_initial_check;
 
             let task = tokio::spawn(async move {
-                debug!("Starting health check task for provider: {}", provider_id_clone);
-                Self::check_provider_health(&provider_id_clone, &provider_clone, &client, &metrics, &config, is_initial).await;
-                debug!("Completed health check task for provider: {}", provider_id_clone);
+                debug!(
+                    "Starting health check task for provider: {}",
+                    provider_id_clone
+                );
+                Self::check_provider_health(
+                    &provider_id_clone,
+                    &provider_clone,
+                    &client,
+                    &metrics,
+                    &config,
+                    is_initial,
+                )
+                .await;
+                debug!(
+                    "Completed health check task for provider: {}",
+                    provider_id_clone
+                );
             });
 
             tasks.push((provider_id.clone(), task));
@@ -85,9 +107,15 @@ impl HealthChecker {
         debug!("Waiting for {} health check tasks to complete", tasks.len());
         for (provider_id, task) in tasks {
             if let Err(e) = task.await {
-                error!("Health check task failed for provider {}: {}", provider_id, e);
+                error!(
+                    "Health check task failed for provider {}: {}",
+                    provider_id, e
+                );
             } else {
-                debug!("Health check task completed successfully for provider: {}", provider_id);
+                debug!(
+                    "Health check task completed successfully for provider: {}",
+                    provider_id
+                );
             }
         }
 
@@ -118,24 +146,36 @@ impl HealthChecker {
         is_initial_check: bool,
     ) {
         let start_time = Instant::now();
-        debug!("Starting health check for provider: {} (base_url: {})", provider_id, provider.base_url);
+        debug!(
+            "Starting health check for provider: {} (base_url: {})",
+            provider_id, provider.base_url
+        );
 
         // 直接使用配置中的API密钥
         let api_key = &provider.api_key;
 
         if api_key.is_empty() {
             warn!("API key is empty for provider {}", provider_id);
-            debug!("Marking {} models as unhealthy due to empty API key", provider.models.len());
+            debug!(
+                "Marking {} models as unhealthy due to empty API key",
+                provider.models.len()
+            );
             // 标记所有模型为不健康
             for model in &provider.models {
                 let backend_key = format!("{}:{}", provider_id, model);
-                debug!("Marking backend {} as unhealthy (empty API key)", backend_key);
+                debug!(
+                    "Marking backend {} as unhealthy (empty API key)",
+                    backend_key
+                );
                 metrics.record_failure(&backend_key);
             }
             return;
         }
 
-        debug!("API key present for provider {}, proceeding with health check", provider_id);
+        debug!(
+            "API key present for provider {}, proceeding with health check",
+            provider_id
+        );
 
         // 检查该provider下每个模型的计费模式
         let mut has_per_token_models = false;
@@ -157,44 +197,85 @@ impl HealthChecker {
             }
         }
 
-        debug!("Provider {} has per-token models: {}, per-request models: {:?}",
-               provider_id, has_per_token_models, per_request_models);
+        debug!(
+            "Provider {} has per-token models: {}, per-request models: {:?}",
+            provider_id, has_per_token_models, per_request_models
+        );
 
         // 如果有按token计费的模型，执行主动健康检查
         if has_per_token_models {
-            debug!("Provider {} has per-token models, performing active health check", provider_id);
+            debug!(
+                "Provider {} has per-token models, performing active health check",
+                provider_id
+            );
 
             // 获取per-token模型列表
             let mut per_token_models = Vec::new();
             for model_mapping in config.models.values() {
                 for backend in &model_mapping.backends {
-                    if backend.provider == provider_id && provider.models.contains(&backend.model) && backend.billing_mode == BillingMode::PerToken {
+                    if backend.provider == provider_id
+                        && provider.models.contains(&backend.model)
+                        && backend.billing_mode == BillingMode::PerToken
+                    {
                         per_token_models.push(backend.model.clone());
                     }
                 }
             }
 
             if provider.base_url.contains("httpbin.org") {
-                debug!("Detected test provider (httpbin), using HTTP status check for {}", provider_id);
-                Self::check_test_provider(provider_id, provider, client, metrics, start_time, is_initial_check, &per_token_models).await;
+                debug!(
+                    "Detected test provider (httpbin), using HTTP status check for {}",
+                    provider_id
+                );
+                Self::check_test_provider(
+                    provider_id,
+                    provider,
+                    client,
+                    metrics,
+                    start_time,
+                    is_initial_check,
+                    &per_token_models,
+                )
+                .await;
             } else {
-                debug!("Detected real AI provider, using models API check for {}", provider_id);
-                Self::check_real_provider(provider_id, provider, metrics, start_time, is_initial_check, &per_token_models).await;
+                debug!(
+                    "Detected real AI provider, using models API check for {}",
+                    provider_id
+                );
+                Self::check_real_provider(
+                    provider_id,
+                    provider,
+                    metrics,
+                    start_time,
+                    is_initial_check,
+                    &per_token_models,
+                )
+                .await;
             }
         }
 
         // 处理按请求计费的模型
         if !per_request_models.is_empty() {
-            debug!("Processing {} per-request models for provider {}", per_request_models.len(), provider_id);
+            debug!(
+                "Processing {} per-request models for provider {}",
+                per_request_models.len(),
+                provider_id
+            );
             for model in &per_request_models {
                 let backend_key = format!("{}:{}", provider_id, model);
 
                 if is_initial_check {
-                    debug!("Initial check: Marking per-request backend {} as healthy", backend_key);
+                    debug!(
+                        "Initial check: Marking per-request backend {} as healthy",
+                        backend_key
+                    );
                     metrics.record_success(&backend_key);
                     metrics.update_health_check(&backend_key);
                 } else {
-                    debug!("Routine check: Skipping active check for per-request backend {}", backend_key);
+                    debug!(
+                        "Routine check: Skipping active check for per-request backend {}",
+                        backend_key
+                    );
                     metrics.update_health_check(&backend_key);
                 }
             }
@@ -202,17 +283,41 @@ impl HealthChecker {
 
         // 如果既没有按token计费的模型，也没有按请求计费的模型，使用默认行为
         if !has_per_token_models && per_request_models.is_empty() {
-            debug!("Provider {} has no configured backends, using default health check", provider_id);
+            debug!(
+                "Provider {} has no configured backends, using default health check",
+                provider_id
+            );
             // 对于没有配置的provider，默认所有模型都按per-token处理
             if provider.base_url.contains("httpbin.org") {
-                Self::check_test_provider(provider_id, provider, client, metrics, start_time, is_initial_check, &provider.models).await;
+                Self::check_test_provider(
+                    provider_id,
+                    provider,
+                    client,
+                    metrics,
+                    start_time,
+                    is_initial_check,
+                    &provider.models,
+                )
+                .await;
             } else {
-                Self::check_real_provider(provider_id, provider, metrics, start_time, is_initial_check, &provider.models).await;
+                Self::check_real_provider(
+                    provider_id,
+                    provider,
+                    metrics,
+                    start_time,
+                    is_initial_check,
+                    &provider.models,
+                )
+                .await;
             }
         }
 
         let total_time = start_time.elapsed();
-        debug!("Completed health check for provider {} in {}ms", provider_id, total_time.as_millis());
+        debug!(
+            "Completed health check for provider {} in {}ms",
+            provider_id,
+            total_time.as_millis()
+        );
     }
 
     /// 检查测试provider（httpbin等）
@@ -226,13 +331,20 @@ impl HealthChecker {
         per_token_models: &[String],
     ) {
         let health_check_url = format!("{}/status/200", provider.base_url);
-        debug!("Testing provider {} with URL: {}", provider_id, health_check_url);
+        debug!(
+            "Testing provider {} with URL: {}",
+            provider_id, health_check_url
+        );
 
         let mut request = client.get(&health_check_url);
 
         // 添加自定义头部
         if !provider.headers.is_empty() {
-            debug!("Adding {} custom headers for provider {}", provider.headers.len(), provider_id);
+            debug!(
+                "Adding {} custom headers for provider {}",
+                provider.headers.len(),
+                provider_id
+            );
             for (key, value) in &provider.headers {
                 debug!("Adding header: {} = {}", key, value);
                 request = request.header(key, value);
@@ -245,7 +357,12 @@ impl HealthChecker {
             Ok(response) => {
                 let latency = start_time.elapsed();
                 let status = response.status();
-                debug!("Received response from provider {} with status: {} ({}ms)", provider_id, status, latency.as_millis());
+                debug!(
+                    "Received response from provider {} with status: {} ({}ms)",
+                    provider_id,
+                    status,
+                    latency.as_millis()
+                );
 
                 if status.is_success() {
                     if is_initial_check {
@@ -281,25 +398,42 @@ impl HealthChecker {
                         }
                     }
                 } else {
-                    warn!("Provider {} health check failed with status: {}", provider_id, status);
-                    debug!("Marking {} per-token models as unhealthy for provider {}", per_token_models.len(), provider_id);
+                    warn!(
+                        "Provider {} health check failed with status: {}",
+                        provider_id, status
+                    );
+                    debug!(
+                        "Marking {} per-token models as unhealthy for provider {}",
+                        per_token_models.len(),
+                        provider_id
+                    );
 
                     // 无论初始还是后续检查，失败都只标记per-token模型为不健康
                     for model in per_token_models {
                         let backend_key = format!("{}:{}", provider_id, model);
-                        debug!("Marking per-token backend {} as unhealthy (HTTP {})", backend_key, status);
+                        debug!(
+                            "Marking per-token backend {} as unhealthy (HTTP {})",
+                            backend_key, status
+                        );
                         metrics.record_failure(&backend_key);
                     }
                 }
             }
             Err(e) => {
                 error!("Provider {} health check error: {}", provider_id, e);
-                debug!("Network error for provider {}, marking {} per-token models as unhealthy", provider_id, per_token_models.len());
+                debug!(
+                    "Network error for provider {}, marking {} per-token models as unhealthy",
+                    provider_id,
+                    per_token_models.len()
+                );
 
                 // 只标记per-token模型为不健康
                 for model in per_token_models {
                     let backend_key = format!("{}:{}", provider_id, model);
-                    debug!("Marking per-token backend {} as unhealthy (network error: {})", backend_key, e);
+                    debug!(
+                        "Marking per-token backend {} as unhealthy (network error: {})",
+                        backend_key, e
+                    );
                     metrics.record_failure(&backend_key);
                 }
             }
@@ -326,27 +460,40 @@ impl HealthChecker {
         ) {
             Ok(client) => client,
             Err(e) => {
-                error!("Failed to create client for provider {}: {}", provider_id, e);
+                error!(
+                    "Failed to create client for provider {}: {}",
+                    provider_id, e
+                );
                 // 只标记per-token模型为不健康
                 for model in per_token_models {
                     let backend_key = format!("{}:{}", provider_id, model);
-                    debug!("Marking per-token backend {} as unhealthy (client creation failed)", backend_key);
+                    debug!(
+                        "Marking per-token backend {} as unhealthy (client creation failed)",
+                        backend_key
+                    );
                     metrics.record_failure(&backend_key);
                 }
                 return;
             }
         };
 
-        debug!("Created {} client for models API check to {}",
-               client.backend_type().to_string(), provider_id);
+        debug!(
+            "Created {} client for models API check to {}",
+            client.backend_type().to_string(),
+            provider_id
+        );
 
         // 发送models API请求
         match client.models(&provider.api_key).await {
             Ok(response) => {
                 let latency = start_time.elapsed();
                 let status = response.status_code;
-                debug!("Received models API response from provider {} with status: {} ({}ms)",
-                       provider_id, status, latency.as_millis());
+                debug!(
+                    "Received models API response from provider {} with status: {} ({}ms)",
+                    provider_id,
+                    status,
+                    latency.as_millis()
+                );
 
                 if response.is_success {
                     if is_initial_check {
@@ -385,7 +532,10 @@ impl HealthChecker {
                         }
                     }
                 } else {
-                    warn!("Provider {} models API check failed with status: {}", provider_id, status);
+                    warn!(
+                        "Provider {} models API check failed with status: {}",
+                        provider_id, status
+                    );
                     debug!("Models API failed for provider {}, marking {} per-token models as unhealthy",
                            provider_id, per_token_models.len());
 
@@ -394,19 +544,26 @@ impl HealthChecker {
                         let backend_key = format!("{}:{}", provider_id, model);
                         debug!("Marking per-token backend {} as unhealthy (models API failed with status {})",
                                backend_key, status);
-                        metrics.record_failure_with_method(&backend_key, HealthCheckMethod::ModelList);
+                        metrics
+                            .record_failure_with_method(&backend_key, HealthCheckMethod::ModelList);
                     }
                 }
             }
             Err(e) => {
                 error!("Provider {} models API error: {}", provider_id, e);
-                debug!("Network/API error for provider {}, marking {} per-token models as unhealthy",
-                       provider_id, per_token_models.len());
+                debug!(
+                    "Network/API error for provider {}, marking {} per-token models as unhealthy",
+                    provider_id,
+                    per_token_models.len()
+                );
 
                 // 只标记per-token模型为不健康
                 for model in per_token_models {
                     let backend_key = format!("{}:{}", provider_id, model);
-                    debug!("Marking per-token backend {} as unhealthy (API error: {})", backend_key, e);
+                    debug!(
+                        "Marking per-token backend {} as unhealthy (API error: {})",
+                        backend_key, e
+                    );
                     metrics.record_failure_with_method(&backend_key, HealthCheckMethod::ModelList);
                 }
             }
@@ -430,7 +587,8 @@ impl HealthChecker {
                     &self.metrics,
                     &self.config,
                     false, // 手动触发的检查不是初始检查
-                ).await;
+                )
+                .await;
                 Ok(())
             } else {
                 anyhow::bail!("Provider '{}' is disabled", provider_id);
@@ -442,39 +600,66 @@ impl HealthChecker {
 
     /// 检查不健康的provider是否可以恢复
     pub async fn check_recovery(&self) -> Result<()> {
-        let recovery_interval = Duration::from_secs(self.config.settings.recovery_check_interval_seconds);
+        let recovery_interval =
+            Duration::from_secs(self.config.settings.recovery_check_interval_seconds);
         let unhealthy_backends = self.metrics.get_unhealthy_backends();
 
-        debug!("Starting recovery check process (interval: {}s)", recovery_interval.as_secs());
+        debug!(
+            "Starting recovery check process (interval: {}s)",
+            recovery_interval.as_secs()
+        );
 
         if unhealthy_backends.is_empty() {
             debug!("No unhealthy backends to check for recovery");
             return Ok(());
         }
 
-        info!("Checking recovery for {} unhealthy backends", unhealthy_backends.len());
-        debug!("Unhealthy backends: {:?}", unhealthy_backends.iter().map(|b| &b.backend_key).collect::<Vec<_>>());
+        info!(
+            "Checking recovery for {} unhealthy backends",
+            unhealthy_backends.len()
+        );
+        debug!(
+            "Unhealthy backends: {:?}",
+            unhealthy_backends
+                .iter()
+                .map(|b| &b.backend_key)
+                .collect::<Vec<_>>()
+        );
 
         for unhealthy_backend in unhealthy_backends {
-            debug!("Evaluating recovery check for backend: {} (failed {} times, last failure: {:?})",
-                   unhealthy_backend.backend_key,
-                   unhealthy_backend.failure_count,
-                   unhealthy_backend.last_failure_time.elapsed());
+            debug!(
+                "Evaluating recovery check for backend: {} (failed {} times, last failure: {:?})",
+                unhealthy_backend.backend_key,
+                unhealthy_backend.failure_count,
+                unhealthy_backend.last_failure_time.elapsed()
+            );
 
-            if self.metrics.needs_recovery_check(&unhealthy_backend.backend_key, recovery_interval) {
-                debug!("Backend {} needs recovery check", unhealthy_backend.backend_key);
+            if self
+                .metrics
+                .needs_recovery_check(&unhealthy_backend.backend_key, recovery_interval)
+            {
+                debug!(
+                    "Backend {} needs recovery check",
+                    unhealthy_backend.backend_key
+                );
 
                 // 解析backend_key获取provider_id和model
                 let parts: Vec<&str> = unhealthy_backend.backend_key.split(':').collect();
                 if parts.len() != 2 {
-                    warn!("Invalid backend key format: {}", unhealthy_backend.backend_key);
+                    warn!(
+                        "Invalid backend key format: {}",
+                        unhealthy_backend.backend_key
+                    );
                     continue;
                 }
 
                 let provider_id = parts[0];
                 let model_name = parts[1];
 
-                debug!("Parsed backend key: provider={}, model={}", provider_id, model_name);
+                debug!(
+                    "Parsed backend key: provider={}, model={}",
+                    provider_id, model_name
+                );
 
                 if let Some(provider) = self.config.providers.get(provider_id) {
                     if provider.enabled {
@@ -500,49 +685,84 @@ impl HealthChecker {
                         }
 
                         // 根据失败检查方式和计费模式选择恢复方式
-                        match (&unhealthy_backend.failure_check_method, backend_billing_mode) {
+                        match (
+                            &unhealthy_backend.failure_check_method,
+                            backend_billing_mode,
+                        ) {
                             (HealthCheckMethod::ModelList, BillingMode::PerToken) => {
                                 info!("Attempting model list recovery check for per-token backend {}:{} (originally failed via model list)", provider_id, model_name);
-                                debug!("Recording recovery attempt for backend: {}", unhealthy_backend.backend_key);
-                                self.metrics.record_recovery_attempt(&unhealthy_backend.backend_key);
+                                debug!(
+                                    "Recording recovery attempt for backend: {}",
+                                    unhealthy_backend.backend_key
+                                );
+                                self.metrics
+                                    .record_recovery_attempt(&unhealthy_backend.backend_key);
 
                                 // 使用model list进行恢复检查，保持一致性
-                                self.check_recovery_with_model_list(provider_id, provider, model_name).await;
+                                self.check_recovery_with_model_list(
+                                    provider_id,
+                                    provider,
+                                    model_name,
+                                )
+                                .await;
                             }
                             (HealthCheckMethod::Chat, BillingMode::PerToken) => {
                                 info!("Attempting chat recovery check for per-token backend {}:{} (originally failed via chat)", provider_id, model_name);
-                                debug!("Recording recovery attempt for backend: {}", unhealthy_backend.backend_key);
-                                self.metrics.record_recovery_attempt(&unhealthy_backend.backend_key);
+                                debug!(
+                                    "Recording recovery attempt for backend: {}",
+                                    unhealthy_backend.backend_key
+                                );
+                                self.metrics
+                                    .record_recovery_attempt(&unhealthy_backend.backend_key);
 
                                 // 使用chat请求进行恢复检查
-                                self.check_recovery_with_chat(provider_id, provider, model_name).await;
+                                self.check_recovery_with_chat(provider_id, provider, model_name)
+                                    .await;
                             }
                             (_, BillingMode::PerRequest) => {
                                 debug!("Skipping active recovery check for per-request backend {}:{} (relies on passive validation)",
                                        provider_id, model_name);
                                 // 按请求计费：跳过主动恢复检查，依赖被动验证
                                 // 只更新恢复尝试时间，不执行实际的检查请求
-                                self.metrics.record_recovery_attempt(&unhealthy_backend.backend_key);
+                                self.metrics
+                                    .record_recovery_attempt(&unhealthy_backend.backend_key);
                             }
                             (HealthCheckMethod::Network, BillingMode::PerToken) => {
                                 info!("Attempting network recovery check for per-token backend {}:{} (originally failed via network)", provider_id, model_name);
-                                debug!("Recording recovery attempt for backend: {}", unhealthy_backend.backend_key);
-                                self.metrics.record_recovery_attempt(&unhealthy_backend.backend_key);
+                                debug!(
+                                    "Recording recovery attempt for backend: {}",
+                                    unhealthy_backend.backend_key
+                                );
+                                self.metrics
+                                    .record_recovery_attempt(&unhealthy_backend.backend_key);
 
                                 // 网络错误通常用model list检查恢复
-                                self.check_recovery_with_model_list(provider_id, provider, model_name).await;
+                                self.check_recovery_with_model_list(
+                                    provider_id,
+                                    provider,
+                                    model_name,
+                                )
+                                .await;
                             }
                         }
                     } else {
-                        debug!("Provider {} is disabled, skipping recovery check", provider_id);
+                        debug!(
+                            "Provider {} is disabled, skipping recovery check",
+                            provider_id
+                        );
                     }
                 } else {
-                    warn!("Provider {} not found in config, cannot perform recovery check", provider_id);
+                    warn!(
+                        "Provider {} not found in config, cannot perform recovery check",
+                        provider_id
+                    );
                 }
             } else {
-                debug!("Backend {} does not need recovery check yet (last attempt: {:?})",
-                       unhealthy_backend.backend_key,
-                       unhealthy_backend.last_recovery_attempt.map(|t| t.elapsed()));
+                debug!(
+                    "Backend {} does not need recovery check yet (last attempt: {:?})",
+                    unhealthy_backend.backend_key,
+                    unhealthy_backend.last_recovery_attempt.map(|t| t.elapsed())
+                );
             }
         }
 
@@ -558,7 +778,10 @@ impl HealthChecker {
         model_name: &str,
     ) {
         let start_time = Instant::now();
-        debug!("Starting chat-based recovery check for {}:{}", provider_id, model_name);
+        debug!(
+            "Starting chat-based recovery check for {}:{}",
+            provider_id, model_name
+        );
 
         // 根据provider的backend_type创建UnifiedClient
         let timeout = Duration::from_secs(30);
@@ -569,13 +792,20 @@ impl HealthChecker {
         ) {
             Ok(client) => client,
             Err(e) => {
-                error!("Failed to create client for recovery check {}:{}: {}", provider_id, model_name, e);
+                error!(
+                    "Failed to create client for recovery check {}:{}: {}",
+                    provider_id, model_name, e
+                );
                 return;
             }
         };
 
-        debug!("Created {} client for recovery check to {}:{}",
-               client.backend_type().to_string(), provider_id, model_name);
+        debug!(
+            "Created {} client for recovery check to {}:{}",
+            client.backend_type().to_string(),
+            provider_id,
+            model_name
+        );
 
         // 构建简单的chat请求配置
         let config = ChatCompletionConfig {
@@ -603,7 +833,10 @@ impl HealthChecker {
                     headers.insert("Authorization", auth_value);
                 }
                 Err(e) => {
-                    error!("Failed to parse authorization header for provider {}: {}", provider_id, e);
+                    error!(
+                        "Failed to parse authorization header for provider {}: {}",
+                        provider_id, e
+                    );
                     return;
                 }
             }
@@ -613,13 +846,16 @@ impl HealthChecker {
         for (key, value) in &provider.headers {
             if let (Ok(header_name), Ok(header_value)) = (
                 key.parse::<reqwest::header::HeaderName>(),
-                value.parse::<reqwest::header::HeaderValue>()
+                value.parse::<reqwest::header::HeaderValue>(),
             ) {
                 headers.insert(header_name, header_value);
             }
         }
 
-        debug!("Sending chat request for recovery check to {}:{}", provider_id, model_name);
+        debug!(
+            "Sending chat request for recovery check to {}:{}",
+            provider_id, model_name
+        );
 
         // 发送请求
         match client.chat_completions(headers, &config).await {
@@ -628,11 +864,19 @@ impl HealthChecker {
                 let backend_key = format!("{}:{}", provider_id, model_name);
                 let status = response.status();
 
-                debug!("Received chat response for recovery check: status={}, latency={}ms",
-                       status, latency.as_millis());
+                debug!(
+                    "Received chat response for recovery check: status={}, latency={}ms",
+                    status,
+                    latency.as_millis()
+                );
 
                 if status.is_success() {
-                    info!("Recovery check passed for {}:{} ({}ms)", provider_id, model_name, latency.as_millis());
+                    info!(
+                        "Recovery check passed for {}:{} ({}ms)",
+                        provider_id,
+                        model_name,
+                        latency.as_millis()
+                    );
                     debug!("Marking backend {} as recovered and healthy", backend_key);
 
                     // 恢复成功，标记为健康
@@ -640,22 +884,42 @@ impl HealthChecker {
                     self.metrics.record_success(&backend_key);
                     self.metrics.update_health_check(&backend_key);
 
-                    debug!("Successfully restored backend {} to healthy state", backend_key);
+                    debug!(
+                        "Successfully restored backend {} to healthy state",
+                        backend_key
+                    );
                 } else {
-                    warn!("Recovery check failed for {}:{} with status: {}", provider_id, model_name, status);
-                    debug!("Backend {} remains unhealthy after recovery attempt", backend_key);
+                    warn!(
+                        "Recovery check failed for {}:{} with status: {}",
+                        provider_id, model_name, status
+                    );
+                    debug!(
+                        "Backend {} remains unhealthy after recovery attempt",
+                        backend_key
+                    );
                     // 保持不健康状态
                 }
             }
             Err(e) => {
-                error!("Recovery check error for {}:{}: {}", provider_id, model_name, e);
-                debug!("Network/API error during recovery check for {}:{}: {}", provider_id, model_name, e);
+                error!(
+                    "Recovery check error for {}:{}: {}",
+                    provider_id, model_name, e
+                );
+                debug!(
+                    "Network/API error during recovery check for {}:{}: {}",
+                    provider_id, model_name, e
+                );
                 // 保持不健康状态
             }
         }
 
         let total_time = start_time.elapsed();
-        debug!("Completed recovery check for {}:{} in {}ms", provider_id, model_name, total_time.as_millis());
+        debug!(
+            "Completed recovery check for {}:{} in {}ms",
+            provider_id,
+            model_name,
+            total_time.as_millis()
+        );
     }
 
     /// 使用model list API检查provider恢复状态
@@ -666,7 +930,10 @@ impl HealthChecker {
         model_name: &str,
     ) {
         let start_time = Instant::now();
-        debug!("Starting model list-based recovery check for {}:{}", provider_id, model_name);
+        debug!(
+            "Starting model list-based recovery check for {}:{}",
+            provider_id, model_name
+        );
 
         // 根据provider的backend_type创建UnifiedClient
         let timeout = Duration::from_secs(10);
@@ -677,13 +944,20 @@ impl HealthChecker {
         ) {
             Ok(client) => client,
             Err(e) => {
-                error!("Failed to create client for model list recovery check {}:{}: {}", provider_id, model_name, e);
+                error!(
+                    "Failed to create client for model list recovery check {}:{}: {}",
+                    provider_id, model_name, e
+                );
                 return;
             }
         };
 
-        debug!("Created {} client for model list recovery check to {}:{}",
-               client.backend_type().to_string(), provider_id, model_name);
+        debug!(
+            "Created {} client for model list recovery check to {}:{}",
+            client.backend_type().to_string(),
+            provider_id,
+            model_name
+        );
 
         // 发送models API请求
         match client.models(&provider.api_key).await {
@@ -692,11 +966,19 @@ impl HealthChecker {
                 let backend_key = format!("{}:{}", provider_id, model_name);
                 let status = response.status_code;
 
-                debug!("Received models API response for recovery check: status={}, latency={}ms",
-                       status, latency.as_millis());
+                debug!(
+                    "Received models API response for recovery check: status={}, latency={}ms",
+                    status,
+                    latency.as_millis()
+                );
 
                 if response.is_success {
-                    info!("Model list recovery check passed for {}:{} ({}ms)", provider_id, model_name, latency.as_millis());
+                    info!(
+                        "Model list recovery check passed for {}:{} ({}ms)",
+                        provider_id,
+                        model_name,
+                        latency.as_millis()
+                    );
                     debug!("Marking backend {} as recovered and healthy", backend_key);
 
                     // 恢复成功，标记为健康
@@ -704,25 +986,47 @@ impl HealthChecker {
                     self.metrics.record_success(&backend_key);
                     self.metrics.update_health_check(&backend_key);
 
-                    debug!("Successfully restored backend {} to healthy state via model list check", backend_key);
+                    debug!(
+                        "Successfully restored backend {} to healthy state via model list check",
+                        backend_key
+                    );
                 } else {
-                    warn!("Model list recovery check failed for {}:{} with status: {}", provider_id, model_name, status);
-                    debug!("Backend {} remains unhealthy after model list recovery attempt", backend_key);
+                    warn!(
+                        "Model list recovery check failed for {}:{} with status: {}",
+                        provider_id, model_name, status
+                    );
+                    debug!(
+                        "Backend {} remains unhealthy after model list recovery attempt",
+                        backend_key
+                    );
                     // 保持不健康状态，记录失败但保持原有的检查方式
-                    self.metrics.record_failure_with_method(&backend_key, HealthCheckMethod::ModelList);
+                    self.metrics
+                        .record_failure_with_method(&backend_key, HealthCheckMethod::ModelList);
                 }
             }
             Err(e) => {
-                error!("Model list recovery check error for {}:{}: {}", provider_id, model_name, e);
-                debug!("Network/API error during model list recovery check for {}:{}: {}", provider_id, model_name, e);
+                error!(
+                    "Model list recovery check error for {}:{}: {}",
+                    provider_id, model_name, e
+                );
+                debug!(
+                    "Network/API error during model list recovery check for {}:{}: {}",
+                    provider_id, model_name, e
+                );
                 let backend_key = format!("{}:{}", provider_id, model_name);
                 // 保持不健康状态，记录失败
-                self.metrics.record_failure_with_method(&backend_key, HealthCheckMethod::ModelList);
+                self.metrics
+                    .record_failure_with_method(&backend_key, HealthCheckMethod::ModelList);
             }
         }
 
         let total_time = start_time.elapsed();
-        debug!("Completed model list recovery check for {}:{} in {}ms", provider_id, model_name, total_time.as_millis());
+        debug!(
+            "Completed model list recovery check for {}:{} in {}ms",
+            provider_id,
+            model_name,
+            total_time.as_millis()
+        );
     }
 
     /// 获取健康检查统计信息
@@ -798,38 +1102,44 @@ impl HealthSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use berry_core::config::model::{GlobalSettings, ModelMapping, Backend, LoadBalanceStrategy};
+    use berry_core::config::model::{Backend, GlobalSettings, LoadBalanceStrategy, ModelMapping};
     use std::collections::HashMap;
 
     fn create_test_config() -> Config {
         let mut providers = HashMap::new();
-        providers.insert("test-provider".to_string(), Provider {
-            name: "Test Provider".to_string(),
-            base_url: "https://httpbin.org".to_string(), // 使用httpbin进行测试
-            api_key: "test-api-key".to_string(),
-            models: vec!["test-model".to_string()],
-            headers: HashMap::new(),
-            enabled: true,
-            timeout_seconds: 5,
-            max_retries: 1,
-            backend_type: berry_core::config::model::ProviderBackendType::OpenAI,
-        });
+        providers.insert(
+            "test-provider".to_string(),
+            Provider {
+                name: "Test Provider".to_string(),
+                base_url: "https://httpbin.org".to_string(), // 使用httpbin进行测试
+                api_key: "test-api-key".to_string(),
+                models: vec!["test-model".to_string()],
+                headers: HashMap::new(),
+                enabled: true,
+                timeout_seconds: 5,
+                max_retries: 1,
+                backend_type: berry_core::config::model::ProviderBackendType::OpenAI,
+            },
+        );
 
         let mut models = HashMap::new();
-        models.insert("test-model".to_string(), ModelMapping {
-            name: "test-model".to_string(),
-            backends: vec![Backend {
-                provider: "test-provider".to_string(),
-                model: "test-model".to_string(),
-                weight: 1.0,
-                priority: 1,
+        models.insert(
+            "test-model".to_string(),
+            ModelMapping {
+                name: "test-model".to_string(),
+                backends: vec![Backend {
+                    provider: "test-provider".to_string(),
+                    model: "test-model".to_string(),
+                    weight: 1.0,
+                    priority: 1,
+                    enabled: true,
+                    tags: vec![],
+                    billing_mode: BillingMode::PerToken,
+                }],
+                strategy: LoadBalanceStrategy::WeightedRandom,
                 enabled: true,
-                tags: vec![],
-                billing_mode: BillingMode::PerToken,
-            }],
-            strategy: LoadBalanceStrategy::WeightedRandom,
-            enabled: true,
-        });
+            },
+        );
 
         Config {
             providers,
@@ -863,56 +1173,65 @@ mod tests {
 
     #[tokio::test]
     async fn test_mixed_provider_health_check() {
-        use std::collections::HashMap;
         use berry_core::config::model::*;
+        use std::collections::HashMap;
 
         // 创建混合Provider配置（同时包含per-token和per-request模型）
         let mut providers = HashMap::new();
-        providers.insert("mixed-provider".to_string(), Provider {
-            name: "Mixed Provider".to_string(),
-            base_url: "https://httpbin.org".to_string(),
-            api_key: "test-key".to_string(),
-            models: vec!["gpt-3.5-turbo".to_string(), "dall-e-3".to_string()],
-            enabled: true,
-            headers: HashMap::new(),
-            backend_type: ProviderBackendType::OpenAI,
-            max_retries: 3,
-            timeout_seconds: 30,
-        });
+        providers.insert(
+            "mixed-provider".to_string(),
+            Provider {
+                name: "Mixed Provider".to_string(),
+                base_url: "https://httpbin.org".to_string(),
+                api_key: "test-key".to_string(),
+                models: vec!["gpt-3.5-turbo".to_string(), "dall-e-3".to_string()],
+                enabled: true,
+                headers: HashMap::new(),
+                backend_type: ProviderBackendType::OpenAI,
+                max_retries: 3,
+                timeout_seconds: 30,
+            },
+        );
 
         let mut models = HashMap::new();
 
         // per-token模型
-        models.insert("chat-model".to_string(), ModelMapping {
-            name: "chat-model".to_string(),
-            backends: vec![Backend {
-                provider: "mixed-provider".to_string(),
-                model: "gpt-3.5-turbo".to_string(),
-                weight: 1.0,
-                priority: 1,
+        models.insert(
+            "chat-model".to_string(),
+            ModelMapping {
+                name: "chat-model".to_string(),
+                backends: vec![Backend {
+                    provider: "mixed-provider".to_string(),
+                    model: "gpt-3.5-turbo".to_string(),
+                    weight: 1.0,
+                    priority: 1,
+                    enabled: true,
+                    tags: vec![],
+                    billing_mode: BillingMode::PerToken,
+                }],
+                strategy: LoadBalanceStrategy::WeightedRandom,
                 enabled: true,
-                tags: vec![],
-                billing_mode: BillingMode::PerToken,
-            }],
-            strategy: LoadBalanceStrategy::WeightedRandom,
-            enabled: true,
-        });
+            },
+        );
 
         // per-request模型
-        models.insert("image-model".to_string(), ModelMapping {
-            name: "image-model".to_string(),
-            backends: vec![Backend {
-                provider: "mixed-provider".to_string(),
-                model: "dall-e-3".to_string(),
-                weight: 1.0,
-                priority: 1,
+        models.insert(
+            "image-model".to_string(),
+            ModelMapping {
+                name: "image-model".to_string(),
+                backends: vec![Backend {
+                    provider: "mixed-provider".to_string(),
+                    model: "dall-e-3".to_string(),
+                    weight: 1.0,
+                    priority: 1,
+                    enabled: true,
+                    tags: vec![],
+                    billing_mode: BillingMode::PerRequest,
+                }],
+                strategy: LoadBalanceStrategy::WeightedRandom,
                 enabled: true,
-                tags: vec![],
-                billing_mode: BillingMode::PerRequest,
-            }],
-            strategy: LoadBalanceStrategy::WeightedRandom,
-            enabled: true,
-        });
+            },
+        );
 
         let config = Config {
             providers,

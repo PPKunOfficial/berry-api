@@ -1,22 +1,24 @@
 use crate::app::AppState;
-use crate::static_files::{serve_index, serve_static_file};
 use crate::middleware::metrics_middleware;
+use crate::static_files::{serve_index, serve_static_file};
 use axum::{
-    Router,
-    routing::{get, post},
     middleware,
+    routing::{get, post},
+    Router,
 };
-use tower_http::{trace::TraceLayer, cors::CorsLayer};
+use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 use super::{
+    admin::{get_backend_health, get_model_weights, get_rate_limit_usage, get_system_stats},
     chat::chat_completions,
     health::{detailed_health_check, simple_health_check},
     metrics::metrics,
     models::{list_models, list_models_v1},
-    smart_ai::{get_smart_ai_weights, get_model_smart_ai_weights},
-    admin::{get_model_weights, get_rate_limit_usage, get_backend_health, get_system_stats},
-    monitoring::{get_monitoring_info, get_model_weights as get_monitoring_model_weights,
-                clear_cache, get_performance_metrics, health_check as monitoring_health_check},
+    monitoring::{
+        clear_cache, get_model_weights as get_monitoring_model_weights, get_monitoring_info,
+        get_performance_metrics, health_check as monitoring_health_check,
+    },
+    smart_ai::{get_model_smart_ai_weights, get_smart_ai_weights},
 };
 use crate::observability::prometheus_metrics::prometheus_metrics_handler;
 
@@ -29,7 +31,10 @@ pub fn create_app_router() -> Router<AppState> {
         .route("/prometheus", get(prometheus_metrics_handler))
         .route("/models", get(list_models))
         .route("/smart-ai/weights", get(get_smart_ai_weights))
-        .route("/smart-ai/models/{model}/weights", get(get_model_smart_ai_weights))
+        .route(
+            "/smart-ai/models/{model}/weights",
+            get(get_model_smart_ai_weights),
+        )
         .nest("/v1", create_v1_routes())
         .nest("/admin", create_admin_routes())
         .nest("/monitoring", create_monitoring_routes())
@@ -61,9 +66,7 @@ fn create_v1_routes() -> Router<AppState> {
                     axum::http::header::CONTENT_TYPE,
                     axum::http::header::ACCEPT,
                 ])
-                .expose_headers([
-                    axum::http::header::CONTENT_TYPE,
-                ])
+                .expose_headers([axum::http::header::CONTENT_TYPE]),
         )
 }
 
@@ -91,5 +94,3 @@ fn create_monitoring_routes() -> Router<AppState> {
 pub async fn index() -> &'static str {
     "Berry API - Load Balanced AI Gateway"
 }
-
-

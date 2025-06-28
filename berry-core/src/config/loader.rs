@@ -11,14 +11,15 @@ use std::path::Path;
 pub fn load_config() -> Result<Config, anyhow::Error> {
     // 1. 首先检查环境变量
     if let Ok(config_path) = std::env::var("CONFIG_PATH") {
-        tracing::info!("Loading config from environment variable CONFIG_PATH: {}", config_path);
+        tracing::info!(
+            "Loading config from environment variable CONFIG_PATH: {}",
+            config_path
+        );
         return load_config_from_path(&config_path);
     }
 
     // 2. 检查默认配置文件
-    let default_paths = [
-        "config.toml",
-    ];
+    let default_paths = ["config.toml"];
 
     for path in &default_paths {
         if Path::new(path).exists() {
@@ -63,9 +64,7 @@ pub fn get_config_path() -> String {
     if let Ok(config_path) = std::env::var("CONFIG_PATH") {
         config_path
     } else {
-        let default_paths = [
-            "config.toml",
-        ];
+        let default_paths = ["config.toml"];
 
         for path in &default_paths {
             if Path::new(path).exists() {

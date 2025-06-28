@@ -1,17 +1,20 @@
-use axum::response::Sse;
 use axum::response::sse::Event;
+use axum::response::Sse;
 use axum::{extract::Json, response::IntoResponse};
 use axum_extra::TypedHeader;
 use eventsource_stream::Eventsource;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Instant;
 
-use berry_loadbalance::{LoadBalanceService, RequestResult};
+use crate::relay::client::{AIBackendClient, ClientFactory, UnifiedClient};
 use berry_loadbalance::loadbalance::LoadBalancer;
-use crate::relay::client::{ClientFactory, UnifiedClient, AIBackendClient};
+use berry_loadbalance::{LoadBalanceService, RequestResult};
 
-use super::types::{ErrorHandler, ErrorRecorder, RetryErrorHandler, ResponseBodyHandler, ErrorType, create_error_response};
+use super::types::{
+    create_error_response, ErrorHandler, ErrorRecorder, ErrorType, ResponseBodyHandler,
+    RetryErrorHandler,
+};
 
 /// 负载均衡的OpenAI兼容处理器
 ///
@@ -51,7 +54,8 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
             TypedHeader(content_type),
             Json(body),
             None,
-        ).await
+        )
+        .await
     }
 
     /// 处理聊天完成请求（支持用户标签过滤）
@@ -75,7 +79,8 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
                     ErrorType::BadRequest,
                     "Missing model field in request",
                     Some("The 'model' field is required in the request body".to_string()),
-                ).into_response();
+                )
+                .into_response();
             }
         };
 
@@ -100,14 +105,31 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
                 );
 
                 // 检查是否为流式请求
-                let is_stream = body.get("stream").and_then(|v| v.as_bool()).unwrap_or(false);
+                let is_stream = body
+                    .get("stream")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
 
                 if is_stream {
                     // 使用流式错误处理器
-                    ErrorHandler::streaming_from_anyhow_error(&e, Some(&format!("Streaming request processing failed for model '{}'", model_name))).into_response()
+                    ErrorHandler::streaming_from_anyhow_error(
+                        &e,
+                        Some(&format!(
+                            "Streaming request processing failed for model '{}'",
+                            model_name
+                        )),
+                    )
+                    .into_response()
                 } else {
                     // 使用非流式错误处理器
-                    ErrorHandler::from_anyhow_error(&e, Some(&format!("Request processing failed for model '{}'", model_name))).into_response()
+                    ErrorHandler::from_anyhow_error(
+                        &e,
+                        Some(&format!(
+                            "Request processing failed for model '{}'",
+                            model_name
+                        )),
+                    )
+                    .into_response()
                 }
             }
         }
@@ -127,7 +149,8 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
         let original_model = model_name.to_string();
 
         // 检查是否指定了特定的后端
-        let backend_param = body.get("backend")
+        let backend_param = body
+            .get("backend")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
@@ -145,8 +168,16 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
             // 根据是否指定了backend参数选择后端
             let selected_backend = if let Some(ref provider_name) = backend_param {
                 // 直接选择指定的后端
-                tracing::info!("Using specified backend '{}' for model '{}'", provider_name, model_name);
-                match self.load_balancer.select_specific_backend(model_name, provider_name).await {
+                tracing::info!(
+                    "Using specified backend '{}' for model '{}'",
+                    provider_name,
+                    model_name
+                );
+                match self
+                    .load_balancer
+                    .select_specific_backend(model_name, provider_name)
+                    .await
+                {
                     Ok(backend) => backend,
                     Err(e) => {
                         tracing::error!(
@@ -165,7 +196,11 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
                 }
             } else {
                 // 使用负载均衡器选择后端（考虑用户标签）
-                match self.load_balancer.select_backend_with_user_tags(model_name, user_tags).await {
+                match self
+                    .load_balancer
+                    .select_backend_with_user_tags(model_name, user_tags)
+                    .await
+                {
                     Ok(backend) => backend,
                     Err(e) => {
                         if attempt == max_retries - 1 {
@@ -215,7 +250,8 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
                         &selected_backend.backend.provider,
                         &selected_backend.backend.model,
                         &anyhow::anyhow!("{}", e),
-                    ).await;
+                    )
+                    .await;
 
                     // 使用统一的重试错误处理器
                     RetryErrorHandler::handle_retry_error(
@@ -230,7 +266,8 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
 
             // 创建客户端，只设置连接超时，不限制总请求时间
             // 连接成功后允许无限时间生成内容，直到客户端断开连接
-            let connect_timeout = std::time::Duration::from_secs(selected_backend.provider.timeout_seconds);
+            let connect_timeout =
+                std::time::Duration::from_secs(selected_backend.provider.timeout_seconds);
             let client = match ClientFactory::create_client_from_provider_type(
                 selected_backend.provider.backend_type.clone(),
                 selected_backend.provider.base_url.clone(),
@@ -244,7 +281,8 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
                         &selected_backend.backend.provider,
                         &selected_backend.backend.model,
                         &anyhow::anyhow!("{}", e),
-                    ).await;
+                    )
+                    .await;
 
                     // 使用统一的重试错误处理器
                     RetryErrorHandler::handle_retry_error(
@@ -266,8 +304,11 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
                             h.insert("Authorization", auth_value);
                         }
                         Err(e) => {
-                            tracing::error!("Failed to parse authorization header for backend {}: {}",
-                                selected_backend.backend.provider, e);
+                            tracing::error!(
+                                "Failed to parse authorization header for backend {}: {}",
+                                selected_backend.backend.provider,
+                                e
+                            );
 
                             // 记录错误并继续重试
                             ErrorRecorder::record_request_failure(
@@ -275,13 +316,17 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
                                 &selected_backend.backend.provider,
                                 &selected_backend.backend.model,
                                 &anyhow::anyhow!("Authorization header parse error: {}", e),
-                            ).await;
+                            )
+                            .await;
 
                             RetryErrorHandler::handle_retry_error(
                                 attempt,
                                 max_retries,
                                 &anyhow::anyhow!("Authorization header parse error: {}", e),
-                                &format!("Authorization header configuration error for model '{}'", model_name),
+                                &format!(
+                                    "Authorization header configuration error for model '{}'",
+                                    model_name
+                                ),
                             )?;
                             continue;
                         }
@@ -446,10 +491,8 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
         // 检查HTTP状态
         if !response.status().is_success() {
             // 使用统一的响应体处理器
-            let (status, error_body) = ResponseBodyHandler::read_and_log_error_body(
-                response,
-                "Streaming request"
-            ).await;
+            let (status, error_body) =
+                ResponseBodyHandler::read_and_log_error_body(response, "Streaming request").await;
 
             // 使用统一的错误记录器
             ErrorRecorder::record_http_failure(
@@ -458,7 +501,8 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
                 model,
                 status,
                 &error_body,
-            ).await;
+            )
+            .await;
 
             return Err(anyhow::anyhow!("HTTP error {}: {}", status, error_body));
         }
@@ -527,7 +571,11 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
         // 创建智能保活流，当数据流结束时自动停止
         use futures::StreamExt;
         let stream = futures::stream::unfold(
-            (data_stream, tokio::time::interval(std::time::Duration::from_secs(30)), false),
+            (
+                data_stream,
+                tokio::time::interval(std::time::Duration::from_secs(30)),
+                false,
+            ),
             move |(mut data_stream, keepalive_interval, data_ended)| async move {
                 if data_ended {
                     return None;
@@ -554,8 +602,9 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
                     //     Some((Ok(Event::default().comment("keep-alive")), (data_stream, keepalive_interval, false)))
                     // }
                 }
-            }
-        ).boxed();
+            },
+        )
+        .boxed();
 
         Sse::new(stream)
     }
@@ -627,10 +676,9 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
             }
         } else {
             // 使用统一的响应体处理器
-            let (status, error_body) = ResponseBodyHandler::read_and_log_error_body(
-                response,
-                "Non-streaming request"
-            ).await;
+            let (status, error_body) =
+                ResponseBodyHandler::read_and_log_error_body(response, "Non-streaming request")
+                    .await;
 
             // 使用统一的错误记录器
             ErrorRecorder::record_http_failure(
@@ -639,7 +687,8 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
                 model,
                 status,
                 &error_body,
-            ).await;
+            )
+            .await;
 
             Err(anyhow::anyhow!("HTTP error {}: {}", status, error_body))
         }
@@ -670,7 +719,10 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
         let start_time_clone = start_time;
 
         tokio::spawn(async move {
-            let response = match client_clone.chat_completions_raw(headers_clone, &body_clone).await {
+            let response = match client_clone
+                .chat_completions_raw(headers_clone, &body_clone)
+                .await
+            {
                 Ok(resp) => resp,
                 Err(e) => {
                     tracing::debug!("Non-streaming request failed: {:?}", e);
@@ -684,7 +736,9 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
                             },
                         )
                         .await;
-                    let _ = result_tx.send(Err(anyhow::anyhow!("API request failed: {}", e))).await;
+                    let _ = result_tx
+                        .send(Err(anyhow::anyhow!("API request failed: {}", e)))
+                        .await;
                     return;
                 }
             };
@@ -707,24 +761,29 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
 
                 // 无论之前是否健康，都记录成功（实现自动恢复）
                 load_balancer_clone
-                    .record_request_result(&provider_clone, &model_clone, RequestResult::Success { latency })
+                    .record_request_result(
+                        &provider_clone,
+                        &model_clone,
+                        RequestResult::Success { latency },
+                    )
                     .await;
 
                 match response.text().await {
                     Ok(text) => {
                         let _ = result_tx.send(Ok(text)).await;
-                    },
+                    }
                     Err(e) => {
                         tracing::error!("Failed to read response body: {:?}", e);
-                        let _ = result_tx.send(Err(anyhow::anyhow!("Failed to read response body: {}", e))).await;
+                        let _ = result_tx
+                            .send(Err(anyhow::anyhow!("Failed to read response body: {}", e)))
+                            .await;
                     }
                 }
             } else {
                 // 使用统一的响应体处理器
-                let (status, error_body) = ResponseBodyHandler::read_and_log_error_body(
-                    response,
-                    "Non-streaming request"
-                ).await;
+                let (status, error_body) =
+                    ResponseBodyHandler::read_and_log_error_body(response, "Non-streaming request")
+                        .await;
 
                 // 使用统一的错误记录器
                 ErrorRecorder::record_http_failure(
@@ -733,9 +792,16 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
                     &model_clone,
                     status,
                     &error_body,
-                ).await;
+                )
+                .await;
 
-                let _ = result_tx.send(Err(anyhow::anyhow!("HTTP error {}: {}", status, error_body))).await;
+                let _ = result_tx
+                    .send(Err(anyhow::anyhow!(
+                        "HTTP error {}: {}",
+                        status,
+                        error_body
+                    )))
+                    .await;
             }
         });
 
@@ -748,7 +814,8 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
                 }
 
                 // 创建保活定时器
-                let mut keepalive_interval = tokio::time::interval(std::time::Duration::from_secs(10));
+                let mut keepalive_interval =
+                    tokio::time::interval(std::time::Duration::from_secs(10));
                 keepalive_interval.tick().await; // 跳过第一次立即触发
 
                 tokio::select! {
@@ -785,7 +852,7 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
                         Some((Ok(bytes::Bytes::from(" ")), (result_rx, false)))
                     }
                 }
-            }
+            },
         );
 
         // 创建流式响应
@@ -800,8 +867,6 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
 
         Ok(response)
     }
-
-
 
     #[allow(dead_code)]
     /// 处理非流式请求（兜底方法，当重试失败时使用）
@@ -847,15 +912,11 @@ impl<T: LoadBalancer + 'static> LoadBalancedHandler<T> {
             "data": model_list
         }))
     }
-
-
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-
 
     #[test]
     fn test_error_handler_from_anyhow() {
@@ -883,7 +944,7 @@ mod tests {
         let response = ErrorHandler::business_error(
             ErrorType::BadRequest,
             "Invalid input",
-            Some("Details about the error".to_string())
+            Some("Details about the error".to_string()),
         );
 
         // 确保函数不会panic

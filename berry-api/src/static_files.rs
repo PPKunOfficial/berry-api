@@ -23,7 +23,7 @@ pub async fn serve_index() -> impl IntoResponse {
 async fn serve_file(path: &str) -> Response {
     // 清理路径，移除开头的斜杠
     let clean_path = path.trim_start_matches('/');
-    
+
     // 如果路径为空，默认返回 index.html
     let file_path = if clean_path.is_empty() {
         "index.html"
@@ -36,11 +36,9 @@ async fn serve_file(path: &str) -> Response {
         Some(file) => {
             // 获取文件内容
             let contents = file.contents();
-            
+
             // 根据文件扩展名猜测 MIME 类型
-            let mime_type = from_path(file_path)
-                .first_or_octet_stream()
-                .to_string();
+            let mime_type = from_path(file_path).first_or_octet_stream().to_string();
 
             // 创建响应
             match Response::builder()
@@ -121,7 +119,7 @@ fn collect_files(dir: &Dir, prefix: &str, files: &mut Vec<String>) {
         };
         files.push(path);
     }
-    
+
     for subdir in dir.dirs() {
         let new_prefix = if prefix.is_empty() {
             subdir.path().to_string_lossy().to_string()

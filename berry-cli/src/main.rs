@@ -1,9 +1,9 @@
 //! Berry CLI Tool
-//! 
+//!
 //! Command line interface for managing Berry API
 
-use clap::{Parser, Subcommand};
 use anyhow::Result;
+use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "berry-cli")]
@@ -65,9 +65,9 @@ enum Commands {
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
-    
+
     let cli = Cli::parse();
-    
+
     match cli.command {
         Commands::ValidateConfig { config } => {
             println!("Validating configuration file: {}", config);
@@ -87,8 +87,11 @@ async fn main() -> Result<()> {
         Commands::HealthCheck { config, provider } => {
             println!("Performing health check...");
             let cfg = berry_core::config::loader::load_config_from_path(&config)?;
-            let health_checker = berry_loadbalance::HealthChecker::new(std::sync::Arc::new(cfg), std::sync::Arc::new(Default::default()));
-            
+            let health_checker = berry_loadbalance::HealthChecker::new(
+                std::sync::Arc::new(cfg),
+                std::sync::Arc::new(Default::default()),
+            );
+
             if let Some(provider_id) = provider {
                 println!("Checking provider: {}", provider_id);
                 match health_checker.check_provider(&provider_id).await {
@@ -119,7 +122,11 @@ async fn main() -> Result<()> {
             let cfg = berry_core::config::loader::load_config_from_path(&config)?;
             show_service_metrics(cfg, detailed).await?;
         }
-        Commands::TestBackend { config, provider, model } => {
+        Commands::TestBackend {
+            config,
+            provider,
+            model,
+        } => {
             println!("Testing backend connectivity: {}:{}", provider, model);
             let cfg = berry_core::config::loader::load_config_from_path(&config)?;
             test_backend_connectivity(cfg, &provider, &model).await?;
@@ -347,7 +354,14 @@ async fn show_service_metrics(config: berry_core::Config, detailed: bool) -> Res
 
     println!("📊 Service Metrics");
     println!("==================");
-    println!("Service Status: {}", if health.is_running { "🟢 Running" } else { "🔴 Stopped" });
+    println!(
+        "Service Status: {}",
+        if health.is_running {
+            "🟢 Running"
+        } else {
+            "🔴 Stopped"
+        }
+    );
     println!("Total Requests: {}", health.total_requests);
     println!("Successful Requests: {}", health.successful_requests);
     println!("Success Rate: {:.2}%", health.success_rate() * 100.0);
@@ -356,11 +370,20 @@ async fn show_service_metrics(config: berry_core::Config, detailed: bool) -> Res
     println!("🏥 Health Summary");
     println!("=================");
     println!("Total Providers: {}", health.health_summary.total_providers);
-    println!("Healthy Providers: {}", health.health_summary.healthy_providers);
+    println!(
+        "Healthy Providers: {}",
+        health.health_summary.healthy_providers
+    );
     println!("Total Models: {}", health.health_summary.total_models);
     println!("Healthy Models: {}", health.health_summary.healthy_models);
-    println!("Provider Health Ratio: {:.2}%", health.health_summary.provider_health_ratio * 100.0);
-    println!("Model Health Ratio: {:.2}%", health.health_summary.model_health_ratio * 100.0);
+    println!(
+        "Provider Health Ratio: {:.2}%",
+        health.health_summary.provider_health_ratio * 100.0
+    );
+    println!(
+        "Model Health Ratio: {:.2}%",
+        health.health_summary.model_health_ratio * 100.0
+    );
     println!();
 
     if detailed {
@@ -377,7 +400,14 @@ async fn show_service_metrics(config: berry_core::Config, detailed: bool) -> Res
                 let latency = metrics.get_latency(provider, model);
 
                 println!("Backend: {}", backend_key);
-                println!("  Status: {}", if is_healthy { "🟢 Healthy" } else { "🔴 Unhealthy" });
+                println!(
+                    "  Status: {}",
+                    if is_healthy {
+                        "🟢 Healthy"
+                    } else {
+                        "🔴 Unhealthy"
+                    }
+                );
                 println!("  Requests: {}", count);
                 println!("  Failures: {}", failure_count);
                 if let Some(lat) = latency {
@@ -393,9 +423,15 @@ async fn show_service_metrics(config: berry_core::Config, detailed: bool) -> Res
 }
 
 /// 测试后端连接性
-async fn test_backend_connectivity(config: berry_core::Config, provider_name: &str, model_name: &str) -> Result<()> {
+async fn test_backend_connectivity(
+    config: berry_core::Config,
+    provider_name: &str,
+    model_name: &str,
+) -> Result<()> {
     // 检查provider是否存在
-    let provider = config.providers.get(provider_name)
+    let provider = config
+        .providers
+        .get(provider_name)
         .ok_or_else(|| anyhow::anyhow!("Provider '{}' not found", provider_name))?;
 
     if !provider.enabled {
@@ -404,12 +440,18 @@ async fn test_backend_connectivity(config: berry_core::Config, provider_name: &s
     }
 
     if !provider.models.contains(&model_name.to_string()) {
-        println!("❌ Model '{}' not found in provider '{}'", model_name, provider_name);
+        println!(
+            "❌ Model '{}' not found in provider '{}'",
+            model_name, provider_name
+        );
         println!("Available models: {:?}", provider.models);
         return Ok(());
     }
 
-    println!("🔍 Testing connectivity to {}:{}", provider_name, model_name);
+    println!(
+        "🔍 Testing connectivity to {}:{}",
+        provider_name, model_name
+    );
     println!("Base URL: {}", provider.base_url);
     println!();
 
@@ -430,7 +472,11 @@ async fn test_backend_connectivity(config: berry_core::Config, provider_name: &s
     match request.send().await {
         Ok(response) => {
             let status = response.status();
-            println!("Models API Status: {} {}", status.as_u16(), status.canonical_reason().unwrap_or(""));
+            println!(
+                "Models API Status: {} {}",
+                status.as_u16(),
+                status.canonical_reason().unwrap_or("")
+            );
 
             if status.is_success() {
                 println!("✅ Models API test passed");
@@ -449,7 +495,10 @@ async fn test_backend_connectivity(config: berry_core::Config, provider_name: &s
     println!();
 
     // 测试chat completions API
-    let chat_url = format!("{}/v1/chat/completions", provider.base_url.trim_end_matches('/'));
+    let chat_url = format!(
+        "{}/v1/chat/completions",
+        provider.base_url.trim_end_matches('/')
+    );
     println!("Testing chat completions API: {}", chat_url);
 
     let test_body = serde_json::json!({
@@ -464,7 +513,8 @@ async fn test_backend_connectivity(config: berry_core::Config, provider_name: &s
         "stream": false
     });
 
-    let mut request = client.post(&chat_url)
+    let mut request = client
+        .post(&chat_url)
         .header("Content-Type", "application/json")
         .json(&test_body);
 
@@ -475,11 +525,18 @@ async fn test_backend_connectivity(config: berry_core::Config, provider_name: &s
     match request.send().await {
         Ok(response) => {
             let status = response.status();
-            println!("Chat API Status: {} {}", status.as_u16(), status.canonical_reason().unwrap_or(""));
+            println!(
+                "Chat API Status: {} {}",
+                status.as_u16(),
+                status.canonical_reason().unwrap_or("")
+            );
 
             if status.is_success() {
                 println!("✅ Chat API test passed");
-                println!("🎉 Backend {}:{} is fully functional!", provider_name, model_name);
+                println!(
+                    "🎉 Backend {}:{} is fully functional!",
+                    provider_name, model_name
+                );
             } else {
                 println!("❌ Chat API test failed");
                 if let Ok(body) = response.text().await {

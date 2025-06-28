@@ -1,18 +1,18 @@
-pub mod selector;
-pub mod manager;
+pub mod cache;
 pub mod health_checker;
+pub mod manager;
+pub mod selector;
 pub mod service;
 pub mod smart_ai_health;
-pub mod cache;
 pub mod traits;
 
 #[cfg(test)]
 mod manager_tests;
 
-pub use selector::{BackendSelector, MetricsCollector, HealthCheckMethod};
-pub use manager::{LoadBalanceManager, HealthStats};
-pub use health_checker::{HealthChecker, HealthSummary};
-pub use service::{LoadBalanceService, SelectedBackend, RequestResult, ServiceHealth};
-pub use smart_ai_health::SmartAiHealthChecker;
 pub use cache::{BackendSelectionCache, CacheStats};
+pub use health_checker::{HealthChecker, HealthSummary};
+pub use manager::{HealthStats, LoadBalanceManager};
+pub use selector::{BackendSelector, HealthCheckMethod, MetricsCollector};
+pub use service::{LoadBalanceService, RequestResult, SelectedBackend, ServiceHealth};
+pub use smart_ai_health::SmartAiHealthChecker;
 pub use traits::{LoadBalancer, LoadBalancerMetrics};

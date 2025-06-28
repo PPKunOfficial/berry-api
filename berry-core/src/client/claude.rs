@@ -1,9 +1,9 @@
-use reqwest::Client;
-use serde_json::{Value, json};
-use std::time::Duration;
-use async_trait::async_trait;
-use super::types::{ClientError, ClientResponse};
 use super::traits::{AIBackendClient, BackendType, ChatCompletionConfig};
+use super::types::{ClientError, ClientResponse};
+use async_trait::async_trait;
+use reqwest::Client;
+use serde_json::{json, Value};
+use std::time::Duration;
 
 #[derive(Clone)]
 pub struct ClaudeClient {
@@ -27,10 +27,7 @@ impl ClaudeClient {
             .build()
             .unwrap_or_else(|_| Client::new());
 
-        Self {
-            client,
-            base_url,
-        }
+        Self { client, base_url }
     }
 
     pub fn with_base_url_and_timeout(base_url: String, connect_timeout: Duration) -> Self {
@@ -39,29 +36,30 @@ impl ClaudeClient {
             .build()
             .unwrap_or_else(|_| Client::new());
 
-        Self {
-            client,
-            base_url,
-        }
+        Self { client, base_url }
     }
 
     /// 将OpenAI格式的消息转换为Claude格式
-    fn convert_messages_to_claude_format(messages: &[Value]) -> Result<(String, Vec<Value>), ClientError> {
+    fn convert_messages_to_claude_format(
+        messages: &[Value],
+    ) -> Result<(String, Vec<Value>), ClientError> {
         let mut system_message = String::new();
         let mut claude_messages = Vec::new();
 
         for message in messages {
-            let role = message.get("role")
+            let role = message
+                .get("role")
                 .and_then(|r| r.as_str())
-                .ok_or_else(|| ClientError::HeaderParseError(
-                    "Missing role in message".to_string()
-                ))?;
+                .ok_or_else(|| {
+                    ClientError::HeaderParseError("Missing role in message".to_string())
+                })?;
 
-            let content = message.get("content")
+            let content = message
+                .get("content")
                 .and_then(|c| c.as_str())
-                .ok_or_else(|| ClientError::HeaderParseError(
-                    "Missing content in message".to_string()
-                ))?;
+                .ok_or_else(|| {
+                    ClientError::HeaderParseError("Missing content in message".to_string())
+                })?;
 
             match role {
                 "system" => {
@@ -77,9 +75,10 @@ impl ClaudeClient {
                     }));
                 }
                 _ => {
-                    return Err(ClientError::HeaderParseError(
-                        format!("Unsupported role: {}", role)
-                    ));
+                    return Err(ClientError::HeaderParseError(format!(
+                        "Unsupported role: {}",
+                        role
+                    )));
                 }
             }
         }
@@ -89,15 +88,15 @@ impl ClaudeClient {
 
     /// 将OpenAI格式的请求转换为Claude格式
     fn convert_openai_to_claude_format(&self, body: &Value) -> Result<Value, ClientError> {
-        let model = body.get("model")
+        let model = body
+            .get("model")
             .and_then(|m| m.as_str())
             .unwrap_or("claude-3-sonnet-20240229");
 
-        let messages = body.get("messages")
+        let messages = body
+            .get("messages")
             .and_then(|m| m.as_array())
-            .ok_or_else(|| ClientError::HeaderParseError(
-                "Missing messages field".to_string()
-            ))?;
+            .ok_or_else(|| ClientError::HeaderParseError("Missing messages field".to_string()))?;
 
         let (system_message, claude_messages) = Self::convert_messages_to_claude_format(messages)?;
 
@@ -133,8 +132,9 @@ impl ClaudeClient {
         body: &Value,
     ) -> Result<reqwest::Response, ClientError> {
         let claude_body = self.convert_openai_to_claude_format(body)?;
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post(format!("{}/v1/messages", self.base_url))
             .headers(headers)
             .json(&claude_body)
@@ -147,7 +147,8 @@ impl ClaudeClient {
     /// 获取模型列表
     pub async fn models(&self, token: &str) -> Result<ClientResponse, ClientError> {
         // Claude API现在支持models端点
-        let response = self.client
+        let response = self
+            .client
             .get(format!("{}/v1/models", self.base_url))
             .header("x-api-key", token)
             .header("anthropic-version", "2023-06-01")
@@ -186,9 +187,10 @@ impl AIBackendClient for ClaudeClient {
         // Claude使用x-api-key而不是Authorization
         headers.insert(
             "x-api-key",
-            authorization.token().parse().map_err(|e| {
-                ClientError::HeaderParseError(format!("Invalid API key: {}", e))
-            })?,
+            authorization
+                .token()
+                .parse()
+                .map_err(|e| ClientError::HeaderParseError(format!("Invalid API key: {}", e)))?,
         );
 
         // 添加Claude特定的头部

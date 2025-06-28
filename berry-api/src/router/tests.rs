@@ -5,56 +5,68 @@ mod tests {
 
     fn create_test_config() -> Config {
         let mut providers = HashMap::new();
-        providers.insert("test-provider".to_string(), Provider {
-            name: "Test Provider".to_string(),
-            base_url: "https://api.test.com".to_string(),
-            api_key: "test-api-key".to_string(),
-            models: vec!["test-model".to_string()],
-            headers: HashMap::new(),
-            enabled: true,
-            timeout_seconds: 30,
-            max_retries: 3,
-            backend_type: berry_core::config::model::ProviderBackendType::OpenAI,
-        });
+        providers.insert(
+            "test-provider".to_string(),
+            Provider {
+                name: "Test Provider".to_string(),
+                base_url: "https://api.test.com".to_string(),
+                api_key: "test-api-key".to_string(),
+                models: vec!["test-model".to_string()],
+                headers: HashMap::new(),
+                enabled: true,
+                timeout_seconds: 30,
+                max_retries: 3,
+                backend_type: berry_core::config::model::ProviderBackendType::OpenAI,
+            },
+        );
 
         let mut models = HashMap::new();
-        models.insert("test-model".to_string(), ModelMapping {
-            name: "test-model".to_string(),
-            backends: vec![Backend {
-                provider: "test-provider".to_string(),
-                model: "test-model".to_string(),
-                weight: 1.0,
-                priority: 1,
+        models.insert(
+            "test-model".to_string(),
+            ModelMapping {
+                name: "test-model".to_string(),
+                backends: vec![Backend {
+                    provider: "test-provider".to_string(),
+                    model: "test-model".to_string(),
+                    weight: 1.0,
+                    priority: 1,
+                    enabled: true,
+                    tags: vec![],
+                    billing_mode: BillingMode::PerToken,
+                }],
+                strategy: LoadBalanceStrategy::WeightedRandom,
                 enabled: true,
-                tags: vec![],
-                billing_mode: BillingMode::PerToken,
-            }],
-            strategy: LoadBalanceStrategy::WeightedRandom,
-            enabled: true,
-        });
+            },
+        );
 
         let mut users = HashMap::new();
-        users.insert("test-user".to_string(), UserToken {
-            name: "Test User".to_string(),
-            token: "test-token-123456789".to_string(), // 增加长度到16+字符
-            allowed_models: vec!["test-model".to_string()],
-            enabled: true,
-            rate_limit: Some(RateLimit {
-                requests_per_minute: 60,
-                requests_per_hour: 1000,
-                requests_per_day: 10000,
-            }),
-            tags: vec!["test".to_string()],
-        });
+        users.insert(
+            "test-user".to_string(),
+            UserToken {
+                name: "Test User".to_string(),
+                token: "test-token-123456789".to_string(), // 增加长度到16+字符
+                allowed_models: vec!["test-model".to_string()],
+                enabled: true,
+                rate_limit: Some(RateLimit {
+                    requests_per_minute: 60,
+                    requests_per_hour: 1000,
+                    requests_per_day: 10000,
+                }),
+                tags: vec!["test".to_string()],
+            },
+        );
 
-        users.insert("admin-user".to_string(), UserToken {
-            name: "Admin User".to_string(),
-            token: "admin-token-456789012".to_string(), // 增加长度到16+字符
-            allowed_models: vec![], // 允许所有模型
-            enabled: true,
-            rate_limit: None,
-            tags: vec!["admin".to_string()],
-        });
+        users.insert(
+            "admin-user".to_string(),
+            UserToken {
+                name: "Admin User".to_string(),
+                token: "admin-token-456789012".to_string(), // 增加长度到16+字符
+                allowed_models: vec![],                     // 允许所有模型
+                enabled: true,
+                rate_limit: None,
+                tags: vec!["admin".to_string()],
+            },
+        );
 
         Config {
             providers,

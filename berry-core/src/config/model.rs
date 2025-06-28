@@ -1,6 +1,6 @@
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use anyhow::Result;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Config {
@@ -373,29 +373,44 @@ impl Config {
 
         // API密钥格式验证（基本长度检查）
         if provider.api_key.len() < 10 {
-            anyhow::bail!("Provider '{}' has API key that is too short (minimum 10 characters)", provider_id);
+            anyhow::bail!(
+                "Provider '{}' has API key that is too short (minimum 10 characters)",
+                provider_id
+            );
         }
 
         // 超时值验证
         if provider.timeout_seconds == 0 {
-            anyhow::bail!("Provider '{}' has invalid timeout_seconds: cannot be 0", provider_id);
+            anyhow::bail!(
+                "Provider '{}' has invalid timeout_seconds: cannot be 0",
+                provider_id
+            );
         }
 
         if provider.timeout_seconds > 300 {
-            anyhow::bail!("Provider '{}' has timeout_seconds too large: {} (maximum 300 seconds)",
-                provider_id, provider.timeout_seconds);
+            anyhow::bail!(
+                "Provider '{}' has timeout_seconds too large: {} (maximum 300 seconds)",
+                provider_id,
+                provider.timeout_seconds
+            );
         }
 
         // 重试次数验证
         if provider.max_retries > 10 {
-            anyhow::bail!("Provider '{}' has max_retries too large: {} (maximum 10)",
-                provider_id, provider.max_retries);
+            anyhow::bail!(
+                "Provider '{}' has max_retries too large: {} (maximum 10)",
+                provider_id,
+                provider.max_retries
+            );
         }
 
         // 验证模型名称不为空
         for model_name in &provider.models {
             if model_name.is_empty() {
-                anyhow::bail!("Provider '{}' has empty model name in models list", provider_id);
+                anyhow::bail!(
+                    "Provider '{}' has empty model name in models list",
+                    provider_id
+                );
             }
         }
 
@@ -405,7 +420,11 @@ impl Config {
                 anyhow::bail!("Provider '{}' has empty header name", provider_id);
             }
             if header_value.is_empty() {
-                anyhow::bail!("Provider '{}' has empty header value for header '{}'", provider_id, header_name);
+                anyhow::bail!(
+                    "Provider '{}' has empty header value for header '{}'",
+                    provider_id,
+                    header_name
+                );
             }
         }
 
@@ -425,8 +444,11 @@ impl Config {
 
         // 验证模型名称格式（不能包含特殊字符）
         if model.name.contains(' ') || model.name.contains('\t') || model.name.contains('\n') {
-            anyhow::bail!("Model '{}' has invalid name format: '{}' (cannot contain whitespace)",
-                model_id, model.name);
+            anyhow::bail!(
+                "Model '{}' has invalid name format: '{}' (cannot contain whitespace)",
+                model_id,
+                model.name
+            );
         }
 
         // 验证backends
@@ -440,7 +462,10 @@ impl Config {
 
         // 检查是否有可用的后端
         if total_weight <= 0.0 {
-            anyhow::bail!("Model '{}' has no enabled backends with positive weight", model_id);
+            anyhow::bail!(
+                "Model '{}' has no enabled backends with positive weight",
+                model_id
+            );
         }
 
         Ok(())
@@ -452,7 +477,8 @@ impl Config {
         if !self.providers.contains_key(&backend.provider) {
             anyhow::bail!(
                 "Model '{}' references unknown provider '{}'",
-                model_id, backend.provider
+                model_id,
+                backend.provider
             );
         }
 
@@ -462,7 +488,9 @@ impl Config {
         if !provider.models.contains(&backend.model) {
             anyhow::bail!(
                 "Model '{}' backend references model '{}' not available in provider '{}'",
-                model_id, backend.model, backend.provider
+                model_id,
+                backend.model,
+                backend.provider
             );
         }
 
@@ -470,14 +498,16 @@ impl Config {
         if backend.weight <= 0.0 {
             anyhow::bail!(
                 "Model '{}' backend has invalid weight: {} (must be positive)",
-                model_id, backend.weight
+                model_id,
+                backend.weight
             );
         }
 
         if backend.weight > 100.0 {
             anyhow::bail!(
                 "Model '{}' backend has weight too large: {} (maximum 100.0)",
-                model_id, backend.weight
+                model_id,
+                backend.weight
             );
         }
 
@@ -485,7 +515,8 @@ impl Config {
         if backend.priority > 10 {
             anyhow::bail!(
                 "Model '{}' backend has priority too high: {} (maximum 10)",
-                model_id, backend.priority
+                model_id,
+                backend.priority
             );
         }
 
@@ -495,8 +526,11 @@ impl Config {
                 anyhow::bail!("Model '{}' backend has empty tag", model_id);
             }
             if tag.contains(' ') {
-                anyhow::bail!("Model '{}' backend has invalid tag format: '{}' (cannot contain spaces)",
-                    model_id, tag);
+                anyhow::bail!(
+                    "Model '{}' backend has invalid tag format: '{}' (cannot contain spaces)",
+                    model_id,
+                    tag
+                );
             }
         }
 
@@ -516,11 +550,17 @@ impl Config {
 
         // Token格式验证（基本长度和格式检查）
         if user.token.len() < 16 {
-            anyhow::bail!("User '{}' has token that is too short (minimum 16 characters)", user_id);
+            anyhow::bail!(
+                "User '{}' has token that is too short (minimum 16 characters)",
+                user_id
+            );
         }
 
         if user.token.contains(' ') || user.token.contains('\t') || user.token.contains('\n') {
-            anyhow::bail!("User '{}' has invalid token format (cannot contain whitespace)", user_id);
+            anyhow::bail!(
+                "User '{}' has invalid token format (cannot contain whitespace)",
+                user_id
+            );
         }
 
         // 验证允许的模型是否存在
@@ -532,7 +572,8 @@ impl Config {
             if !self.models.contains_key(model_name) {
                 anyhow::bail!(
                     "User '{}' references unknown model '{}'",
-                    user_id, model_name
+                    user_id,
+                    model_name
                 );
             }
         }
@@ -548,8 +589,11 @@ impl Config {
                 anyhow::bail!("User '{}' has empty tag", user_id);
             }
             if tag.contains(' ') {
-                anyhow::bail!("User '{}' has invalid tag format: '{}' (cannot contain spaces)",
-                    user_id, tag);
+                anyhow::bail!(
+                    "User '{}' has invalid tag format: '{}' (cannot contain spaces)",
+                    user_id,
+                    tag
+                );
             }
         }
 
@@ -559,15 +603,24 @@ impl Config {
     /// 验证速率限制配置的有效性
     fn validate_rate_limit_config(&self, user_id: &str, rate_limit: &RateLimit) -> Result<()> {
         if rate_limit.requests_per_minute == 0 {
-            anyhow::bail!("User '{}' has invalid requests_per_minute: cannot be 0", user_id);
+            anyhow::bail!(
+                "User '{}' has invalid requests_per_minute: cannot be 0",
+                user_id
+            );
         }
 
         if rate_limit.requests_per_hour == 0 {
-            anyhow::bail!("User '{}' has invalid requests_per_hour: cannot be 0", user_id);
+            anyhow::bail!(
+                "User '{}' has invalid requests_per_hour: cannot be 0",
+                user_id
+            );
         }
 
         if rate_limit.requests_per_day == 0 {
-            anyhow::bail!("User '{}' has invalid requests_per_day: cannot be 0", user_id);
+            anyhow::bail!(
+                "User '{}' has invalid requests_per_day: cannot be 0",
+                user_id
+            );
         }
 
         // 逻辑一致性检查
@@ -583,18 +636,27 @@ impl Config {
 
         // 合理性检查（防止过大的值）
         if rate_limit.requests_per_minute > 1000 {
-            anyhow::bail!("User '{}' has requests_per_minute too large: {} (maximum 1000)",
-                user_id, rate_limit.requests_per_minute);
+            anyhow::bail!(
+                "User '{}' has requests_per_minute too large: {} (maximum 1000)",
+                user_id,
+                rate_limit.requests_per_minute
+            );
         }
 
         if rate_limit.requests_per_hour > 60000 {
-            anyhow::bail!("User '{}' has requests_per_hour too large: {} (maximum 60000)",
-                user_id, rate_limit.requests_per_hour);
+            anyhow::bail!(
+                "User '{}' has requests_per_hour too large: {} (maximum 60000)",
+                user_id,
+                rate_limit.requests_per_hour
+            );
         }
 
         if rate_limit.requests_per_day > 1440000 {
-            anyhow::bail!("User '{}' has requests_per_day too large: {} (maximum 1440000)",
-                user_id, rate_limit.requests_per_day);
+            anyhow::bail!(
+                "User '{}' has requests_per_day too large: {} (maximum 1440000)",
+                user_id,
+                rate_limit.requests_per_day
+            );
         }
 
         Ok(())
@@ -671,14 +733,19 @@ impl Config {
     }
 
     /// 根据用户标签过滤后端
-    pub fn filter_backends_by_user_tags(&self, backends: &[Backend], user: &UserToken) -> Vec<Backend> {
+    pub fn filter_backends_by_user_tags(
+        &self,
+        backends: &[Backend],
+        user: &UserToken,
+    ) -> Vec<Backend> {
         // 如果用户没有标签，返回所有后端
         if user.tags.is_empty() {
             return backends.to_vec();
         }
 
         // 过滤出与用户标签匹配的后端
-        backends.iter()
+        backends
+            .iter()
             .filter(|backend| {
                 // 如果后端没有标签，允许所有用户访问
                 if backend.tags.is_empty() {
@@ -686,7 +753,10 @@ impl Config {
                 }
 
                 // 检查是否有共同标签
-                backend.tags.iter().any(|backend_tag| user.tags.contains(backend_tag))
+                backend
+                    .tags
+                    .iter()
+                    .any(|backend_tag| user.tags.contains(backend_tag))
             })
             .cloned()
             .collect()
@@ -694,7 +764,8 @@ impl Config {
 
     /// 获取具有指定标签的用户列表
     pub fn get_users_with_tag(&self, tag: &str) -> Vec<&UserToken> {
-        self.users.values()
+        self.users
+            .values()
             .filter(|user| user.tags.contains(&tag.to_string()))
             .collect()
     }
@@ -702,7 +773,9 @@ impl Config {
     /// 获取具有指定标签的后端列表
     pub fn get_backends_with_tag(&self, model_name: &str, tag: &str) -> Option<Vec<&Backend>> {
         self.models.get(model_name).map(|model| {
-            model.backends.iter()
+            model
+                .backends
+                .iter()
                 .filter(|backend| backend.tags.contains(&tag.to_string()))
                 .collect()
         })

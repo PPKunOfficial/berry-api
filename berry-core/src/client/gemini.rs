@@ -1,7 +1,7 @@
-use crate::client::{ClientError, ClientResponse, BackendType};
 use crate::client::traits::{AIBackendClient, ChatCompletionConfig};
+use crate::client::{BackendType, ClientError, ClientResponse};
 use async_trait::async_trait;
-use reqwest::{Client, Response, header::HeaderMap};
+use reqwest::{header::HeaderMap, Client, Response};
 use serde_json::{json, Value};
 use std::time::Duration;
 use tracing::{debug, error};
@@ -60,23 +60,30 @@ impl GeminiClient {
 
         // 从headers中提取API key
         let api_key = self.extract_api_key(&headers)?;
-        
+
         // 转换OpenAI格式到Gemini格式
         let gemini_body = self.convert_openai_to_gemini(body)?;
-        
+
         // 构建Gemini API URL
-        let model = body.get("model")
+        let model = body
+            .get("model")
             .and_then(|m| m.as_str())
             .unwrap_or("gemini-pro");
-        
-        let url = format!("{}/models/{}:generateContent?key={}", 
-                         self.base_url, model, api_key);
+
+        let url = format!(
+            "{}/models/{}:generateContent?key={}",
+            self.base_url, model, api_key
+        );
 
         debug!("Gemini API URL: {}", url);
-        debug!("Gemini request body: {}", serde_json::to_string_pretty(&gemini_body).unwrap_or_default());
+        debug!(
+            "Gemini request body: {}",
+            serde_json::to_string_pretty(&gemini_body).unwrap_or_default()
+        );
 
         // 发送请求
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .header("Content-Type", "application/json")
             .json(&gemini_body)
@@ -98,14 +105,10 @@ impl GeminiClient {
         let url = format!("{}/models?key={}", self.base_url, api_key);
         debug!("Gemini models API URL: {}", url);
 
-        let response = self.client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| {
-                error!("Failed to fetch Gemini models: {}", e);
-                ClientError::RequestError(e)
-            })?;
+        let response = self.client.get(&url).send().await.map_err(|e| {
+            error!("Failed to fetch Gemini models: {}", e);
+            ClientError::RequestError(e)
+        })?;
 
         debug!("Gemini models response status: {}", response.status());
         Ok(response)
@@ -116,9 +119,10 @@ impl GeminiClient {
     /// 我们仍然支持从Authorization或x-api-key头部提取
     fn extract_api_key(&self, headers: &reqwest::header::HeaderMap) -> Result<String, ClientError> {
         if let Some(auth_header) = headers.get("Authorization") {
-            let auth_str = auth_header.to_str()
-                .map_err(|e| ClientError::HeaderParseError(format!("Invalid Authorization header: {}", e)))?;
-            
+            let auth_str = auth_header.to_str().map_err(|e| {
+                ClientError::HeaderParseError(format!("Invalid Authorization header: {}", e))
+            })?;
+
             if let Some(stripped) = auth_str.strip_prefix("Bearer ") {
                 return Ok(stripped.to_string());
             }
@@ -126,28 +130,34 @@ impl GeminiClient {
 
         // 也尝试从x-api-key header中获取
         if let Some(api_key_header) = headers.get("x-api-key") {
-            let api_key = api_key_header.to_str()
-                .map_err(|e| ClientError::HeaderParseError(format!("Invalid x-api-key header: {}", e)))?;
+            let api_key = api_key_header.to_str().map_err(|e| {
+                ClientError::HeaderParseError(format!("Invalid x-api-key header: {}", e))
+            })?;
             return Ok(api_key.to_string());
         }
 
-        Err(ClientError::HeaderParseError("No API key found in headers".to_string()))
+        Err(ClientError::HeaderParseError(
+            "No API key found in headers".to_string(),
+        ))
     }
 
     /// 转换OpenAI格式的请求到Gemini格式
     fn convert_openai_to_gemini(&self, openai_body: &Value) -> Result<Value, ClientError> {
-        let messages = openai_body.get("messages")
+        let messages = openai_body
+            .get("messages")
             .and_then(|m| m.as_array())
             .ok_or_else(|| ClientError::HeaderParseError("Missing messages field".to_string()))?;
 
         let mut contents = Vec::new();
-        
+
         for message in messages {
-            let role = message.get("role")
+            let role = message
+                .get("role")
                 .and_then(|r| r.as_str())
                 .unwrap_or("user");
-            
-            let content = message.get("content")
+
+            let content = message
+                .get("content")
                 .and_then(|c| c.as_str())
                 .unwrap_or("");
 
@@ -187,7 +197,10 @@ impl GeminiClient {
     }
 
     /// 转换Gemini响应到OpenAI格式（返回JSON字符串）
-    pub async fn convert_gemini_response_to_openai_json(&self, response: Response) -> Result<String, ClientError> {
+    pub async fn convert_gemini_response_to_openai_json(
+        &self,
+        response: Response,
+    ) -> Result<String, ClientError> {
         let status = response.status();
 
         if !status.is_success() {
@@ -195,38 +208,51 @@ impl GeminiClient {
             return response.text().await.map_err(ClientError::RequestError);
         }
 
-        let body_text = response.text().await
-            .map_err(ClientError::RequestError)?;
+        let body_text = response.text().await.map_err(ClientError::RequestError)?;
 
         debug!("Original Gemini response: {}", body_text);
 
         // 解析Gemini响应
-        let gemini_response: Value = serde_json::from_str(&body_text)
-            .map_err(|e| ClientError::HeaderParseError(format!("Failed to parse Gemini response: {}", e)))?;
+        let gemini_response: Value = serde_json::from_str(&body_text).map_err(|e| {
+            ClientError::HeaderParseError(format!("Failed to parse Gemini response: {}", e))
+        })?;
 
         // 转换为OpenAI格式
         let openai_response = self.convert_gemini_to_openai_format(&gemini_response)?;
 
-        debug!("Converted to OpenAI format: {}", serde_json::to_string_pretty(&openai_response).unwrap_or_default());
+        debug!(
+            "Converted to OpenAI format: {}",
+            serde_json::to_string_pretty(&openai_response).unwrap_or_default()
+        );
 
         // 返回JSON字符串
-        serde_json::to_string(&openai_response)
-            .map_err(|e| ClientError::HeaderParseError(format!("Failed to serialize response: {}", e)))
+        serde_json::to_string(&openai_response).map_err(|e| {
+            ClientError::HeaderParseError(format!("Failed to serialize response: {}", e))
+        })
     }
 
     /// 转换Gemini响应格式到OpenAI格式
-    fn convert_gemini_to_openai_format(&self, gemini_response: &Value) -> Result<Value, ClientError> {
+    fn convert_gemini_to_openai_format(
+        &self,
+        gemini_response: &Value,
+    ) -> Result<Value, ClientError> {
         // 提取Gemini响应中的内容
-        let candidates = gemini_response.get("candidates")
+        let candidates = gemini_response
+            .get("candidates")
             .and_then(|c| c.as_array())
-            .ok_or_else(|| ClientError::HeaderParseError("Missing candidates in Gemini response".to_string()))?;
+            .ok_or_else(|| {
+                ClientError::HeaderParseError("Missing candidates in Gemini response".to_string())
+            })?;
 
         if candidates.is_empty() {
-            return Err(ClientError::HeaderParseError("Empty candidates in Gemini response".to_string()));
+            return Err(ClientError::HeaderParseError(
+                "Empty candidates in Gemini response".to_string(),
+            ));
         }
 
         let first_candidate = &candidates[0];
-        let content = first_candidate.get("content")
+        let content = first_candidate
+            .get("content")
             .and_then(|c| c.get("parts"))
             .and_then(|p| p.as_array())
             .and_then(|parts| parts.first())
@@ -236,7 +262,8 @@ impl GeminiClient {
 
         // 构建OpenAI格式的响应
         let now = std::time::SystemTime::now();
-        let timestamp = now.duration_since(std::time::UNIX_EPOCH)
+        let timestamp = now
+            .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| ClientError::HeaderParseError(format!("System time error: {}", e)))?;
 
         let openai_response = json!({
@@ -287,8 +314,12 @@ impl AIBackendClient for GeminiClient {
 
         // Gemini不使用认证头部，API key通过URL查询参数传递
         // 只设置Content-Type
-        headers.insert("Content-Type", "application/json".parse()
-            .map_err(|e| ClientError::HeaderParseError(format!("Invalid content type: {}", e)))?);
+        headers.insert(
+            "Content-Type",
+            "application/json".parse().map_err(|e| {
+                ClientError::HeaderParseError(format!("Invalid content type: {}", e))
+            })?,
+        );
 
         Ok(headers)
     }
@@ -304,8 +335,7 @@ impl AIBackendClient for GeminiClient {
     async fn models(&self, token: &str) -> Result<ClientResponse, ClientError> {
         let response = self.models(token).await?;
         let status = response.status().as_u16();
-        let body = response.text().await
-            .map_err(ClientError::RequestError)?;
+        let body = response.text().await.map_err(ClientError::RequestError)?;
 
         Ok(ClientResponse::new(status, body))
     }
@@ -314,7 +344,8 @@ impl AIBackendClient for GeminiClient {
         // 将ChatCompletionConfig转换为Gemini格式
         let openai_json = config.to_openai_json();
         // 然后转换为Gemini格式
-        self.convert_openai_to_gemini(&openai_json).unwrap_or(openai_json)
+        self.convert_openai_to_gemini(&openai_json)
+            .unwrap_or(openai_json)
     }
 
     fn supports_model(&self, _model: &str) -> bool {

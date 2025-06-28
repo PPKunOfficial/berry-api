@@ -1,11 +1,11 @@
-use berry_core::config::model::{Backend, LoadBalanceStrategy, ModelMapping};
+use super::cache::{BackendSelectionCache, CacheStats};
 use anyhow::Result;
+use berry_core::config::model::{Backend, LoadBalanceStrategy, ModelMapping};
 use rand::Rng;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
-use super::cache::{BackendSelectionCache, CacheStats};
 
 /// 后端选择错误类型
 #[derive(Debug, Clone)]
@@ -32,7 +32,11 @@ pub struct FailedAttempt {
 
 impl std::fmt::Display for BackendSelectionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Backend selection failed for model '{}': {}", self.model_name, self.error_message)
+        write!(
+            f,
+            "Backend selection failed for model '{}': {}",
+            self.model_name, self.error_message
+        )
     }
 }
 
@@ -143,12 +147,12 @@ pub struct SmartAiBackendHealth {
 /// SmartAI 错误类型
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub enum SmartAiErrorType {
-    NetworkError,    // 连接超时、DNS失败
-    AuthError,       // 401、403、API密钥无效
-    RateLimitError,  // 429 Too Many Requests
-    ServerError,     // 5xx错误
-    ModelError,      // 模型不存在、参数错误
-    TimeoutError,    // 请求超时
+    NetworkError,   // 连接超时、DNS失败
+    AuthError,      // 401、403、API密钥无效
+    RateLimitError, // 429 Too Many Requests
+    ServerError,    // 5xx错误
+    ModelError,     // 模型不存在、参数错误
+    TimeoutError,   // 请求超时
 }
 
 /// 请求结果记录
@@ -192,10 +196,15 @@ impl MetricsCollector {
     /// 记录请求失败（带检查方式）
     pub fn record_failure_with_method(&self, backend_key: &str, check_method: HealthCheckMethod) {
         let now = Instant::now();
-        tracing::debug!("Recording failure for backend: {} with method: {:?}", backend_key, check_method);
+        tracing::debug!(
+            "Recording failure for backend: {} with method: {:?}",
+            backend_key,
+            check_method
+        );
 
         // 增加总请求计数
-        self.total_requests.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.total_requests
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         // 增加后端请求计数
         if let Ok(mut counts) = self.request_counts.write() {
@@ -230,7 +239,11 @@ impl MetricsCollector {
                     );
                 }
                 None => {
-                    tracing::debug!("Adding new backend {} to unhealthy list with method: {:?}", backend_key, check_method);
+                    tracing::debug!(
+                        "Adding new backend {} to unhealthy list with method: {:?}",
+                        backend_key,
+                        check_method
+                    );
                     unhealthy.insert(
                         backend_key.to_string(),
                         UnhealthyBackend {
@@ -263,8 +276,10 @@ impl MetricsCollector {
         tracing::debug!("Recording success for backend: {}", backend_key);
 
         // 增加总请求计数和成功请求计数
-        self.total_requests.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.successful_requests.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.total_requests
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.successful_requests
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         // 增加后端请求计数
         if let Ok(mut counts) = self.request_counts.write() {
@@ -515,7 +530,11 @@ impl MetricsCollector {
     }
 
     /// 批量获取多个backend的有效权重（性能优化）
-    pub fn get_effective_weights_batch(&self, backend_keys: &[String], original_weights: &[f64]) -> Vec<f64> {
+    pub fn get_effective_weights_batch(
+        &self,
+        backend_keys: &[String],
+        original_weights: &[f64],
+    ) -> Vec<f64> {
         let mut effective_weights = Vec::with_capacity(backend_keys.len());
 
         // 一次性获取读锁，避免重复锁操作
@@ -574,23 +593,28 @@ impl MetricsCollector {
 
     /// 记录SmartAI请求结果
     pub fn record_smart_ai_request(&self, backend_key: &str, result: RequestResult) {
-        tracing::debug!("Recording SmartAI request result for backend: {}", backend_key);
+        tracing::debug!(
+            "Recording SmartAI request result for backend: {}",
+            backend_key
+        );
 
         if let Ok(mut smart_health) = self.smart_ai_health.write() {
-            let health = smart_health.entry(backend_key.to_string()).or_insert_with(|| {
-                SmartAiBackendHealth {
-                    confidence_score: 0.8, // 初始信心度
-                    total_requests: 0,
-                    consecutive_successes: 0,
-                    consecutive_failures: 0,
-                    last_request_time: result.timestamp,
-                    last_success_time: None,
-                    last_failure_time: None,
-                    error_counts: HashMap::new(),
-                    last_connectivity_check: None,
-                    connectivity_ok: true,
-                }
-            });
+            let health = smart_health
+                .entry(backend_key.to_string())
+                .or_insert_with(|| {
+                    SmartAiBackendHealth {
+                        confidence_score: 0.8, // 初始信心度
+                        total_requests: 0,
+                        consecutive_successes: 0,
+                        consecutive_failures: 0,
+                        last_request_time: result.timestamp,
+                        last_success_time: None,
+                        last_failure_time: None,
+                        error_counts: HashMap::new(),
+                        last_connectivity_check: None,
+                        connectivity_ok: true,
+                    }
+                });
 
             // 更新基本统计
             health.total_requests += 1;
@@ -606,7 +630,9 @@ impl MetricsCollector {
 
                 tracing::debug!(
                     "SmartAI success for {}: confidence={:.3}, consecutive_successes={}",
-                    backend_key, health.confidence_score, health.consecutive_successes
+                    backend_key,
+                    health.confidence_score,
+                    health.consecutive_successes
                 );
             } else {
                 health.consecutive_failures += 1;
@@ -631,7 +657,10 @@ impl MetricsCollector {
 
                     tracing::debug!(
                         "SmartAI failure for {}: error={:?}, penalty={:.2}, confidence={:.3}",
-                        backend_key, error_type, penalty, health.confidence_score
+                        backend_key,
+                        error_type,
+                        penalty,
+                        health.confidence_score
                     );
                 }
             }
@@ -657,11 +686,11 @@ impl MetricsCollector {
         let hours_since_last = last_request.elapsed().as_secs() / 3600;
 
         let decay_factor = match hours_since_last {
-            0..=1 => 1.0,      // 1小时内：无衰减
-            2..=6 => 0.95,     // 2-6小时：轻微衰减
-            7..=24 => 0.9,     // 7-24小时：中等衰减
-            25..=72 => 0.8,    // 1-3天：较大衰减
-            _ => 0.7,          // 3天以上：大幅衰减
+            0..=1 => 1.0,   // 1小时内：无衰减
+            2..=6 => 0.95,  // 2-6小时：轻微衰减
+            7..=24 => 0.9,  // 7-24小时：中等衰减
+            25..=72 => 0.8, // 1-3天：较大衰减
+            _ => 0.7,       // 3天以上：大幅衰减
         };
 
         (confidence * decay_factor).max(0.5) // 长期无流量时保持基础信心度
@@ -670,8 +699,9 @@ impl MetricsCollector {
     /// 更新连通性检查结果
     pub fn update_smart_ai_connectivity(&self, backend_key: &str, connectivity_ok: bool) {
         if let Ok(mut smart_health) = self.smart_ai_health.write() {
-            let health = smart_health.entry(backend_key.to_string()).or_insert_with(|| {
-                SmartAiBackendHealth {
+            let health = smart_health
+                .entry(backend_key.to_string())
+                .or_insert_with(|| SmartAiBackendHealth {
                     confidence_score: 0.8,
                     total_requests: 0,
                     consecutive_successes: 0,
@@ -682,8 +712,7 @@ impl MetricsCollector {
                     error_counts: HashMap::new(),
                     last_connectivity_check: None,
                     connectivity_ok: true,
-                }
-            });
+                });
 
             health.last_connectivity_check = Some(Instant::now());
             health.connectivity_ok = connectivity_ok;
@@ -693,7 +722,8 @@ impl MetricsCollector {
                 health.confidence_score = (health.confidence_score * 0.5).max(0.05);
                 tracing::debug!(
                     "SmartAI connectivity failed for {}: confidence={:.3}",
-                    backend_key, health.confidence_score
+                    backend_key,
+                    health.confidence_score
                 );
             }
         }
@@ -719,12 +749,14 @@ impl MetricsCollector {
 
     /// 获取总请求数
     pub fn get_total_requests(&self) -> u64 {
-        self.total_requests.load(std::sync::atomic::Ordering::Relaxed)
+        self.total_requests
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// 获取成功请求数
     pub fn get_successful_requests(&self) -> u64 {
-        self.successful_requests.load(std::sync::atomic::Ordering::Relaxed)
+        self.successful_requests
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// 获取特定后端的请求数
@@ -764,7 +796,8 @@ impl Default for MetricsCollector {
 impl BackendSelector {
     pub fn new(mapping: ModelMapping, metrics: Arc<MetricsCollector>) -> Self {
         // 预计算所有后端键以提高性能
-        let backend_keys: Vec<String> = mapping.backends
+        let backend_keys: Vec<String> = mapping
+            .backends
             .iter()
             .map(|backend| format!("{}:{}", backend.provider, backend.model))
             .collect();
@@ -805,7 +838,8 @@ impl BackendSelector {
                     }
                     LoadBalanceStrategy::SmartWeightedFailover => {
                         // 智能权重故障转移：考虑权重恢复状态
-                        self.metrics.get_effective_weight(backend_key, backend.weight)
+                        self.metrics
+                            .get_effective_weight(backend_key, backend.weight)
                     }
                     _ => {
                         // 其他策略：使用原始权重
@@ -846,8 +880,11 @@ impl BackendSelector {
     }
 
     /// 内部选择方法，支持用户标签过滤
-    fn select_with_user_filter(&self, enabled_backends: &[Backend], user_tags: Option<&[String]>) -> Result<Backend> {
-
+    fn select_with_user_filter(
+        &self,
+        enabled_backends: &[Backend],
+        user_tags: Option<&[String]>,
+    ) -> Result<Backend> {
         // 根据用户标签过滤后端
         let filtered_backends = if let Some(tags) = user_tags {
             self.filter_backends_by_tags(enabled_backends, tags)
@@ -861,11 +898,9 @@ impl BackendSelector {
             } else {
                 "No enabled backends available"
             };
-            return Err(self.create_detailed_error(
-                error_msg,
-                &self.mapping.backends,
-                &[],
-            ).into());
+            return Err(self
+                .create_detailed_error(error_msg, &self.mapping.backends, &[])
+                .into());
         }
 
         let result = match self.mapping.strategy {
@@ -880,9 +915,7 @@ impl BackendSelector {
             LoadBalanceStrategy::SmartWeightedFailover => {
                 self.select_smart_weighted_failover(&filtered_backends)
             }
-            LoadBalanceStrategy::SmartAi => {
-                self.select_smart_ai(&filtered_backends)
-            }
+            LoadBalanceStrategy::SmartAi => self.select_smart_ai(&filtered_backends),
         };
 
         // 如果选择成功，将结果存入缓存
@@ -894,7 +927,9 @@ impl BackendSelector {
             let backend_clone = backend.clone();
 
             tokio::spawn(async move {
-                cache.put(&model_name, user_tags_clone.as_deref(), backend_clone).await;
+                cache
+                    .put(&model_name, user_tags_clone.as_deref(), backend_clone)
+                    .await;
             });
         } else {
             // 如果选择失败，创建详细的错误信息
@@ -919,7 +954,8 @@ impl BackendSelector {
         }
 
         // 过滤出与用户标签匹配的后端
-        backends.iter()
+        backends
+            .iter()
             .filter(|backend| {
                 // 如果后端没有标签，允许所有用户访问
                 if backend.tags.is_empty() {
@@ -927,7 +963,10 @@ impl BackendSelector {
                 }
 
                 // 检查是否有共同标签
-                backend.tags.iter().any(|backend_tag| user_tags.contains(backend_tag))
+                backend
+                    .tags
+                    .iter()
+                    .any(|backend_tag| user_tags.contains(backend_tag))
             })
             .cloned()
             .collect()
@@ -935,7 +974,9 @@ impl BackendSelector {
 
     fn select_weighted_random(&self, backends: &[Backend]) -> Result<Backend> {
         if backends.is_empty() {
-            return Err(anyhow::anyhow!("No backends available for weighted random selection"));
+            return Err(anyhow::anyhow!(
+                "No backends available for weighted random selection"
+            ));
         }
 
         if backends.len() == 1 {
@@ -1022,11 +1063,13 @@ impl BackendSelector {
 
         // 如果没有任何后端，返回详细错误
         let failed_attempts = self.collect_backend_status(backends);
-        Err(self.create_detailed_error(
-            "Failover selection failed - no backends available",
-            backends,
-            &failed_attempts,
-        ).into())
+        Err(self
+            .create_detailed_error(
+                "Failover selection failed - no backends available",
+                backends,
+                &failed_attempts,
+            )
+            .into())
     }
 
     fn select_random(&self, backends: &[Backend]) -> Result<Backend> {
@@ -1147,18 +1190,24 @@ impl BackendSelector {
                     e
                 );
 
-                Err(self.create_detailed_error(
-                    &format!("Smart weighted failover selection failed: {}", e),
-                    backends,
-                    &failed_attempts,
-                ).into())
+                Err(self
+                    .create_detailed_error(
+                        &format!("Smart weighted failover selection failed: {}", e),
+                        backends,
+                        &failed_attempts,
+                    )
+                    .into())
             }
         }
     }
 
     /// SmartAI 负载均衡选择
     fn select_smart_ai(&self, backends: &[Backend]) -> Result<Backend> {
-        tracing::debug!("SmartAI selection for model '{}' with {} backends", self.mapping.name, backends.len());
+        tracing::debug!(
+            "SmartAI selection for model '{}' with {} backends",
+            self.mapping.name,
+            backends.len()
+        );
 
         // 计算每个后端的有效权重（使用缓存的后端键）
         let mut weighted_backends: Vec<(Backend, f64)> = Vec::with_capacity(backends.len());
@@ -1172,12 +1221,17 @@ impl BackendSelector {
                 weighted_backends.push((backend.clone(), effective_weight));
                 tracing::debug!(
                     "SmartAI backend {}: confidence={:.3}, effective_weight={:.3} (original={:.3})",
-                    backend_key, confidence, effective_weight, backend.weight
+                    backend_key,
+                    confidence,
+                    effective_weight,
+                    backend.weight
                 );
             } else {
                 tracing::debug!(
                     "SmartAI backend {} excluded: confidence={:.3}, effective_weight={:.3}",
-                    backend_key, confidence, effective_weight
+                    backend_key,
+                    confidence,
+                    effective_weight
                 );
             }
         }
@@ -1237,9 +1291,9 @@ impl BackendSelector {
 
         // 温和的稳定性加成，避免过度偏向
         let stability_bonus = if !is_premium && confidence > 0.95 {
-            1.05  // 非premium后端极度稳定时给予5%加成（降低从10%到5%）
+            1.05 // 非premium后端极度稳定时给予5%加成（降低从10%到5%）
         } else {
-            1.0   // premium后端不给加成，凭原始权重竞争
+            1.0 // premium后端不给加成，凭原始权重竞争
         };
 
         let effective_weight = base_weight * confidence_weight * stability_bonus;
@@ -1327,9 +1381,7 @@ impl BackendSelector {
                 }
                 error_message.push_str(&format!(
                     "{}:{} ({})",
-                    attempt.provider,
-                    attempt.model,
-                    attempt.reason
+                    attempt.provider, attempt.model, attempt.reason
                 ));
             }
         }
@@ -1351,7 +1403,9 @@ impl BackendSelector {
         for (i, backend) in backends.iter().enumerate() {
             let backend_key = &self.backend_keys[i];
             let is_healthy = self.metrics.is_healthy(&backend.provider, &backend.model);
-            let failure_count = self.metrics.get_failure_count(&backend.provider, &backend.model);
+            let failure_count = self
+                .metrics
+                .get_failure_count(&backend.provider, &backend.model);
 
             let reason = if !backend.enabled {
                 "Backend disabled".to_string()
@@ -1362,11 +1416,14 @@ impl BackendSelector {
             };
 
             // 从metrics中获取真实的last_failure_time
-            let last_failure_time = if let Ok(unhealthy_backends) = self.metrics.unhealthy_backends.read() {
-                unhealthy_backends.get(backend_key).map(|ub| ub.last_failure_time)
-            } else {
-                None
-            };
+            let last_failure_time =
+                if let Ok(unhealthy_backends) = self.metrics.unhealthy_backends.read() {
+                    unhealthy_backends
+                        .get(backend_key)
+                        .map(|ub| ub.last_failure_time)
+                } else {
+                    None
+                };
 
             attempts.push(FailedAttempt {
                 backend_key: backend_key.clone(),
@@ -1550,21 +1607,27 @@ mod tests {
 
         // 记录一些成功的请求
         for _ in 0..5 {
-            metrics.record_smart_ai_request(backend_key1, RequestResult {
-                success: true,
-                latency: std::time::Duration::from_millis(100),
-                error_type: None,
-                timestamp: std::time::Instant::now(),
-            });
+            metrics.record_smart_ai_request(
+                backend_key1,
+                RequestResult {
+                    success: true,
+                    latency: std::time::Duration::from_millis(100),
+                    error_type: None,
+                    timestamp: std::time::Instant::now(),
+                },
+            );
         }
 
         // provider2有一些失败
-        metrics.record_smart_ai_request(backend_key2, RequestResult {
-            success: false,
-            latency: std::time::Duration::from_millis(200),
-            error_type: Some(SmartAiErrorType::NetworkError),
-            timestamp: std::time::Instant::now(),
-        });
+        metrics.record_smart_ai_request(
+            backend_key2,
+            RequestResult {
+                success: false,
+                latency: std::time::Duration::from_millis(200),
+                error_type: Some(SmartAiErrorType::NetworkError),
+                timestamp: std::time::Instant::now(),
+            },
+        );
 
         // 进行选择测试
         let backend = selector.select().unwrap();

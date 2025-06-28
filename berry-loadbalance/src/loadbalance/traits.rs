@@ -1,12 +1,12 @@
-use async_trait::async_trait;
 use anyhow::Result;
-use std::sync::Arc;
+use async_trait::async_trait;
 use std::collections::HashMap;
+use std::sync::Arc;
 
-use super::{SelectedBackend, RequestResult, ServiceHealth, HealthStats, MetricsCollector};
+use super::{HealthStats, MetricsCollector, RequestResult, SelectedBackend, ServiceHealth};
 
 /// 负载均衡器接口
-/// 
+///
 /// 这个trait定义了负载均衡器的核心功能，允许不同的实现策略
 /// 并支持依赖注入和单元测试
 #[async_trait]
@@ -16,25 +16,20 @@ pub trait LoadBalancer: Send + Sync {
 
     /// 为指定模型选择后端（支持用户标签过滤）
     async fn select_backend_with_user_tags(
-        &self, 
-        model_name: &str, 
-        user_tags: Option<&[String]>
+        &self,
+        model_name: &str,
+        user_tags: Option<&[String]>,
     ) -> Result<SelectedBackend>;
 
     /// 选择指定的后端提供商
     async fn select_specific_backend(
-        &self, 
-        model_name: &str, 
-        provider_name: &str
+        &self,
+        model_name: &str,
+        provider_name: &str,
     ) -> Result<SelectedBackend>;
 
     /// 记录请求结果
-    async fn record_request_result(
-        &self, 
-        provider: &str, 
-        model: &str, 
-        result: RequestResult
-    );
+    async fn record_request_result(&self, provider: &str, model: &str, result: RequestResult);
 
     /// 获取指标收集器
     fn get_metrics(&self) -> Arc<dyn LoadBalancerMetrics>;
@@ -44,8 +39,6 @@ pub trait LoadBalancer: Send + Sync {
 
     /// 手动触发健康检查
     async fn trigger_health_check(&self) -> Result<()>;
-
-    
 
     /// 检查服务是否正在运行
     async fn is_running(&self) -> bool;
@@ -61,7 +54,7 @@ pub trait LoadBalancer: Send + Sync {
 }
 
 /// 负载均衡器指标接口
-/// 
+///
 /// 分离指标相关的功能，提供更好的模块化
 pub trait LoadBalancerMetrics: Send + Sync {
     /// 获取总请求数

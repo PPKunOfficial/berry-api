@@ -1,9 +1,9 @@
+use super::traits::{AIBackendClient, BackendType, ChatCompletionConfig};
+use super::types::{ClientError, ClientResponse};
+use async_trait::async_trait;
 use reqwest::Client;
 use serde_json::Value;
 use std::time::Duration;
-use async_trait::async_trait;
-use super::types::{ClientError, ClientResponse};
-use super::traits::{AIBackendClient, BackendType, ChatCompletionConfig};
 
 #[derive(Clone)]
 pub struct OpenAIClient {
@@ -27,22 +27,16 @@ impl OpenAIClient {
             .build()
             .unwrap_or_else(|_| Client::new());
 
-        Self {
-            client,
-            base_url,
-        }
+        Self { client, base_url }
     }
 
     pub fn with_base_url_and_timeout(base_url: String, connect_timeout: Duration) -> Self {
         let client = Client::builder()
-            .connect_timeout(connect_timeout)  // 只设置连接超时，不限制总请求时间
+            .connect_timeout(connect_timeout) // 只设置连接超时，不限制总请求时间
             .build()
             .unwrap_or_else(|_| Client::new());
 
-        Self {
-            client,
-            base_url,
-        }
+        Self { client, base_url }
     }
 
     // 发送聊天完成请求
@@ -51,7 +45,8 @@ impl OpenAIClient {
         headers: reqwest::header::HeaderMap,
         body: &Value,
     ) -> Result<reqwest::Response, ClientError> {
-        let response = self.client
+        let response = self
+            .client
             .post(format!("{}/v1/chat/completions", self.base_url))
             .headers(headers)
             .json(body)
@@ -62,12 +57,10 @@ impl OpenAIClient {
     }
 
     // 获取模型列表
-    pub async fn models(
-        &self,
-        token: &str,
-    ) -> Result<ClientResponse, ClientError> {
+    pub async fn models(&self, token: &str) -> Result<ClientResponse, ClientError> {
         let auth_header_value = format!("Bearer {}", token);
-        let response = self.client
+        let response = self
+            .client
             .get(format!("{}/v1/models", self.base_url))
             .header("Authorization", auth_header_value)
             .send()

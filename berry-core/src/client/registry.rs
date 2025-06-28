@@ -1,23 +1,24 @@
+use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
-use anyhow::Result;
 
 // use super::traits::{AIBackendClient, BackendType}; // 暂时不需要，但保留以备将来使用
-use super::types::ClientError;
-use super::factory::UnifiedClient;
-use super::openai::OpenAIClient;
 use super::claude::ClaudeClient;
+use super::factory::UnifiedClient;
 use super::gemini::GeminiClient;
+use super::openai::OpenAIClient;
+use super::types::ClientError;
 use crate::config::model::ProviderBackendType;
 
 /// 客户端构建器函数类型
-/// 
+///
 /// 接受 base_url 和 timeout，返回一个 UnifiedClient
-pub type ClientBuilder = Box<dyn Fn(String, Duration) -> Result<UnifiedClient, ClientError> + Send + Sync>;
+pub type ClientBuilder =
+    Box<dyn Fn(String, Duration) -> Result<UnifiedClient, ClientError> + Send + Sync>;
 
 /// 客户端注册表
-/// 
+///
 /// 支持动态注册和创建不同类型的AI后端客户端
 /// 提供插件化的客户端管理机制
 pub struct ClientRegistry {
@@ -30,7 +31,7 @@ impl ClientRegistry {
         let registry = Self {
             builders: Arc::new(RwLock::new(HashMap::new())),
         };
-        
+
         // 注册默认的客户端类型
         registry.register_default_clients();
         registry
@@ -67,13 +68,16 @@ impl ClientRegistry {
     }
 
     /// 注册新的客户端类型
-    /// 
+    ///
     /// # 参数
     /// * `backend_type` - 后端类型
     /// * `builder` - 客户端构建器函数
     pub fn register_client(&self, backend_type: ProviderBackendType, builder: ClientBuilder) {
         if let Ok(mut builders) = self.builders.write() {
-            tracing::info!("Registered client builder for backend type: {:?}", backend_type);
+            tracing::info!(
+                "Registered client builder for backend type: {:?}",
+                backend_type
+            );
             builders.insert(backend_type, builder);
         } else {
             tracing::error!("Failed to acquire write lock for client registry");
@@ -81,12 +85,12 @@ impl ClientRegistry {
     }
 
     /// 创建客户端
-    /// 
+    ///
     /// # 参数
     /// * `backend_type` - 后端类型
     /// * `base_url` - 基础URL
     /// * `timeout` - 超时时间
-    /// 
+    ///
     /// # 返回
     /// 成功时返回 UnifiedClient，失败时返回 ClientError
     pub fn create_client(
@@ -132,7 +136,10 @@ impl ClientRegistry {
         if let Ok(mut builders) = self.builders.write() {
             let removed = builders.remove(backend_type).is_some();
             if removed {
-                tracing::info!("Unregistered client builder for backend type: {:?}", backend_type);
+                tracing::info!(
+                    "Unregistered client builder for backend type: {:?}",
+                    backend_type
+                );
             }
             removed
         } else {
@@ -165,7 +172,7 @@ pub fn get_global_registry() -> &'static ClientRegistry {
 }
 
 /// 注册全局客户端类型
-/// 
+///
 /// 这是一个便利函数，用于向全局注册表注册新的客户端类型
 pub fn register_global_client(backend_type: ProviderBackendType, builder: ClientBuilder) {
     get_global_registry().register_client(backend_type, builder);
@@ -178,7 +185,7 @@ mod tests {
     #[test]
     fn test_registry_creation() {
         let registry = ClientRegistry::new();
-        
+
         // 应该包含默认的三种客户端类型
         assert_eq!(registry.count(), 3);
         assert!(registry.supports_backend(&ProviderBackendType::OpenAI));
@@ -189,7 +196,7 @@ mod tests {
     #[test]
     fn test_client_creation() {
         let registry = ClientRegistry::new();
-        
+
         // 测试创建 OpenAI 客户端
         let client = registry.create_client(
             ProviderBackendType::OpenAI,
@@ -202,7 +209,7 @@ mod tests {
     #[test]
     fn test_custom_client_registration() {
         let registry = ClientRegistry::new();
-        
+
         // 注册自定义客户端（这里重用 OpenAI 的实现作为示例）
         registry.register_client(
             ProviderBackendType::OpenAI, // 重新注册以覆盖默认实现
@@ -211,14 +218,14 @@ mod tests {
                 Ok(UnifiedClient::OpenAI(client))
             }),
         );
-        
+
         assert!(registry.supports_backend(&ProviderBackendType::OpenAI));
     }
 
     #[test]
     fn test_unsupported_backend() {
         let registry = ClientRegistry::new();
-        
+
         // 移除一个客户端类型
         registry.unregister_client(&ProviderBackendType::Gemini);
         assert!(!registry.supports_backend(&ProviderBackendType::Gemini));
@@ -229,7 +236,7 @@ mod tests {
     fn test_global_registry() {
         let registry1 = get_global_registry();
         let registry2 = get_global_registry();
-        
+
         // 应该是同一个实例
         assert!(std::ptr::eq(registry1, registry2));
     }

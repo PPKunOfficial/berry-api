@@ -2,7 +2,6 @@ use anyhow::Result;
 
 use vergen_git2::{BuildBuilder, CargoBuilder, Emitter, Git2Builder, RustcBuilder, SysinfoBuilder};
 
-
 fn main() -> Result<()> {
     let build = BuildBuilder::all_build()?;
     let cargo = CargoBuilder::all_cargo()?;

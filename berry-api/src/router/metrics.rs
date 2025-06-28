@@ -1,10 +1,6 @@
 use crate::app::AppState;
 use crate::static_files::get_static_files_info;
-use axum::{
-    extract::State,
-    response::IntoResponse,
-    Json,
-};
+use axum::{extract::State, response::IntoResponse, Json};
 use serde_json::json;
 
 /// 指标处理器

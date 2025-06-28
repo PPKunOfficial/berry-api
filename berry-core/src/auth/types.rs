@@ -10,7 +10,10 @@ pub struct AuthenticatedUser {
 
 impl AuthenticatedUser {
     pub fn new(user_id: String, user_token: UserToken) -> Self {
-        Self { user_id, user_token }
+        Self {
+            user_id,
+            user_token,
+        }
     }
 
     /// 检查用户是否可以访问指定模型
@@ -19,9 +22,11 @@ impl AuthenticatedUser {
         if self.user_token.allowed_models.is_empty() {
             return true;
         }
-        
+
         // 检查模型是否在允许列表中
-        self.user_token.allowed_models.contains(&model_name.to_string())
+        self.user_token
+            .allowed_models
+            .contains(&model_name.to_string())
     }
 
     /// 获取用户名

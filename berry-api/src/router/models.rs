@@ -1,8 +1,5 @@
 use crate::app::AppState;
-use axum::{
-    extract::State,
-    response::IntoResponse,
-};
+use axum::{extract::State, response::IntoResponse};
 use axum_extra::TypedHeader;
 use serde_json::json;
 

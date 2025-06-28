@@ -1,11 +1,14 @@
-use std::collections::HashMap;
-use std::sync::{Arc, atomic::{AtomicU64, Ordering}};
-use std::time::{Duration, Instant};
-use rand::Rng;
-use tokio::sync::RwLock;
 use berry_core::Backend;
-use tracing::{debug, trace, error};
-use once_cell::sync::Lazy; // Added
+use once_cell::sync::Lazy;
+use rand::Rng;
+use std::collections::HashMap;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
+use std::time::{Duration, Instant};
+use tokio::sync::RwLock;
+use tracing::{debug, error, trace}; // Added
 
 static INSTANT_EPOCH: Lazy<Instant> = Lazy::new(Instant::now); // Added
 
@@ -44,7 +47,8 @@ impl CacheEntry {
         self.created_at.elapsed() > ttl
     }
 
-    fn touch(&self) { // No longer async
+    fn touch(&self) {
+        // No longer async
         let now_nanos = Instant::now().duration_since(*INSTANT_EPOCH).as_nanos() as u64; // Fixed
         self.last_access.store(now_nanos, Ordering::Relaxed);
         self.hit_count.fetch_add(1, Ordering::Relaxed);
@@ -56,7 +60,7 @@ impl CacheEntry {
 }
 
 /// 后端选择缓存
-/// 
+///
 /// 提供基于TTL的后端选择缓存机制，减少重复的后端选择计算
 pub struct BackendSelectionCache {
     cache: Arc<RwLock<HashMap<String, CacheEntry>>>,
@@ -73,7 +77,7 @@ impl Default for BackendSelectionCache {
     fn default() -> Self {
         Self::new(
             Duration::from_secs(30), // 30秒TTL
-            1000, // 最大1000个条目
+            1000,                    // 最大1000个条目
         )
     }
 }
@@ -92,8 +96,6 @@ impl BackendSelectionCache {
         }
     }
 
-
-
     /// 生成缓存键
     fn generate_cache_key(&self, model: &str, user_tags: Option<&[String]>) -> String {
         match user_tags {
@@ -109,54 +111,54 @@ impl BackendSelectionCache {
     /// 从缓存获取后端
     pub async fn get(&self, model: &str, user_tags: Option<&[String]>) -> Option<Backend> {
         self.total_requests.fetch_add(1, Ordering::Relaxed);
-        
+
         let cache_key = self.generate_cache_key(model, user_tags);
-        
+
         let cache = self.cache.read().await;
         if let Some(entry) = cache.get(&cache_key) {
             if !entry.is_expired(self.ttl) {
                 // 缓存命中
                 entry.touch();
                 self.cache_hits.fetch_add(1, Ordering::Relaxed);
-                
+
                 trace!(
                     "Cache hit for key '{}', hit_count: {}",
                     cache_key,
                     entry.get_hit_count()
                 );
-                
+
                 return Some(entry.backend.clone());
             } else {
                 // 缓存过期，需要在写锁中清理
                 debug!("Cache entry expired for key '{}'", cache_key);
             }
         }
-        
+
         // 缓存未命中
         self.cache_misses.fetch_add(1, Ordering::Relaxed);
         trace!("Cache miss for key '{}'", cache_key);
-        
+
         None
     }
 
     /// 将后端存入缓存
     pub async fn put(&self, model: &str, user_tags: Option<&[String]>, backend: Backend) {
         let cache_key = self.generate_cache_key(model, user_tags);
-        
+
         let mut cache = self.cache.write().await;
-        
+
         // 清理过期条目
         self.cleanup_expired_entries(&mut cache).await;
-        
+
         // 检查是否需要驱逐条目
         if cache.len() >= self.max_entries {
             self.evict_lru_entry(&mut cache).await;
         }
-        
+
         // 插入新条目
         let entry = CacheEntry::new(backend);
         cache.insert(cache_key.clone(), entry);
-        
+
         debug!("Cached backend selection for key '{}'", cache_key);
     }
 
@@ -167,7 +169,7 @@ impl BackendSelectionCache {
             .filter(|(_, entry)| entry.is_expired(self.ttl))
             .map(|(key, _)| key.clone())
             .collect();
-        
+
         for key in expired_keys {
             cache.remove(&key);
             debug!("Removed expired cache entry: {}", key);
@@ -188,7 +190,9 @@ impl BackendSelectionCache {
         let mut rng = rand::rng();
 
         for _ in 0..SAMPLE_SIZE {
-            if keys.is_empty() { break; }
+            if keys.is_empty() {
+                break;
+            }
             let random_index = rng.random_range(0..keys.len());
             let key = keys[random_index];
             if let Some(entry) = cache.get(key) {
@@ -196,10 +200,13 @@ impl BackendSelectionCache {
             }
         }
 
-        if candidates.is_empty() { return; }
+        if candidates.is_empty() {
+            return;
+        }
 
         // 找到采样中最近最少使用的条目
-        if let Some((lru_key, _)) = candidates.into_iter()
+        if let Some((lru_key, _)) = candidates
+            .into_iter()
             .min_by_key(|&(_, last_access)| last_access)
         {
             cache.remove(&lru_key);
@@ -225,13 +232,13 @@ impl BackendSelectionCache {
         let hits = self.cache_hits.load(Ordering::Relaxed);
         let misses = self.cache_misses.load(Ordering::Relaxed);
         let evictions = self.evictions.load(Ordering::Relaxed);
-        
+
         let hit_rate = if total > 0 {
             (hits as f64 / total as f64) * 100.0
         } else {
             0.0
         };
-        
+
         CacheStats {
             total_requests: total,
             cache_hits: hits,
@@ -270,11 +277,7 @@ impl std::fmt::Display for CacheStats {
         write!(
             f,
             "Cache Stats: {} requests, {} hits ({:.1}%), {} misses, {} evictions",
-            self.total_requests,
-            self.cache_hits,
-            self.hit_rate,
-            self.cache_misses,
-            self.evictions
+            self.total_requests, self.cache_hits, self.hit_rate, self.cache_misses, self.evictions
         )
     }
 }
@@ -282,7 +285,7 @@ impl std::fmt::Display for CacheStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use berry_core::config::model::{BillingMode};
+    use berry_core::config::model::BillingMode;
 
     fn create_test_backend(provider: &str, model: &str) -> Backend {
         Backend {
@@ -300,18 +303,18 @@ mod tests {
     async fn test_cache_basic_operations() {
         let cache = BackendSelectionCache::new(Duration::from_secs(60), 100);
         let backend = create_test_backend("test-provider", "test-model");
-        
+
         // 测试缓存未命中
         assert!(cache.get("test-model", None).await.is_none());
-        
+
         // 存入缓存
         cache.put("test-model", None, backend.clone()).await;
-        
+
         // 测试缓存命中
         let cached_backend = cache.get("test-model", None).await;
         assert!(cached_backend.is_some());
         assert_eq!(cached_backend.unwrap().provider, "test-provider");
-        
+
         // 验证统计信息
         let stats = cache.get_stats();
         assert_eq!(stats.total_requests, 2);
@@ -324,19 +327,22 @@ mod tests {
     async fn test_cache_with_user_tags() {
         let cache = BackendSelectionCache::default();
         let backend = create_test_backend("test-provider", "test-model");
-        
+
         let tags = vec!["premium".to_string(), "fast".to_string()];
-        
+
         // 存入带标签的缓存
         cache.put("test-model", Some(&tags), backend.clone()).await;
-        
+
         // 测试相同标签的缓存命中
         assert!(cache.get("test-model", Some(&tags)).await.is_some());
-        
+
         // 测试不同标签的缓存未命中
         let different_tags = vec!["basic".to_string()];
-        assert!(cache.get("test-model", Some(&different_tags)).await.is_none());
-        
+        assert!(cache
+            .get("test-model", Some(&different_tags))
+            .await
+            .is_none());
+
         // 测试无标签的缓存未命中
         assert!(cache.get("test-model", None).await.is_none());
     }
@@ -345,16 +351,16 @@ mod tests {
     async fn test_cache_expiration() {
         let cache = BackendSelectionCache::new(Duration::from_millis(100), 100);
         let backend = create_test_backend("test-provider", "test-model");
-        
+
         // 存入缓存
         cache.put("test-model", None, backend).await;
-        
+
         // 立即访问应该命中
         assert!(cache.get("test-model", None).await.is_some());
-        
+
         // 等待过期
         tokio::time::sleep(Duration::from_millis(150)).await;
-        
+
         // 过期后应该未命中
         assert!(cache.get("test-model", None).await.is_none());
     }

@@ -1,7 +1,7 @@
-use axum::response::sse::Event;
-use axum::{response::IntoResponse, http::StatusCode, Json};
-use serde_json::{Value, json};
 use crate::relay::client::ClientError;
+use axum::response::sse::Event;
+use axum::{http::StatusCode, response::IntoResponse, Json};
+use serde_json::{json, Value};
 
 // 创建错误事件
 pub fn create_error_event(error: &ClientError) -> Event {
@@ -36,7 +36,11 @@ pub fn create_network_error_json(message: &str, details: Option<String>) -> Valu
 }
 
 // 创建上游错误 JSON 响应
-pub fn create_upstream_error_json(message: &str, status: Option<u16>, details: Option<String>) -> Value {
+pub fn create_upstream_error_json(
+    message: &str,
+    status: Option<u16>,
+    details: Option<String>,
+) -> Value {
     json!({
         "error": {
             "message": message,
@@ -89,19 +93,34 @@ impl ErrorType {
     pub fn from_error_message(message: &str) -> Self {
         let message_lower = message.to_lowercase();
 
-        if message_lower.contains("unauthorized") || message_lower.contains("invalid token") || message_lower.contains("authentication") {
+        if message_lower.contains("unauthorized")
+            || message_lower.contains("invalid token")
+            || message_lower.contains("authentication")
+        {
             ErrorType::Unauthorized
-        } else if message_lower.contains("forbidden") || message_lower.contains("permission") || message_lower.contains("access denied") {
+        } else if message_lower.contains("forbidden")
+            || message_lower.contains("permission")
+            || message_lower.contains("access denied")
+        {
             ErrorType::Forbidden
-        } else if message_lower.contains("not found") || message_lower.contains("model") && message_lower.contains("not") {
+        } else if message_lower.contains("not found")
+            || message_lower.contains("model") && message_lower.contains("not")
+        {
             ErrorType::NotFound
         } else if message_lower.contains("timeout") || message_lower.contains("timed out") {
             ErrorType::GatewayTimeout
-        } else if message_lower.contains("too many requests") || message_lower.contains("rate limit") {
+        } else if message_lower.contains("too many requests")
+            || message_lower.contains("rate limit")
+        {
             ErrorType::TooManyRequests
-        } else if message_lower.contains("service unavailable") || message_lower.contains("no available backends") || message_lower.contains("all") && message_lower.contains("unhealthy") {
+        } else if message_lower.contains("service unavailable")
+            || message_lower.contains("no available backends")
+            || message_lower.contains("all") && message_lower.contains("unhealthy")
+        {
             ErrorType::ServiceUnavailable
-        } else if message_lower.contains("bad request") || message_lower.contains("invalid") && !message_lower.contains("token") {
+        } else if message_lower.contains("bad request")
+            || message_lower.contains("invalid") && !message_lower.contains("token")
+        {
             ErrorType::BadRequest
         } else {
             ErrorType::InternalServerError
@@ -110,7 +129,11 @@ impl ErrorType {
 }
 
 /// 创建带有正确HTTP状态码的错误响应
-pub fn create_error_response(error_type: ErrorType, message: &str, details: Option<String>) -> impl IntoResponse {
+pub fn create_error_response(
+    error_type: ErrorType,
+    message: &str,
+    details: Option<String>,
+) -> impl IntoResponse {
     let status_code = error_type.status_code();
     let error_json = json!({
         "error": {
@@ -143,7 +166,11 @@ pub fn create_client_error_response(error: &ClientError) -> impl IntoResponse {
 }
 
 /// 创建统一的流式错误响应
-pub fn create_streaming_error_response(error_type: ErrorType, message: &str, details: Option<String>) -> impl IntoResponse {
+pub fn create_streaming_error_response(
+    error_type: ErrorType,
+    message: &str,
+    details: Option<String>,
+) -> impl IntoResponse {
     use axum::response::Sse;
     use futures::stream;
 
@@ -163,19 +190,27 @@ pub fn create_streaming_error_response(error_type: ErrorType, message: &str, det
         Ok::<Event, std::convert::Infallible>(
             Event::default()
                 .event("error")
-                .data(error_event.to_string())
+                .data(error_event.to_string()),
         )
     });
 
     // 返回带有正确HTTP状态码的SSE响应
     (
         status_code,
-        Sse::new(Box::pin(error_stream) as futures::stream::BoxStream<'static, Result<Event, std::convert::Infallible>>)
-    ).into_response()
+        Sse::new(Box::pin(error_stream)
+            as futures::stream::BoxStream<
+                'static,
+                Result<Event, std::convert::Infallible>,
+            >),
+    )
+        .into_response()
 }
 
 /// 创建服务不可用错误响应
-pub fn create_service_unavailable_response(message: &str, details: Option<String>) -> impl IntoResponse {
+pub fn create_service_unavailable_response(
+    message: &str,
+    details: Option<String>,
+) -> impl IntoResponse {
     create_error_response(ErrorType::ServiceUnavailable, message, details)
 }
 
@@ -185,7 +220,10 @@ pub fn create_internal_error_response(message: &str, details: Option<String>) ->
 }
 
 /// 创建网关超时错误响应
-pub fn create_gateway_timeout_response(message: &str, details: Option<String>) -> impl IntoResponse {
+pub fn create_gateway_timeout_response(
+    message: &str,
+    details: Option<String>,
+) -> impl IntoResponse {
     create_error_response(ErrorType::GatewayTimeout, message, details)
 }
 
@@ -200,7 +238,11 @@ impl ErrorHandler {
         let error_type = ErrorType::from_error_message(&error_str);
 
         let message = if let Some(ctx) = context {
-            format!("{}: {}", ctx, Self::extract_user_friendly_message(&error_str))
+            format!(
+                "{}: {}",
+                ctx,
+                Self::extract_user_friendly_message(&error_str)
+            )
         } else {
             Self::extract_user_friendly_message(&error_str)
         };
@@ -212,7 +254,11 @@ impl ErrorHandler {
     }
 
     /// 从HTTP状态码和响应体创建错误响应
-    pub fn from_http_error(status_code: u16, response_body: &str, context: Option<&str>) -> impl IntoResponse {
+    pub fn from_http_error(
+        status_code: u16,
+        response_body: &str,
+        context: Option<&str>,
+    ) -> impl IntoResponse {
         let error_type = Self::status_code_to_error_type(status_code);
         let backend_error = Self::parse_backend_error_message(response_body);
 
@@ -223,13 +269,26 @@ impl ErrorHandler {
         };
 
         // 记录错误日志
-        tracing::debug!("HTTP error {}: {} - Body: {}", status_code, message, response_body);
+        tracing::debug!(
+            "HTTP error {}: {} - Body: {}",
+            status_code,
+            message,
+            response_body
+        );
 
-        create_error_response(error_type, &message, Some(format!("Backend error: {}", backend_error.details)))
+        create_error_response(
+            error_type,
+            &message,
+            Some(format!("Backend error: {}", backend_error.details)),
+        )
     }
 
     /// 创建业务逻辑错误响应
-    pub fn business_error(error_type: ErrorType, message: &str, details: Option<String>) -> impl IntoResponse {
+    pub fn business_error(
+        error_type: ErrorType,
+        message: &str,
+        details: Option<String>,
+    ) -> impl IntoResponse {
         tracing::warn!("Business error: {} - Details: {:?}", message, details);
         create_error_response(error_type, message, details)
     }
@@ -248,24 +307,39 @@ impl ErrorHandler {
     }
 
     /// 从anyhow::Error创建流式HTTP响应
-    pub fn streaming_from_anyhow_error(error: &anyhow::Error, context: Option<&str>) -> impl IntoResponse {
+    pub fn streaming_from_anyhow_error(
+        error: &anyhow::Error,
+        context: Option<&str>,
+    ) -> impl IntoResponse {
         let error_str = error.to_string();
         let error_type = ErrorType::from_error_message(&error_str);
 
         let message = if let Some(ctx) = context {
-            format!("{}: {}", ctx, Self::extract_user_friendly_message(&error_str))
+            format!(
+                "{}: {}",
+                ctx,
+                Self::extract_user_friendly_message(&error_str)
+            )
         } else {
             Self::extract_user_friendly_message(&error_str)
         };
 
         // 记录错误日志
-        tracing::error!("Streaming error occurred: {} - Details: {}", message, error_str);
+        tracing::error!(
+            "Streaming error occurred: {} - Details: {}",
+            message,
+            error_str
+        );
 
         create_streaming_error_response(error_type, &message, Some(error_str))
     }
 
     /// 从HTTP状态码和响应体创建流式错误响应
-    pub fn streaming_from_http_error(status_code: u16, response_body: &str, context: Option<&str>) -> impl IntoResponse {
+    pub fn streaming_from_http_error(
+        status_code: u16,
+        response_body: &str,
+        context: Option<&str>,
+    ) -> impl IntoResponse {
         let error_type = Self::status_code_to_error_type(status_code);
         let backend_error = Self::parse_backend_error_message(response_body);
 
@@ -276,9 +350,18 @@ impl ErrorHandler {
         };
 
         // 记录错误日志
-        tracing::debug!("Streaming HTTP error {}: {} - Body: {}", status_code, message, response_body);
+        tracing::debug!(
+            "Streaming HTTP error {}: {} - Body: {}",
+            status_code,
+            message,
+            response_body
+        );
 
-        create_streaming_error_response(error_type, &message, Some(format!("Backend error: {}", backend_error.details)))
+        create_streaming_error_response(
+            error_type,
+            &message,
+            Some(format!("Backend error: {}", backend_error.details)),
+        )
     }
 
     /// 创建后端不可用错误响应
@@ -325,7 +408,11 @@ impl ErrorHandler {
         };
 
         BackendErrorInfo {
-            message: if message.is_empty() { "Unknown error".to_string() } else { message },
+            message: if message.is_empty() {
+                "Unknown error".to_string()
+            } else {
+                message
+            },
             details: response_body.to_string(),
         }
     }
@@ -434,16 +521,30 @@ impl RetryErrorHandler {
     ) -> Result<(), anyhow::Error> {
         if attempt == max_retries - 1 {
             // 最后一次重试失败，返回错误
-            Err(anyhow::anyhow!("{} after {} attempts: {}", context, max_retries, error))
+            Err(anyhow::anyhow!(
+                "{} after {} attempts: {}",
+                context,
+                max_retries,
+                error
+            ))
         } else {
             // 记录警告并继续重试
-            tracing::warn!("{} on attempt {}, retrying: {}", context, attempt + 1, error);
+            tracing::warn!(
+                "{} on attempt {}, retrying: {}",
+                context,
+                attempt + 1,
+                error
+            );
             Ok(())
         }
     }
 
     /// 创建重试失败的最终错误
-    pub fn create_final_error(context: &str, max_retries: usize, last_error: &anyhow::Error) -> anyhow::Error {
+    pub fn create_final_error(
+        context: &str,
+        max_retries: usize,
+        last_error: &anyhow::Error,
+    ) -> anyhow::Error {
         anyhow::anyhow!(
             "{} failed after {} attempts. Last error: {}. All available backends may be experiencing issues.",
             context,
@@ -476,7 +577,12 @@ impl ResponseBodyHandler {
         request_type: &str,
     ) -> (u16, String) {
         let (status, body) = Self::read_error_body(response).await;
-        tracing::debug!("{} failed with status: {}, body: {}", request_type, status, body);
+        tracing::debug!(
+            "{} failed with status: {}, body: {}",
+            request_type,
+            status,
+            body
+        );
         (status, body)
     }
 }

@@ -5,17 +5,17 @@
 //! - Authentication and authorization
 //! - Shared types and utilities
 
-pub mod config;
 pub mod auth;
 pub mod client;
+pub mod config;
 
 // Re-export commonly used types
-pub use config::model::{
-    Config, Provider, ModelMapping as Model, UserToken, Backend,
-    LoadBalanceStrategy, BillingMode, GlobalSettings, ProviderBackendType
-};
-pub use auth::{AuthenticatedUser, AuthError, AuthMiddleware};
+pub use auth::{AuthError, AuthMiddleware, AuthenticatedUser};
 pub use client::{
-    ClientFactory, UnifiedClient, AIBackendClient, BackendType,
-    ChatCompletionConfig, ChatMessage, ChatRole, ClientError, ClientResponse
+    AIBackendClient, BackendType, ChatCompletionConfig, ChatMessage, ChatRole, ClientError,
+    ClientFactory, ClientResponse, UnifiedClient,
+};
+pub use config::model::{
+    Backend, BillingMode, Config, GlobalSettings, LoadBalanceStrategy, ModelMapping as Model,
+    Provider, ProviderBackendType, UserToken,
 };

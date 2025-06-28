@@ -1,11 +1,7 @@
 use crate::app::AppState;
-use axum::{
-    extract::State,
-    response::IntoResponse,
-    Json,
-};
+use axum::{extract::State, response::IntoResponse, Json};
 use axum_extra::TypedHeader;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::time::Instant;
 
 /// V1 API: 聊天完成
@@ -22,7 +18,8 @@ pub async fn chat_completions(
     // 记录正在处理的请求
     #[cfg(feature = "observability")]
     if let Some(ref metrics) = state.prometheus_metrics {
-        metrics.http_requests_in_flight
+        metrics
+            .http_requests_in_flight
             .with_label_values(&[method, endpoint])
             .inc();
     }
@@ -89,7 +86,11 @@ pub async fn chat_completions(
     }
 
     // 继续处理请求（传递用户标签）
-    let user_tags = if user.tags.is_empty() { None } else { Some(user.tags.as_slice()) };
+    let user_tags = if user.tags.is_empty() {
+        None
+    } else {
+        Some(user.tags.as_slice())
+    };
     let response = state
         .handler
         .clone()
@@ -122,17 +123,20 @@ fn record_request_metrics(
 
         if let Some(ref metrics) = state.prometheus_metrics {
             // 减少正在处理的请求计数
-            metrics.http_requests_in_flight
+            metrics
+                .http_requests_in_flight
                 .with_label_values(&[method, endpoint])
                 .dec();
 
             // 记录请求总数
-            metrics.http_requests_total
+            metrics
+                .http_requests_total
                 .with_label_values(&[method, endpoint, &status])
                 .inc();
 
             // 记录请求延迟
-            metrics.http_request_duration_seconds
+            metrics
+                .http_request_duration_seconds
                 .with_label_values(&[method, endpoint])
                 .observe(latency.as_secs_f64());
         }

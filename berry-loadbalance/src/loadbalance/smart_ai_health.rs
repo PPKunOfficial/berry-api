@@ -1,6 +1,6 @@
-use berry_core::config::model::{Config, Provider};
 use super::MetricsCollector;
 use anyhow::Result;
+use berry_core::config::model::{Config, Provider};
 use reqwest::Client;
 use std::sync::Arc;
 use std::time::Duration;
@@ -34,12 +34,12 @@ impl SmartAiHealthChecker {
     /// 启动健康检查服务
     pub async fn start(&self) -> Result<()> {
         info!("Starting SmartAI lightweight health checker");
-        
+
         let mut interval = interval(self.check_interval);
-        
+
         loop {
             interval.tick().await;
-            
+
             if let Err(e) = self.check_all_providers().await {
                 error!("SmartAI health check failed: {}", e);
             }
@@ -48,14 +48,21 @@ impl SmartAiHealthChecker {
 
     /// 检查所有启用的provider
     async fn check_all_providers(&self) -> Result<()> {
-        let enabled_providers: Vec<_> = self.config.providers.iter()
+        let enabled_providers: Vec<_> = self
+            .config
+            .providers
+            .iter()
             .filter(|(_, provider)| provider.enabled)
             .collect();
 
-        debug!("SmartAI health check for {} enabled providers", enabled_providers.len());
+        debug!(
+            "SmartAI health check for {} enabled providers",
+            enabled_providers.len()
+        );
 
         for (provider_id, provider) in enabled_providers {
-            self.check_provider_connectivity(provider_id, provider).await;
+            self.check_provider_connectivity(provider_id, provider)
+                .await;
         }
 
         Ok(())
@@ -67,7 +74,7 @@ impl SmartAiHealthChecker {
 
         // 1. 基础URL连通性检查
         let base_connectivity = self.check_base_connectivity(&provider.base_url).await;
-        
+
         // 2. Models API检查（通常免费）
         let models_api_ok = if base_connectivity {
             self.check_models_api(provider).await
@@ -80,8 +87,9 @@ impl SmartAiHealthChecker {
         // 更新所有模型的连通性状态
         for model in &provider.models {
             let backend_key = format!("{}:{}", provider_id, model);
-            self.metrics.update_smart_ai_connectivity(&backend_key, overall_connectivity);
-            
+            self.metrics
+                .update_smart_ai_connectivity(&backend_key, overall_connectivity);
+
             debug!(
                 "SmartAI connectivity for {}: base={}, models_api={}, overall={}",
                 backend_key, base_connectivity, models_api_ok, overall_connectivity
@@ -100,16 +108,21 @@ impl SmartAiHealthChecker {
     async fn check_base_connectivity(&self, base_url: &str) -> bool {
         debug!("Checking base connectivity for: {}", base_url);
 
-        match self.client
+        match self
+            .client
             .head(base_url)
             .timeout(Duration::from_secs(10))
             .send()
-            .await 
+            .await
         {
             Ok(response) => {
                 let success = response.status().is_success() || response.status().as_u16() == 404;
-                debug!("Base connectivity check for {}: status={}, success={}", 
-                       base_url, response.status(), success);
+                debug!(
+                    "Base connectivity check for {}: status={}, success={}",
+                    base_url,
+                    response.status(),
+                    success
+                );
                 success
             }
             Err(e) => {
@@ -125,11 +138,16 @@ impl SmartAiHealthChecker {
         debug!("Checking models API: {}", url);
 
         if provider.api_key.is_empty() {
-            debug!("Skipping models API check for {} (empty API key)", provider.base_url);
+            debug!(
+                "Skipping models API check for {} (empty API key)",
+                provider.base_url
+            );
             return false;
         }
 
-        let mut request = self.client.get(&url)
+        let mut request = self
+            .client
+            .get(&url)
             .header("Authorization", format!("Bearer {}", provider.api_key))
             .timeout(Duration::from_secs(15));
 
@@ -141,8 +159,12 @@ impl SmartAiHealthChecker {
         match request.send().await {
             Ok(response) => {
                 let success = response.status().is_success();
-                debug!("Models API check for {}: status={}, success={}", 
-                       url, response.status(), success);
+                debug!(
+                    "Models API check for {}: status={}, success={}",
+                    url,
+                    response.status(),
+                    success
+                );
                 success
             }
             Err(e) => {
@@ -162,7 +184,8 @@ impl SmartAiHealthChecker {
     pub async fn check_provider(&self, provider_id: &str) -> Result<()> {
         if let Some(provider) = self.config.providers.get(provider_id) {
             if provider.enabled {
-                self.check_provider_connectivity(provider_id, provider).await;
+                self.check_provider_connectivity(provider_id, provider)
+                    .await;
                 Ok(())
             } else {
                 anyhow::bail!("Provider '{}' is disabled", provider_id);

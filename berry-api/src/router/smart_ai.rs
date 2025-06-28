@@ -1,10 +1,10 @@
 use crate::app::AppState;
-use berry_core::config::model::LoadBalanceStrategy;
 use axum::{
     extract::{Path, Query, State},
     response::IntoResponse,
     Json,
 };
+use berry_core::config::model::LoadBalanceStrategy;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
@@ -125,19 +125,24 @@ pub async fn get_smart_ai_weights(
             &state,
             query.enabled_only,
             query.detailed,
-        ).await;
+        )
+        .await;
 
         models_info.push(model_info);
     }
 
     // 收集可用的模型名称（用于API使用提示）
-    let available_models: Vec<_> = config.models.iter()
+    let available_models: Vec<_> = config
+        .models
+        .iter()
         .filter(|(_, mapping)| mapping.strategy == LoadBalanceStrategy::SmartAi)
-        .map(|(key, mapping)| json!({
-            "key": key,
-            "name": mapping.name,
-            "enabled": mapping.enabled
-        }))
+        .map(|(key, mapping)| {
+            json!({
+                "key": key,
+                "name": mapping.name,
+                "enabled": mapping.enabled
+            })
+        })
         .collect();
 
     Json(json!({
@@ -187,7 +192,8 @@ pub async fn get_model_smart_ai_weights(
         &state,
         query.enabled_only,
         query.detailed,
-    ).await;
+    )
+    .await;
 
     Json(json!({
         "model": model_info,
@@ -220,11 +226,14 @@ async fn build_model_weight_info(
         }
 
         let backend_key = format!("{}:{}", backend.provider, backend.model);
-        let confidence = state.load_balancer.get_metrics().get_smart_ai_confidence(&backend_key);
-        
+        let confidence = state
+            .load_balancer
+            .get_metrics()
+            .get_smart_ai_confidence(&backend_key);
+
         // 计算有效权重（使用与selector.rs相同的逻辑）
         let effective_weight = calculate_effective_weight(backend, confidence);
-        
+
         let is_premium = backend.tags.contains(&"premium".to_string());
         if is_premium {
             premium_count += 1;
@@ -299,38 +308,36 @@ fn calculate_effective_weight(
     confidence: f64,
 ) -> f64 {
     let base_weight = backend.weight;
-    
+
     // 检查是否为premium后端
     let is_premium = backend.tags.contains(&"premium".to_string());
-    
+
     // 信心度到权重的映射
     let confidence_weight = match confidence {
-        c if c >= 0.8 => c,           // 高信心度：按比例
-        c if c >= 0.6 => c * 0.8,     // 中等信心度：适度降权
-        c if c >= 0.3 => c * 0.5,     // 低信心度：大幅降权
-        _ => 0.05,                    // 极低信心度：保留恢复机会
+        c if c >= 0.8 => c,       // 高信心度：按比例
+        c if c >= 0.6 => c * 0.8, // 中等信心度：适度降权
+        c if c >= 0.3 => c * 0.5, // 低信心度：大幅降权
+        _ => 0.05,                // 极低信心度：保留恢复机会
     };
-    
+
     // 只有非premium后端才能获得稳定性加成
-    let stability_bonus = if !is_premium && confidence > 0.9 { 
-        1.1  // 非premium后端稳定时给予10%加成
-    } else { 
-        1.0  // premium后端不给加成，凭原始权重竞争
+    let stability_bonus = if !is_premium && confidence > 0.9 {
+        1.1 // 非premium后端稳定时给予10%加成
+    } else {
+        1.0 // premium后端不给加成，凭原始权重竞争
     };
-    
+
     base_weight * confidence_weight * stability_bonus
 }
 
 /// 构建健康状态详情
-async fn build_health_details(
-    backend_key: &str,
-    state: &AppState,
-) -> Option<BackendHealthDetails> {
+async fn build_health_details(backend_key: &str, state: &AppState) -> Option<BackendHealthDetails> {
     let metrics = state.load_balancer.get_metrics();
 
     if let Some(health) = metrics.get_smart_ai_health_details(backend_key) {
         // 转换错误类型映射
-        let error_counts: HashMap<String, u32> = health.error_counts
+        let error_counts: HashMap<String, u32> = health
+            .error_counts
             .into_iter()
             .map(|(error_type, count)| (format!("{:?}", error_type), count))
             .collect();
@@ -339,12 +346,20 @@ async fn build_health_details(
             total_requests: health.total_requests,
             consecutive_successes: health.consecutive_successes,
             consecutive_failures: health.consecutive_failures,
-            last_request_time: Some(health.last_request_time.elapsed().as_secs().to_string() + " seconds ago"),
-            last_success_time: health.last_success_time.map(|t| t.elapsed().as_secs().to_string() + " seconds ago"),
-            last_failure_time: health.last_failure_time.map(|t| t.elapsed().as_secs().to_string() + " seconds ago"),
+            last_request_time: Some(
+                health.last_request_time.elapsed().as_secs().to_string() + " seconds ago",
+            ),
+            last_success_time: health
+                .last_success_time
+                .map(|t| t.elapsed().as_secs().to_string() + " seconds ago"),
+            last_failure_time: health
+                .last_failure_time
+                .map(|t| t.elapsed().as_secs().to_string() + " seconds ago"),
             error_counts,
             connectivity_ok: health.connectivity_ok,
-            last_connectivity_check: health.last_connectivity_check.map(|t| t.elapsed().as_secs().to_string() + " seconds ago"),
+            last_connectivity_check: health
+                .last_connectivity_check
+                .map(|t| t.elapsed().as_secs().to_string() + " seconds ago"),
         })
     } else {
         // 如果没有SmartAI健康数据，返回基本信息

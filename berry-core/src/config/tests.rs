@@ -81,7 +81,7 @@ mod tests {
     fn test_config_validation_empty_provider_name() {
         let mut config = create_test_config();
         config.providers.get_mut("test-provider").unwrap().name = "".to_string();
-        
+
         let result = config.validate();
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("empty name"));
@@ -91,7 +91,7 @@ mod tests {
     fn test_config_validation_empty_provider_base_url() {
         let mut config = create_test_config();
         config.providers.get_mut("test-provider").unwrap().base_url = "".to_string();
-        
+
         let result = config.validate();
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("empty base_url"));
@@ -101,7 +101,7 @@ mod tests {
     fn test_config_validation_empty_provider_api_key() {
         let mut config = create_test_config();
         config.providers.get_mut("test-provider").unwrap().api_key = "".to_string();
-        
+
         let result = config.validate();
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("empty api_key"));
@@ -111,17 +111,20 @@ mod tests {
     fn test_config_validation_no_provider_models() {
         let mut config = create_test_config();
         config.providers.get_mut("test-provider").unwrap().models = vec![];
-        
+
         let result = config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("no models defined"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("no models defined"));
     }
 
     #[test]
     fn test_config_validation_empty_model_name() {
         let mut config = create_test_config();
         config.models.get_mut("test-model").unwrap().name = "".to_string();
-        
+
         let result = config.validate();
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("empty name"));
@@ -131,27 +134,34 @@ mod tests {
     fn test_config_validation_no_model_backends() {
         let mut config = create_test_config();
         config.models.get_mut("test-model").unwrap().backends = vec![];
-        
+
         let result = config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("no backends defined"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("no backends defined"));
     }
 
     #[test]
     fn test_config_validation_invalid_backend_provider() {
         let mut config = create_test_config();
-        config.models.get_mut("test-model").unwrap().backends[0].provider = "nonexistent-provider".to_string();
-        
+        config.models.get_mut("test-model").unwrap().backends[0].provider =
+            "nonexistent-provider".to_string();
+
         let result = config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("references unknown provider"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("references unknown provider"));
     }
 
     #[test]
     fn test_config_validation_empty_user_name() {
         let mut config = create_test_config();
         config.users.get_mut("test-user").unwrap().name = "".to_string();
-        
+
         let result = config.validate();
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("empty name"));
@@ -161,7 +171,7 @@ mod tests {
     fn test_config_validation_empty_user_token() {
         let mut config = create_test_config();
         config.users.get_mut("test-user").unwrap().token = "".to_string();
-        
+
         let result = config.validate();
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("empty token"));
@@ -170,21 +180,25 @@ mod tests {
     #[test]
     fn test_config_validation_invalid_user_model() {
         let mut config = create_test_config();
-        config.users.get_mut("test-user").unwrap().allowed_models = vec!["nonexistent-model".to_string()];
-        
+        config.users.get_mut("test-user").unwrap().allowed_models =
+            vec!["nonexistent-model".to_string()];
+
         let result = config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("references unknown model"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("references unknown model"));
     }
 
     #[test]
     fn test_get_available_backends() {
         let config = create_test_config();
-        
+
         let backends = config.get_available_backends("test-model");
         assert!(backends.is_some());
         assert_eq!(backends.unwrap().len(), 1);
-        
+
         let no_backends = config.get_available_backends("nonexistent-model");
         assert!(no_backends.is_none());
     }
@@ -193,7 +207,7 @@ mod tests {
     fn test_get_available_backends_disabled_provider() {
         let mut config = create_test_config();
         config.providers.get_mut("test-provider").unwrap().enabled = false;
-        
+
         let backends = config.get_available_backends("test-model");
         assert!(backends.is_some());
         assert_eq!(backends.unwrap().len(), 0); // 应该过滤掉禁用的provider
@@ -203,7 +217,7 @@ mod tests {
     fn test_get_available_backends_disabled_backend() {
         let mut config = create_test_config();
         config.models.get_mut("test-model").unwrap().backends[0].enabled = false;
-        
+
         let backends = config.get_available_backends("test-model");
         assert!(backends.is_some());
         assert_eq!(backends.unwrap().len(), 0); // 应该过滤掉禁用的backend
@@ -212,11 +226,11 @@ mod tests {
     #[test]
     fn test_get_provider() {
         let config = create_test_config();
-        
+
         let provider = config.get_provider("test-provider");
         assert!(provider.is_some());
         assert_eq!(provider.unwrap().name, "Test Provider");
-        
+
         let no_provider = config.get_provider("nonexistent-provider");
         assert!(no_provider.is_none());
     }
@@ -224,11 +238,11 @@ mod tests {
     #[test]
     fn test_get_model() {
         let config = create_test_config();
-        
+
         let model = config.get_model("test-model");
         assert!(model.is_some());
         assert_eq!(model.unwrap().name, "test-model");
-        
+
         let no_model = config.get_model("nonexistent-model");
         assert!(no_model.is_none());
     }
@@ -236,7 +250,7 @@ mod tests {
     #[test]
     fn test_get_available_models() {
         let config = create_test_config();
-        
+
         let models = config.get_available_models();
         assert_eq!(models.len(), 1);
         assert!(models.contains(&"test-model".to_string()));
@@ -246,7 +260,7 @@ mod tests {
     fn test_get_available_models_disabled() {
         let mut config = create_test_config();
         config.models.get_mut("test-model").unwrap().enabled = false;
-        
+
         let models = config.get_available_models();
         assert_eq!(models.len(), 0); // 禁用的模型不应该出现在列表中
     }
@@ -254,7 +268,7 @@ mod tests {
     #[test]
     fn test_validate_user_token() {
         let config = create_test_config();
-        
+
         let user = config.validate_user_token("test-token-123456789");
         assert!(user.is_some());
         assert_eq!(user.unwrap().name, "Test User");
@@ -267,7 +281,7 @@ mod tests {
     fn test_validate_user_token_disabled_user() {
         let mut config = create_test_config();
         config.users.get_mut("test-user").unwrap().enabled = false;
-        
+
         let user = config.validate_user_token("test-token-123456789");
         assert!(user.is_none()); // 禁用的用户不应该通过验证
     }
@@ -291,16 +305,19 @@ mod tests {
     #[test]
     fn test_user_can_access_model_admin_user() {
         let mut config = create_test_config();
-        
+
         // 添加管理员用户（allowed_models为空）
-        config.users.insert("admin-user".to_string(), UserToken {
-            name: "Admin User".to_string(),
-            token: "admin-token-456789012".to_string(), // 增加长度到16+字符
-            allowed_models: vec![], // 空表示允许所有模型
-            enabled: true,
-            rate_limit: None,
-            tags: vec!["admin".to_string()],
-        });
+        config.users.insert(
+            "admin-user".to_string(),
+            UserToken {
+                name: "Admin User".to_string(),
+                token: "admin-token-456789012".to_string(), // 增加长度到16+字符
+                allowed_models: vec![],                     // 空表示允许所有模型
+                enabled: true,
+                rate_limit: None,
+                tags: vec!["admin".to_string()],
+            },
+        );
 
         let admin_user = config.validate_user_token("admin-token-456789012").unwrap();
         assert!(config.user_can_access_model(admin_user, "test-model"));
@@ -320,16 +337,19 @@ mod tests {
     #[test]
     fn test_get_user_available_models_admin() {
         let mut config = create_test_config();
-        
+
         // 添加管理员用户
-        config.users.insert("admin-user".to_string(), UserToken {
-            name: "Admin User".to_string(),
-            token: "admin-token-456789012".to_string(), // 增加长度到16+字符
-            allowed_models: vec![], // 空表示允许所有模型
-            enabled: true,
-            rate_limit: None,
-            tags: vec!["admin".to_string()],
-        });
+        config.users.insert(
+            "admin-user".to_string(),
+            UserToken {
+                name: "Admin User".to_string(),
+                token: "admin-token-456789012".to_string(), // 增加长度到16+字符
+                allowed_models: vec![],                     // 空表示允许所有模型
+                enabled: true,
+                rate_limit: None,
+                tags: vec!["admin".to_string()],
+            },
+        );
 
         let admin_user = config.validate_user_token("admin-token-456789012").unwrap();
         let models = config.get_user_available_models(admin_user);

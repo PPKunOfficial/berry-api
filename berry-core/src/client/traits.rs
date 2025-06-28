@@ -1,9 +1,9 @@
+use super::types::{ClientError, ClientResponse};
 use async_trait::async_trait;
 use reqwest::header::HeaderMap;
 use serde_json::{json, Value};
 use std::fmt;
 use std::time::Duration;
-use super::types::{ClientError, ClientResponse};
 
 /// 后端类型枚举
 #[derive(Debug, Clone, PartialEq)]
@@ -44,8 +44,6 @@ impl BackendType {
             BackendType::OpenAI
         }
     }
-
-
 }
 
 /// 聊天消息角色
@@ -90,41 +88,43 @@ pub struct ChatCompletionConfig {
 impl ChatCompletionConfig {
     /// 从JSON body创建配置
     pub fn from_json(body: &Value) -> Result<Self, ClientError> {
-        let model = body.get("model")
+        let model = body
+            .get("model")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| ClientError::HeaderParseError(
-                "Missing 'model' field".to_string()
-            ))?
+            .ok_or_else(|| ClientError::HeaderParseError("Missing 'model' field".to_string()))?
             .to_string();
 
-        let messages_json = body.get("messages")
+        let messages_json = body
+            .get("messages")
             .and_then(|v| v.as_array())
-            .ok_or_else(|| ClientError::HeaderParseError(
-                "Missing or invalid 'messages' field".to_string()
-            ))?;
+            .ok_or_else(|| {
+                ClientError::HeaderParseError("Missing or invalid 'messages' field".to_string())
+            })?;
 
         let mut messages = Vec::new();
         for msg in messages_json {
-            let role_str = msg.get("role")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| ClientError::HeaderParseError(
-                    "Missing 'role' field in message".to_string()
-                ))?;
-            
+            let role_str = msg.get("role").and_then(|v| v.as_str()).ok_or_else(|| {
+                ClientError::HeaderParseError("Missing 'role' field in message".to_string())
+            })?;
+
             let role = match role_str {
                 "system" => ChatRole::System,
                 "user" => ChatRole::User,
                 "assistant" => ChatRole::Assistant,
-                _ => return Err(ClientError::HeaderParseError(
-                    format!("Invalid role: {}", role_str)
-                )),
+                _ => {
+                    return Err(ClientError::HeaderParseError(format!(
+                        "Invalid role: {}",
+                        role_str
+                    )))
+                }
             };
 
-            let content = msg.get("content")
+            let content = msg
+                .get("content")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| ClientError::HeaderParseError(
-                    "Missing 'content' field in message".to_string()
-                ))?
+                .ok_or_else(|| {
+                    ClientError::HeaderParseError("Missing 'content' field in message".to_string())
+                })?
                 .to_string();
 
             messages.push(ChatMessage { role, content });
@@ -136,14 +136,30 @@ impl ChatCompletionConfig {
             model,
             messages,
             stream,
-            temperature: body.get("temperature").and_then(|v| v.as_f64()).map(|v| v as f32),
-            max_tokens: body.get("max_tokens").and_then(|v| v.as_u64()).map(|v| v as u32),
+            temperature: body
+                .get("temperature")
+                .and_then(|v| v.as_f64())
+                .map(|v| v as f32),
+            max_tokens: body
+                .get("max_tokens")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as u32),
             top_p: body.get("top_p").and_then(|v| v.as_f64()).map(|v| v as f32),
-            frequency_penalty: body.get("frequency_penalty").and_then(|v| v.as_f64()).map(|v| v as f32),
-            presence_penalty: body.get("presence_penalty").and_then(|v| v.as_f64()).map(|v| v as f32),
+            frequency_penalty: body
+                .get("frequency_penalty")
+                .and_then(|v| v.as_f64())
+                .map(|v| v as f32),
+            presence_penalty: body
+                .get("presence_penalty")
+                .and_then(|v| v.as_f64())
+                .map(|v| v as f32),
             stop: body.get("stop").and_then(|v| {
                 if let Some(arr) = v.as_array() {
-                    Some(arr.iter().filter_map(|s| s.as_str().map(|s| s.to_string())).collect())
+                    Some(
+                        arr.iter()
+                            .filter_map(|s| s.as_str().map(|s| s.to_string()))
+                            .collect(),
+                    )
                 } else if let Some(s) = v.as_str() {
                     Some(vec![s.to_string()])
                 } else {
@@ -155,12 +171,16 @@ impl ChatCompletionConfig {
 
     /// 转换为OpenAI格式的JSON
     pub fn to_openai_json(&self) -> Value {
-        let messages: Vec<Value> = self.messages.iter().map(|msg| {
-            json!({
-                "role": msg.role.as_str(),
-                "content": msg.content
+        let messages: Vec<Value> = self
+            .messages
+            .iter()
+            .map(|msg| {
+                json!({
+                    "role": msg.role.as_str(),
+                    "content": msg.content
+                })
             })
-        }).collect();
+            .collect();
 
         let mut json = json!({
             "model": self.model,

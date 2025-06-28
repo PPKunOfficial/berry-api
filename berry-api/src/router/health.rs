@@ -1,9 +1,5 @@
 use crate::app::AppState;
-use axum::{
-    extract::State,
-    response::IntoResponse,
-    Json,
-};
+use axum::{extract::State, response::IntoResponse, Json};
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -25,29 +21,35 @@ pub async fn detailed_health_check(State(state): State<AppState>) -> impl IntoRe
                 let latency = metrics.get_latency(provider_id, model);
                 let failure_count = metrics.get_failure_count(provider_id, model);
 
-                provider_models.insert(model.clone(), json!({
-                    "healthy": is_healthy,
-                    "latency_ms": latency.map(|l| l.as_millis()),
-                    "failure_count": failure_count,
-                    "backend_key": format!("{}:{}", provider_id, model)
-                }));
+                provider_models.insert(
+                    model.clone(),
+                    json!({
+                        "healthy": is_healthy,
+                        "latency_ms": latency.map(|l| l.as_millis()),
+                        "failure_count": failure_count,
+                        "backend_key": format!("{}:{}", provider_id, model)
+                    }),
+                );
 
                 if !is_healthy {
                     provider_healthy = false;
                 }
             }
 
-            providers_detail.insert(provider_id.clone(), json!({
-                "name": provider.name,
-                "base_url": provider.base_url,
-                "healthy": provider_healthy,
-                "enabled": provider.enabled,
-                "models": provider_models,
-                "total_models": provider.models.len(),
-                "healthy_models": provider.models.iter()
-                    .filter(|model| metrics.is_healthy(provider_id, model))
-                    .count()
-            }));
+            providers_detail.insert(
+                provider_id.clone(),
+                json!({
+                    "name": provider.name,
+                    "base_url": provider.base_url,
+                    "healthy": provider_healthy,
+                    "enabled": provider.enabled,
+                    "models": provider_models,
+                    "total_models": provider.models.len(),
+                    "healthy_models": provider.models.iter()
+                        .filter(|model| metrics.is_healthy(provider_id, model))
+                        .count()
+                }),
+            );
         }
     }
 
@@ -62,7 +64,8 @@ pub async fn detailed_health_check(State(state): State<AppState>) -> impl IntoRe
                 if backend.enabled {
                     let is_healthy = metrics.is_healthy(&backend.provider, &backend.model);
                     let latency = metrics.get_latency(&backend.provider, &backend.model);
-                    let failure_count = metrics.get_failure_count(&backend.provider, &backend.model);
+                    let failure_count =
+                        metrics.get_failure_count(&backend.provider, &backend.model);
 
                     if is_healthy {
                         healthy_backends += 1;
@@ -214,6 +217,6 @@ pub async fn simple_health_check(State(state): State<AppState>) -> impl IntoResp
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs()
-        }))
+        })),
     )
 }

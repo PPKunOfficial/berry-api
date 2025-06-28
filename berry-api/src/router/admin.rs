@@ -1,7 +1,7 @@
 use axum::{
     extract::{Query, State},
-    response::Json,
     http::StatusCode,
+    response::Json,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -49,9 +49,9 @@ pub async fn get_model_weights(
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let config = state.load_balancer.get_metrics();
     let app_config = &state.config;
-    
+
     let mut result = HashMap::new();
-    
+
     // 如果指定了特定模型
     if let Some(model_name) = &query.model {
         if let Some(model_mapping) = app_config.models.get(model_name) {
@@ -76,7 +76,7 @@ pub async fn get_model_weights(
             result.insert(model_key.clone(), model_weights);
         }
     }
-    
+
     Ok(Json(json!({
         "models": result,
         "timestamp": chrono::Utc::now().to_rfc3339(),
@@ -92,17 +92,17 @@ fn build_model_weights(
 ) -> ModelWeights {
     let mut backends = Vec::new();
     let mut total_effective_weight = 0.0;
-    
+
     for backend in &model_mapping.backends {
         let backend_key = format!("{}:{}", backend.provider, backend.model);
         let effective_weight = metrics.get_effective_weight(&backend_key, backend.weight);
         let is_healthy = metrics.is_healthy(&backend.provider, &backend.model);
         let failure_count = metrics.get_failure_count(&backend.provider, &backend.model);
-        
+
         if backend.enabled {
             total_effective_weight += effective_weight;
         }
-        
+
         backends.push(BackendWeight {
             provider: backend.provider.clone(),
             model: backend.model.clone(),
@@ -116,7 +116,7 @@ fn build_model_weights(
             failure_count,
         });
     }
-    
+
     ModelWeights {
         model_name: model_key.to_string(),
         display_name: model_mapping.name.clone(),
@@ -147,7 +147,7 @@ pub async fn get_rate_limit_usage(
             ));
         }
     };
-    
+
     match state.rate_limiter.get_usage(user_id).await {
         Some(usage) => Ok(Json(json!({
             "user_id": user_id,
@@ -167,28 +167,26 @@ pub async fn get_rate_limit_usage(
             },
             "timestamp": chrono::Utc::now().to_rfc3339(),
             "note": "No usage data found for this user"
-        })))
+        }))),
     }
 }
 
 /// 获取后端健康状态
-pub async fn get_backend_health(
-    State(state): State<AppState>,
-) -> Json<Value> {
+pub async fn get_backend_health(State(state): State<AppState>) -> Json<Value> {
     let metrics = state.load_balancer.get_metrics();
     let config = &state.config;
-    
+
     let mut backend_health = HashMap::new();
-    
+
     for (model_key, model_mapping) in &config.models {
         let mut model_backends = Vec::new();
-        
+
         for backend in &model_mapping.backends {
             let backend_key = format!("{}:{}", backend.provider, backend.model);
             let is_healthy = metrics.is_healthy(&backend.provider, &backend.model);
             let failure_count = metrics.get_failure_count(&backend.provider, &backend.model);
             let is_in_unhealthy_list = metrics.is_in_unhealthy_list(&backend_key);
-            
+
             model_backends.push(json!({
                 "provider": backend.provider,
                 "model": backend.model,
@@ -200,14 +198,17 @@ pub async fn get_backend_health(
                 "priority": backend.priority
             }));
         }
-        
-        backend_health.insert(model_key, json!({
-            "model_name": model_mapping.name,
-            "enabled": model_mapping.enabled,
-            "backends": model_backends
-        }));
+
+        backend_health.insert(
+            model_key,
+            json!({
+                "model_name": model_mapping.name,
+                "enabled": model_mapping.enabled,
+                "backends": model_backends
+            }),
+        );
     }
-    
+
     Json(json!({
         "backend_health": backend_health,
         "timestamp": chrono::Utc::now().to_rfc3339()
@@ -215,12 +216,10 @@ pub async fn get_backend_health(
 }
 
 /// 获取系统统计信息
-pub async fn get_system_stats(
-    State(state): State<AppState>,
-) -> Json<Value> {
+pub async fn get_system_stats(State(state): State<AppState>) -> Json<Value> {
     let service_health = state.load_balancer.get_service_health().await;
     let available_models = state.load_balancer.get_available_models();
-    
+
     Json(json!({
         "system": {
             "is_running": service_health.is_running,

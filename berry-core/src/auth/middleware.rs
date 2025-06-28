@@ -8,8 +8,8 @@ use axum::{
 use serde_json::json;
 use std::sync::Arc;
 
+use super::types::{AuthError, AuthenticatedUser};
 use crate::config::model::Config;
-use super::types::{AuthenticatedUser, AuthError};
 
 /// 认证中间件
 pub struct AuthMiddleware;
@@ -115,7 +115,10 @@ pub fn get_authenticated_user(request: &Request) -> Option<&AuthenticatedUser> {
 }
 
 /// 增强的认证检查函数，包含安全特性
-pub fn validate_request_token<'a>(config: &'a Config, token: &str) -> Result<&'a crate::config::model::UserToken, AuthError> {
+pub fn validate_request_token<'a>(
+    config: &'a Config,
+    token: &str,
+) -> Result<&'a crate::config::model::UserToken, AuthError> {
     use tracing::{debug, warn};
 
     // 检查token格式
@@ -139,15 +142,18 @@ pub fn validate_request_token<'a>(config: &'a Config, token: &str) -> Result<&'a
         Some(user) if user.enabled => {
             debug!("Token validation successful for user: {}", user.name);
             Ok(user)
-        },
+        }
         Some(user) => {
             warn!("Token validation failed: user '{}' is disabled", user.name);
             Err(AuthError::disabled_user())
-        },
+        }
         None => {
-            warn!("Token validation failed: invalid token (length: {})", token.len());
+            warn!(
+                "Token validation failed: invalid token (length: {})",
+                token.len()
+            );
             Err(AuthError::invalid_token())
-        },
+        }
     }
 }
 
@@ -161,91 +167,118 @@ pub fn validate_model_access_enhanced(
 
     // 检查模型名称格式
     if model_name.is_empty() {
-        warn!("Empty model name provided by user: {}", user.user_token.name);
+        warn!(
+            "Empty model name provided by user: {}",
+            user.user_token.name
+        );
         return Err(AuthError::model_access_denied(model_name));
     }
 
     // 检查模型是否存在且启用（通过模型名称查找）
-    let model_mapping = config.models.iter()
+    let model_mapping = config
+        .models
+        .iter()
         .find(|(_, model)| model.name == model_name && model.enabled);
 
     if model_mapping.is_none() {
-        warn!("User '{}' attempted to access non-existent or disabled model: {}", user.user_token.name, model_name);
+        warn!(
+            "User '{}' attempted to access non-existent or disabled model: {}",
+            user.user_token.name, model_name
+        );
         return Err(AuthError::model_access_denied(model_name));
     }
 
     // 检查用户是否有权限访问该模型
     if !config.user_can_access_model(&user.user_token, model_name) {
-        warn!("User '{}' denied access to model: {} (allowed models: {:?})",
-              user.user_token.name, model_name, user.user_token.allowed_models);
+        warn!(
+            "User '{}' denied access to model: {} (allowed models: {:?})",
+            user.user_token.name, model_name, user.user_token.allowed_models
+        );
         return Err(AuthError::model_access_denied(model_name));
     }
 
-    debug!("Model access granted for user '{}' to model '{}'", user.user_token.name, model_name);
+    debug!(
+        "Model access granted for user '{}' to model '{}'",
+        user.user_token.name, model_name
+    );
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::model::{UserToken, RateLimit, ModelMapping, Backend, BillingMode, LoadBalanceStrategy};
+    use crate::config::model::{
+        Backend, BillingMode, LoadBalanceStrategy, ModelMapping, RateLimit, UserToken,
+    };
     use std::collections::HashMap;
 
     fn create_test_config() -> Config {
         let mut users = HashMap::new();
-        users.insert("test-user".to_string(), UserToken {
-            name: "Test User".to_string(),
-            token: "test-token-123".to_string(),
-            allowed_models: vec!["gpt-4-model".to_string()], // 使用模型ID而不是模型名称
-            enabled: true,
-            rate_limit: Some(RateLimit {
-                requests_per_minute: 60,
-                requests_per_hour: 1000,
-                requests_per_day: 10000,
-            }),
-            tags: vec!["test".to_string()],
-        });
+        users.insert(
+            "test-user".to_string(),
+            UserToken {
+                name: "Test User".to_string(),
+                token: "test-token-123".to_string(),
+                allowed_models: vec!["gpt-4-model".to_string()], // 使用模型ID而不是模型名称
+                enabled: true,
+                rate_limit: Some(RateLimit {
+                    requests_per_minute: 60,
+                    requests_per_hour: 1000,
+                    requests_per_day: 10000,
+                }),
+                tags: vec!["test".to_string()],
+            },
+        );
 
-        users.insert("admin-user".to_string(), UserToken {
-            name: "Admin User".to_string(),
-            token: "admin-token-456".to_string(),
-            allowed_models: vec![], // 允许所有模型
-            enabled: true,
-            rate_limit: None,
-            tags: vec!["admin".to_string()],
-        });
+        users.insert(
+            "admin-user".to_string(),
+            UserToken {
+                name: "Admin User".to_string(),
+                token: "admin-token-456".to_string(),
+                allowed_models: vec![], // 允许所有模型
+                enabled: true,
+                rate_limit: None,
+                tags: vec!["admin".to_string()],
+            },
+        );
 
         // 创建测试模型配置
         let mut models = HashMap::new();
-        models.insert("gpt-4-model".to_string(), ModelMapping {
-            name: "gpt-4".to_string(), // 面向客户的模型名称
-            backends: vec![Backend {
-                provider: "test-provider".to_string(),
-                model: "gpt-4".to_string(),
-                weight: 1.0,
-                priority: 1,
+        models.insert(
+            "gpt-4-model".to_string(),
+            ModelMapping {
+                name: "gpt-4".to_string(), // 面向客户的模型名称
+                backends: vec![Backend {
+                    provider: "test-provider".to_string(),
+                    model: "gpt-4".to_string(),
+                    weight: 1.0,
+                    priority: 1,
+                    enabled: true,
+                    tags: vec![],
+                    billing_mode: BillingMode::PerToken,
+                }],
+                strategy: LoadBalanceStrategy::WeightedRandom,
                 enabled: true,
-                tags: vec![],
-                billing_mode: BillingMode::PerToken,
-            }],
-            strategy: LoadBalanceStrategy::WeightedRandom,
-            enabled: true,
-        });
+            },
+        );
 
-        models.insert("gpt-3.5-model".to_string(), ModelMapping {
-            name: "gpt-3.5-turbo".to_string(), // 面向客户的模型名称
-            backends: vec![Backend {
-                provider: "test-provider".to_string(),
-                model: "gpt-3.5-turbo".to_string(),
-                weight: 1.0,
-                priority: 1,
+        models.insert(
+            "gpt-3.5-model".to_string(),
+            ModelMapping {
+                name: "gpt-3.5-turbo".to_string(), // 面向客户的模型名称
+                backends: vec![Backend {
+                    provider: "test-provider".to_string(),
+                    model: "gpt-3.5-turbo".to_string(),
+                    weight: 1.0,
+                    priority: 1,
+                    enabled: true,
+                    tags: vec![],
+                    billing_mode: BillingMode::PerToken,
+                }],
+                strategy: LoadBalanceStrategy::WeightedRandom,
                 enabled: true,
-                tags: vec![],
-                billing_mode: BillingMode::PerToken,
-            }],
-            strategy: LoadBalanceStrategy::WeightedRandom,
-            enabled: true,
-        });
+            },
+        );
 
         Config {
             providers: HashMap::new(),
@@ -258,7 +291,7 @@ mod tests {
     #[test]
     fn test_validate_user_token() {
         let config = create_test_config();
-        
+
         // 测试有效令牌
         let user = config.validate_user_token("test-token-123");
         assert!(user.is_some());

@@ -1,13 +1,13 @@
-use berry_core::{Config, Backend};
-use super::{LoadBalanceManager, HealthChecker, MetricsCollector};
 use super::selector::{RequestResult as SmartAiRequestResult, SmartAiErrorType};
 use super::traits::{LoadBalancer, LoadBalancerMetrics};
+use super::{HealthChecker, LoadBalanceManager, MetricsCollector};
 use anyhow::Result;
 use async_trait::async_trait;
+use berry_core::{Backend, Config};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tracing::{info, error, debug, warn};
+use tracing::{debug, error, info, warn};
 
 /// 负载均衡服务
 /// 整合负载均衡管理器和健康检查器，提供统一的服务接口
@@ -26,10 +26,7 @@ impl LoadBalanceService {
 
         let manager = Arc::new(LoadBalanceManager::new(config.clone()));
         let metrics = manager.get_metrics();
-        let health_checker = Arc::new(HealthChecker::new(
-            manager.get_config(),
-            metrics.clone(),
-        ));
+        let health_checker = Arc::new(HealthChecker::new(manager.get_config(), metrics.clone()));
 
         Ok(Self {
             manager,
@@ -96,16 +93,24 @@ impl LoadBalanceService {
     }
 
     /// 直接选择指定的后端（用于调试和健康检查）
-    pub async fn select_specific_backend(&self, model_name: &str, provider_name: &str) -> Result<SelectedBackend> {
+    pub async fn select_specific_backend(
+        &self,
+        model_name: &str,
+        provider_name: &str,
+    ) -> Result<SelectedBackend> {
         let start_time = Instant::now();
 
-        debug!("Selecting specific backend for model: {} from provider: {}", model_name, provider_name);
+        debug!(
+            "Selecting specific backend for model: {} from provider: {}",
+            model_name, provider_name
+        );
 
         // 获取配置
         let config = self.manager.get_config();
 
         // 查找模型配置（支持键名和显示名称）
-        let (_found_key, model_mapping) = self.find_model_by_name(&config, model_name)
+        let (_found_key, model_mapping) = self
+            .find_model_by_name(&config, model_name)
             .ok_or_else(|| anyhow::anyhow!("Model '{}' not found", model_name))?;
 
         if !model_mapping.enabled {
@@ -113,16 +118,21 @@ impl LoadBalanceService {
         }
 
         // 查找指定的后端
-        let backend = model_mapping.backends.iter()
+        let backend = model_mapping
+            .backends
+            .iter()
             .find(|b| b.provider == provider_name && b.enabled)
-            .ok_or_else(|| anyhow::anyhow!(
-                "Backend '{}' not found or disabled for model '{}'",
-                provider_name,
-                model_name
-            ))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Backend '{}' not found or disabled for model '{}'",
+                    provider_name,
+                    model_name
+                )
+            })?;
 
         // 获取provider配置
-        let provider = config.get_provider(&backend.provider)
+        let provider = config
+            .get_provider(&backend.provider)
             .ok_or_else(|| anyhow::anyhow!("Provider '{}' not found", backend.provider))?;
 
         let selection_time = start_time.elapsed();
@@ -148,23 +158,45 @@ impl LoadBalanceService {
     }
 
     /// 为指定模型选择后端（支持用户标签过滤）
-    pub async fn select_backend_with_user_tags(&self, model_name: &str, user_tags: Option<&[String]>) -> Result<SelectedBackend> {
+    pub async fn select_backend_with_user_tags(
+        &self,
+        model_name: &str,
+        user_tags: Option<&[String]>,
+    ) -> Result<SelectedBackend> {
         let start_time = Instant::now();
         let max_retries = self.manager.get_config().settings.max_internal_retries;
 
-        debug!("Selecting backend for model: {} (max retries: {})", model_name, max_retries);
+        debug!(
+            "Selecting backend for model: {} (max retries: {})",
+            model_name, max_retries
+        );
 
         for attempt in 0..=max_retries {
-            debug!("Backend selection attempt {} for model '{}'", attempt + 1, model_name);
+            debug!(
+                "Backend selection attempt {} for model '{}'",
+                attempt + 1,
+                model_name
+            );
 
-            match self.manager.select_backend_with_user_tags(model_name, user_tags).await {
+            match self
+                .manager
+                .select_backend_with_user_tags(model_name, user_tags)
+                .await
+            {
                 Ok(backend) => {
-                    debug!("Load balancer selected backend: {}:{}", backend.provider, backend.model);
+                    debug!(
+                        "Load balancer selected backend: {}:{}",
+                        backend.provider, backend.model
+                    );
 
                     // 检查选中的backend是否健康
                     let is_healthy = self.metrics.is_healthy(&backend.provider, &backend.model);
-                    debug!("Health check for {}:{}: {}", backend.provider, backend.model,
-                           if is_healthy { "HEALTHY" } else { "UNHEALTHY" });
+                    debug!(
+                        "Health check for {}:{}: {}",
+                        backend.provider,
+                        backend.model,
+                        if is_healthy { "HEALTHY" } else { "UNHEALTHY" }
+                    );
 
                     if is_healthy {
                         let selection_time = start_time.elapsed();
@@ -179,31 +211,41 @@ impl LoadBalanceService {
 
                         // 获取provider配置
                         let config = self.manager.get_config();
-                        let provider = config
-                            .get_provider(&backend.provider)
-                            .ok_or_else(|| anyhow::anyhow!("Provider '{}' not found", backend.provider))?;
+                        let provider = config.get_provider(&backend.provider).ok_or_else(|| {
+                            anyhow::anyhow!("Provider '{}' not found", backend.provider)
+                        })?;
 
-                        debug!("Successfully resolved provider config for: {}", backend.provider);
+                        debug!(
+                            "Successfully resolved provider config for: {}",
+                            backend.provider
+                        );
                         return Ok(SelectedBackend {
                             backend,
                             provider: provider.clone(),
                             selection_time,
                         });
                     } else if attempt < max_retries {
-                        debug!("Selected backend {}:{} is unhealthy, retrying... (attempt {}/{})",
-                               backend.provider, backend.model, attempt + 1, max_retries + 1);
+                        debug!(
+                            "Selected backend {}:{} is unhealthy, retrying... (attempt {}/{})",
+                            backend.provider,
+                            backend.model,
+                            attempt + 1,
+                            max_retries + 1
+                        );
                         continue;
                     } else {
                         // 最后一次尝试，即使不健康也返回
-                        warn!("All retries exhausted, returning unhealthy backend {}:{}",
-                              backend.provider, backend.model);
+                        warn!(
+                            "All retries exhausted, returning unhealthy backend {}:{}",
+                            backend.provider, backend.model
+                        );
                         debug!("No more retry attempts available, using unhealthy backend as last resort");
 
                         let selection_time = start_time.elapsed();
                         let config = self.manager.get_config();
-                        let provider = config
-                            .get_provider(&backend.provider)
-                            .ok_or_else(|| anyhow::anyhow!("Provider '{}' not found", backend.provider))?;
+                        let provider = config.get_provider(&backend.provider).ok_or_else(|| {
+                            anyhow::anyhow!("Provider '{}' not found", backend.provider)
+                        })?;
 
                         return Ok(SelectedBackend {
                             backend,
@@ -215,8 +257,12 @@ impl LoadBalanceService {
                 Err(e) => {
                     debug!("Backend selection failed: {}", e);
                     if attempt < max_retries {
-                        debug!("Backend selection failed, retrying... (attempt {}/{}): {}",
-                               attempt + 1, max_retries + 1, e);
+                        debug!(
+                            "Backend selection failed, retrying... (attempt {}/{}): {}",
+                            attempt + 1,
+                            max_retries + 1,
+                            e
+                        );
                         continue;
                     } else {
                         // 最后一次尝试失败，提供详细的错误信息
@@ -228,7 +274,9 @@ impl LoadBalanceService {
                         );
 
                         // 检查是否是我们的详细错误类型
-                        if let Some(detailed_error) = e.downcast_ref::<crate::loadbalance::selector::BackendSelectionError>() {
+                        if let Some(detailed_error) =
+                            e.downcast_ref::<crate::loadbalance::selector::BackendSelectionError>()
+                        {
                             // 如果是详细错误，直接返回
                             return Err(anyhow::anyhow!(
                                 "Backend selection failed after {} internal retries for model '{}': {}. Total backends: {}, Enabled: {}, Healthy: {}. Please check backend health status or contact system administrator.",
@@ -277,11 +325,15 @@ impl LoadBalanceService {
             timestamp: Instant::now(),
         };
 
-        self.manager.record_smart_ai_request(provider, model, smart_ai_result);
+        self.manager
+            .record_smart_ai_request(provider, model, smart_ai_result);
 
         debug!(
             "Recorded SmartAI request for {}:{}: success={}, latency={}ms",
-            provider, model, success, latency.as_millis()
+            provider,
+            model,
+            success,
+            latency.as_millis()
         );
     }
 
@@ -291,12 +343,7 @@ impl LoadBalanceService {
     }
 
     /// 记录请求结果
-    pub async fn record_request_result(
-        &self,
-        provider: &str,
-        model: &str,
-        result: RequestResult,
-    ) {
+    pub async fn record_request_result(&self, provider: &str, model: &str, result: RequestResult) {
         // 首先检查是否需要记录SmartAI信心度
         let config = self.manager.get_config();
         let mut is_smart_ai_model = false;
@@ -308,7 +355,8 @@ impl LoadBalanceService {
             for backend in &model_mapping.backends {
                 if backend.provider == provider && backend.model == model {
                     backend_billing_mode = backend.billing_mode.clone();
-                    is_smart_ai_model = model_mapping.strategy == berry_core::LoadBalanceStrategy::SmartAi;
+                    is_smart_ai_model =
+                        model_mapping.strategy == berry_core::LoadBalanceStrategy::SmartAi;
                     found_backend = true;
                     break;
                 }
@@ -319,22 +367,24 @@ impl LoadBalanceService {
         }
 
         if !found_backend {
-            warn!("Backend configuration not found for {}:{}, using default per-token billing", provider, model);
+            warn!(
+                "Backend configuration not found for {}:{}, using default per-token billing",
+                provider, model
+            );
         }
 
         // 如果是SmartAI模型，记录SmartAI信心度
         if is_smart_ai_model {
             let smart_ai_result = match &result {
-                RequestResult::Success { latency } => {
-                    super::selector::RequestResult {
-                        success: true,
-                        latency: *latency,
-                        error_type: None,
-                        timestamp: std::time::Instant::now(),
-                    }
-                }
+                RequestResult::Success { latency } => super::selector::RequestResult {
+                    success: true,
+                    latency: *latency,
+                    error_type: None,
+                    timestamp: std::time::Instant::now(),
+                },
                 RequestResult::Failure { error } => {
-                    let error_type = LoadBalanceManager::classify_error(&anyhow::anyhow!("{}", error));
+                    let error_type =
+                        LoadBalanceManager::classify_error(&anyhow::anyhow!("{}", error));
                     super::selector::RequestResult {
                         success: false,
                         latency: std::time::Duration::from_millis(0),
@@ -345,7 +395,8 @@ impl LoadBalanceService {
             };
 
             let is_success = smart_ai_result.success;
-            self.manager.record_smart_ai_request(provider, model, smart_ai_result);
+            self.manager
+                .record_smart_ai_request(provider, model, smart_ai_result);
             debug!(
                 "Recorded SmartAI request for {}:{}: success={}",
                 provider, model, is_success
@@ -371,8 +422,11 @@ impl LoadBalanceService {
                         // 按请求计费：检查是否在不健康列表中
                         if self.metrics.is_in_unhealthy_list(&backend_key) {
                             // 不健康的按请求计费backend：使用被动验证
-                            self.metrics.record_passive_success(&backend_key,
-                                self.get_backend_original_weight(provider, model).unwrap_or(1.0));
+                            self.metrics.record_passive_success(
+                                &backend_key,
+                                self.get_backend_original_weight(provider, model)
+                                    .unwrap_or(1.0),
+                            );
                             debug!(
                                 "Recorded passive success for per-request backend {}:{} (weight recovery)",
                                 provider, model
@@ -394,17 +448,21 @@ impl LoadBalanceService {
                 self.manager.record_failure(provider, model);
                 debug!(
                     "Recorded failure for {}:{} with error: {}",
-                    provider,
-                    model,
-                    error
+                    provider, model, error
                 );
 
                 // 对于按请求计费的backend，失败时需要初始化权重恢复状态
                 if found_backend && backend_billing_mode == berry_core::BillingMode::PerRequest {
                     let backend_key = format!("{}:{}", provider, model);
-                    let original_weight = self.get_backend_original_weight(provider, model).unwrap_or(1.0);
-                    self.metrics.initialize_per_request_recovery(&backend_key, original_weight);
-                    debug!("Initialized per-request recovery for {}:{} with 10% weight", provider, model);
+                    let original_weight = self
+                        .get_backend_original_weight(provider, model)
+                        .unwrap_or(1.0);
+                    self.metrics
+                        .initialize_per_request_recovery(&backend_key, original_weight);
+                    debug!(
+                        "Initialized per-request recovery for {}:{} with 10% weight",
+                        provider, model
+                    );
                 }
             }
         }
@@ -435,8 +493,6 @@ impl LoadBalanceService {
         self.health_checker.check_now().await
     }
 
-    
-
     /// 获取指标收集器
     pub fn get_metrics(&self) -> Arc<MetricsCollector> {
         self.metrics.clone()
@@ -453,7 +509,10 @@ impl LoadBalanceService {
     }
 
     /// 获取模型权重信息（用于监控）
-    pub async fn get_model_weights(&self, model_name: &str) -> Result<std::collections::HashMap<String, f64>> {
+    pub async fn get_model_weights(
+        &self,
+        model_name: &str,
+    ) -> Result<std::collections::HashMap<String, f64>> {
         // 委托给manager来获取权重信息
         self.manager.get_model_weights(model_name).await
     }
@@ -507,7 +566,11 @@ pub struct SelectedBackend {
 impl SelectedBackend {
     /// 获取完整的API URL
     pub fn get_api_url(&self, endpoint: &str) -> String {
-        format!("{}/{}", self.provider.base_url.trim_end_matches('/'), endpoint.trim_start_matches('/'))
+        format!(
+            "{}/{}",
+            self.provider.base_url.trim_end_matches('/'),
+            endpoint.trim_start_matches('/')
+        )
     }
 
     /// 获取API密钥
@@ -552,8 +615,6 @@ impl ServiceHealth {
         self.is_running && self.health_summary.is_system_healthy()
     }
 
-
-
     /// 获取成功率
     pub fn success_rate(&self) -> f64 {
         if self.total_requests > 0 {
@@ -574,7 +635,7 @@ impl LoadBalancer for LoadBalanceService {
     async fn select_backend_with_user_tags(
         &self,
         model_name: &str,
-        user_tags: Option<&[String]>
+        user_tags: Option<&[String]>,
     ) -> Result<SelectedBackend> {
         LoadBalanceService::select_backend_with_user_tags(self, model_name, user_tags).await
     }
@@ -582,17 +643,12 @@ impl LoadBalancer for LoadBalanceService {
     async fn select_specific_backend(
         &self,
         model_name: &str,
-        provider_name: &str
+        provider_name: &str,
     ) -> Result<SelectedBackend> {
         LoadBalanceService::select_specific_backend(self, model_name, provider_name).await
     }
 
-    async fn record_request_result(
-        &self,
-        provider: &str,
-        model: &str,
-        result: RequestResult
-    ) {
+    async fn record_request_result(&self, provider: &str, model: &str, result: RequestResult) {
         LoadBalanceService::record_request_result(self, provider, model, result).await;
     }
 
@@ -608,8 +664,6 @@ impl LoadBalancer for LoadBalanceService {
         LoadBalanceService::trigger_health_check(self).await
     }
 
-    
-
     async fn is_running(&self) -> bool {
         LoadBalanceService::is_running(self).await
     }
@@ -618,11 +672,16 @@ impl LoadBalancer for LoadBalanceService {
         LoadBalanceService::get_cache_stats(self).await
     }
 
-    async fn get_model_weights(&self, model_name: &str) -> Result<std::collections::HashMap<String, f64>> {
+    async fn get_model_weights(
+        &self,
+        model_name: &str,
+    ) -> Result<std::collections::HashMap<String, f64>> {
         LoadBalanceService::get_model_weights(self, model_name).await
     }
 
-    async fn get_health_stats(&self) -> std::collections::HashMap<String, super::manager::HealthStats> {
+    async fn get_health_stats(
+        &self,
+    ) -> std::collections::HashMap<String, super::manager::HealthStats> {
         self.manager.get_health_stats().await
     }
 }
@@ -630,38 +689,44 @@ impl LoadBalancer for LoadBalanceService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use berry_core::{Provider, LoadBalanceStrategy, BillingMode, GlobalSettings};
+    use berry_core::{BillingMode, GlobalSettings, LoadBalanceStrategy, Provider};
     use std::collections::HashMap;
 
     fn create_test_config() -> Config {
         let mut providers = HashMap::new();
-        providers.insert("test-provider".to_string(), Provider {
-            name: "Test Provider".to_string(),
-            base_url: "https://api.test.com".to_string(),
-            api_key: "test-api-key".to_string(),
-            models: vec!["test-model".to_string()],
-            headers: HashMap::new(),
-            enabled: true,
-            timeout_seconds: 30,
-            max_retries: 3,
-            backend_type: berry_core::config::model::ProviderBackendType::OpenAI,
-        });
+        providers.insert(
+            "test-provider".to_string(),
+            Provider {
+                name: "Test Provider".to_string(),
+                base_url: "https://api.test.com".to_string(),
+                api_key: "test-api-key".to_string(),
+                models: vec!["test-model".to_string()],
+                headers: HashMap::new(),
+                enabled: true,
+                timeout_seconds: 30,
+                max_retries: 3,
+                backend_type: berry_core::config::model::ProviderBackendType::OpenAI,
+            },
+        );
 
         let mut models = HashMap::new();
-        models.insert("test-model".to_string(), berry_core::Model {
-            name: "test-model".to_string(),
-            backends: vec![Backend {
-                provider: "test-provider".to_string(),
-                model: "test-model".to_string(),
-                weight: 1.0,
-                priority: 1,
+        models.insert(
+            "test-model".to_string(),
+            berry_core::Model {
+                name: "test-model".to_string(),
+                backends: vec![Backend {
+                    provider: "test-provider".to_string(),
+                    model: "test-model".to_string(),
+                    weight: 1.0,
+                    priority: 1,
+                    enabled: true,
+                    tags: vec![],
+                    billing_mode: BillingMode::PerToken,
+                }],
+                strategy: LoadBalanceStrategy::WeightedRandom,
                 enabled: true,
-                tags: vec![],
-                billing_mode: BillingMode::PerToken,
-            }],
-            strategy: LoadBalanceStrategy::WeightedRandom,
-            enabled: true,
-        });
+            },
+        );
 
         Config {
             providers,
@@ -673,32 +738,36 @@ mod tests {
 
     #[tokio::test]
     async fn test_service_creation_and_start() {
-        unsafe { std::env::set_var("TEST_API_KEY", "test-key"); }
-        
+        unsafe {
+            std::env::set_var("TEST_API_KEY", "test-key");
+        }
+
         let config = create_test_config();
         let service = LoadBalanceService::new(config).unwrap();
-        
+
         assert!(!service.is_running().await);
-        
+
         service.start().await.unwrap();
         assert!(service.is_running().await);
-        
+
         service.stop().await;
         assert!(!service.is_running().await);
     }
 
     #[tokio::test]
     async fn test_backend_selection() {
-        unsafe { std::env::set_var("TEST_API_KEY", "test-key"); }
-        
+        unsafe {
+            std::env::set_var("TEST_API_KEY", "test-key");
+        }
+
         let config = create_test_config();
         let service = LoadBalanceService::new(config).unwrap();
         service.start().await.unwrap();
-        
+
         let selected = service.select_backend("test-model").await.unwrap();
         assert_eq!(selected.backend.provider, "test-provider");
         assert_eq!(selected.backend.model, "test-model");
-        
+
         service.stop().await;
     }
 }

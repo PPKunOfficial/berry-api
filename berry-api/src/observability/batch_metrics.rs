@@ -1,5 +1,8 @@
 use std::collections::HashMap;
-use std::sync::{Arc, atomic::{AtomicU64, Ordering}};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, Mutex};
 use tokio::time::interval;
@@ -93,7 +96,7 @@ impl BatchMetricsCollector {
     /// 创建新的批量指标收集器
     pub fn new(config: BatchMetricsConfig) -> Self {
         let (sender, receiver) = mpsc::unbounded_channel();
-        
+
         let collector = Self {
             sender,
             config: config.clone(),
@@ -106,7 +109,7 @@ impl BatchMetricsCollector {
 
         // 启动后台处理器
         collector.start_background_processor(receiver);
-        
+
         collector
     }
 
@@ -118,7 +121,7 @@ impl BatchMetricsCollector {
     /// 记录指标事件（非阻塞）
     pub fn record_event(&self, event: MetricEvent) {
         self.total_events.fetch_add(1, Ordering::Relaxed);
-        
+
         if self.sender.send(event).is_err() {
             self.dropped_events.fetch_add(1, Ordering::Relaxed);
             warn!("Failed to send metric event: channel closed");
@@ -126,7 +129,13 @@ impl BatchMetricsCollector {
     }
 
     /// 记录HTTP请求指标
-    pub fn record_http_request(&self, method: &str, path: &str, status_code: u16, duration: Duration) {
+    pub fn record_http_request(
+        &self,
+        method: &str,
+        path: &str,
+        status_code: u16,
+        duration: Duration,
+    ) {
         let event = MetricEvent::HttpRequest {
             method: method.to_string(),
             path: path.to_string(),
@@ -138,7 +147,14 @@ impl BatchMetricsCollector {
     }
 
     /// 记录后端请求指标
-    pub fn record_backend_request(&self, provider: &str, model: &str, success: bool, latency: Duration, error_type: Option<&str>) {
+    pub fn record_backend_request(
+        &self,
+        provider: &str,
+        model: &str,
+        success: bool,
+        latency: Duration,
+        error_type: Option<&str>,
+    ) {
         let event = MetricEvent::BackendRequest {
             provider: provider.to_string(),
             model: model.to_string(),
@@ -196,7 +212,7 @@ impl BatchMetricsCollector {
     /// 获取统计信息
     pub async fn get_stats(&self) -> BatchMetricsStats {
         let last_flush = *self.last_flush_time.lock().await;
-        
+
         BatchMetricsStats {
             total_events: self.total_events.load(Ordering::Relaxed),
             processed_events: self.processed_events.load(Ordering::Relaxed),
@@ -217,9 +233,11 @@ impl BatchMetricsCollector {
         tokio::spawn(async move {
             let mut buffer = Vec::with_capacity(config.batch_size);
             let mut flush_interval = interval(config.flush_interval);
-            
-            info!("Started batch metrics processor with batch_size={}, flush_interval={:?}", 
-                  config.batch_size, config.flush_interval);
+
+            info!(
+                "Started batch metrics processor with batch_size={}, flush_interval={:?}",
+                config.batch_size, config.flush_interval
+            );
 
             loop {
                 tokio::select! {
@@ -228,7 +246,7 @@ impl BatchMetricsCollector {
                         match event {
                             Some(event) => {
                                 buffer.push(event);
-                                
+
                                 // 如果缓冲区满了，立即刷新
                                 if buffer.len() >= config.batch_size {
                                     Self::flush_batch(&mut buffer, &processed_events, &batch_count, &last_flush_time).await;
@@ -244,7 +262,7 @@ impl BatchMetricsCollector {
                             }
                         }
                     }
-                    
+
                     // 定时刷新
                     _ = flush_interval.tick() => {
                         if !buffer.is_empty() {
@@ -275,8 +293,12 @@ impl BatchMetricsCollector {
             Ok(_) => {
                 processed_events.fetch_add(batch_size as u64, Ordering::Relaxed);
                 batch_count.fetch_add(1, Ordering::Relaxed);
-                
-                debug!("Processed batch of {} events in {:?}", batch_size, start_time.elapsed());
+
+                debug!(
+                    "Processed batch of {} events in {:?}",
+                    batch_size,
+                    start_time.elapsed()
+                );
             }
             Err(e) => {
                 error!("Failed to process batch of {} events: {}", batch_size, e);
@@ -285,16 +307,18 @@ impl BatchMetricsCollector {
 
         // 更新最后刷新时间
         *last_flush_time.lock().await = Instant::now();
-        
+
         // 清空缓冲区
         buffer.clear();
     }
 
     /// 处理批量数据
-    async fn process_batch(events: &[MetricEvent]) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn process_batch(
+        events: &[MetricEvent],
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // 这里可以集成实际的指标后端，如 Prometheus、InfluxDB 等
         // 目前只是记录日志作为示例
-        
+
         let mut http_requests = 0;
         let mut backend_requests = 0;
         let mut health_checks = 0;

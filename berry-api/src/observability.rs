@@ -1,21 +1,16 @@
 //! Observability module for Berry API
-//! 
+//!
 //! This module provides Prometheus metrics and monitoring capabilities.
 //! It's only available when the 'observability' feature is enabled.
 
 #[cfg(feature = "observability")]
 pub mod prometheus_metrics {
-    use axum::{
-        extract::State,
-        response::IntoResponse,
-        http::StatusCode,
-    };
-    use ::prometheus::{
-        CounterVec, HistogramVec, GaugeVec, Registry, TextEncoder,
-        HistogramOpts, Opts,
-    };
-    use std::sync::Arc;
     use crate::app::AppState;
+    use ::prometheus::{
+        CounterVec, GaugeVec, HistogramOpts, HistogramVec, Opts, Registry, TextEncoder,
+    };
+    use axum::{extract::State, http::StatusCode, response::IntoResponse};
+    use std::sync::Arc;
 
     /// Prometheus metrics collector
     #[derive(Clone)]
@@ -38,44 +33,62 @@ pub mod prometheus_metrics {
             let http_requests_total = CounterVec::new(
                 Opts::new("http_requests_total", "Total number of HTTP requests")
                     .namespace("berry_api"),
-                &["method", "endpoint", "status"]
+                &["method", "endpoint", "status"],
             )?;
 
             let http_request_duration_seconds = HistogramVec::new(
-                HistogramOpts::new("http_request_duration_seconds", "HTTP request duration in seconds")
-                    .namespace("berry_api"),
-                &["method", "endpoint"]
+                HistogramOpts::new(
+                    "http_request_duration_seconds",
+                    "HTTP request duration in seconds",
+                )
+                .namespace("berry_api"),
+                &["method", "endpoint"],
             )?;
 
             let http_requests_in_flight = GaugeVec::new(
-                Opts::new("http_requests_in_flight", "Number of HTTP requests currently being processed")
-                    .namespace("berry_api"),
-                &["method", "endpoint"]
+                Opts::new(
+                    "http_requests_in_flight",
+                    "Number of HTTP requests currently being processed",
+                )
+                .namespace("berry_api"),
+                &["method", "endpoint"],
             )?;
 
             // Backend metrics
             let backend_health_status = GaugeVec::new(
-                Opts::new("backend_health_status", "Health status of backends (1 = healthy, 0 = unhealthy)")
-                    .namespace("berry_api"),
-                &["backend"]
+                Opts::new(
+                    "backend_health_status",
+                    "Health status of backends (1 = healthy, 0 = unhealthy)",
+                )
+                .namespace("berry_api"),
+                &["backend"],
             )?;
 
             let backend_request_count_total = CounterVec::new(
-                Opts::new("backend_request_count_total", "Total number of requests sent to backends")
-                    .namespace("berry_api"),
-                &["backend"]
+                Opts::new(
+                    "backend_request_count_total",
+                    "Total number of requests sent to backends",
+                )
+                .namespace("berry_api"),
+                &["backend"],
             )?;
 
             let backend_error_count_total = CounterVec::new(
-                Opts::new("backend_error_count_total", "Total number of errors from backends")
-                    .namespace("berry_api"),
-                &["backend"]
+                Opts::new(
+                    "backend_error_count_total",
+                    "Total number of errors from backends",
+                )
+                .namespace("berry_api"),
+                &["backend"],
             )?;
 
             let backend_latency_seconds = HistogramVec::new(
-                HistogramOpts::new("backend_latency_seconds", "Backend response latency in seconds")
-                    .namespace("berry_api"),
-                &["backend"]
+                HistogramOpts::new(
+                    "backend_latency_seconds",
+                    "Backend response latency in seconds",
+                )
+                .namespace("berry_api"),
+                &["backend"],
             )?;
 
             // Register all metrics
@@ -232,9 +245,7 @@ pub mod prometheus_metrics {
     }
 
     /// Prometheus metrics endpoint handler
-    pub async fn prometheus_metrics_handler(
-        State(state): State<AppState>,
-    ) -> impl IntoResponse {
+    pub async fn prometheus_metrics_handler(State(state): State<AppState>) -> impl IntoResponse {
         if let Some(ref metrics) = state.prometheus_metrics {
             // Update metrics from current state
             metrics.update_from_load_balancer(&state).await;
@@ -242,40 +253,33 @@ pub mod prometheus_metrics {
             // Encode metrics
             let encoder = TextEncoder::new();
             let metric_families = metrics.registry.gather();
-            
+
             match encoder.encode_to_string(&metric_families) {
                 Ok(output) => (
                     StatusCode::OK,
                     [("content-type", "text/plain; version=0.0.4")],
-                    output
-                ).into_response(),
+                    output,
+                )
+                    .into_response(),
                 Err(e) => (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Failed to encode metrics: {}", e)
-                ).into_response(),
+                    format!("Failed to encode metrics: {}", e),
+                )
+                    .into_response(),
             }
         } else {
-            (
-                StatusCode::NOT_FOUND,
-                "Observability feature not enabled"
-            ).into_response()
+            (StatusCode::NOT_FOUND, "Observability feature not enabled").into_response()
         }
     }
 }
 
 #[cfg(not(feature = "observability"))]
 pub mod prometheus_metrics {
-    use axum::{
-        extract::State,
-        response::IntoResponse,
-        http::StatusCode,
-    };
     use crate::app::AppState;
+    use axum::{extract::State, http::StatusCode, response::IntoResponse};
 
     /// Placeholder for when observability is disabled
-    pub async fn prometheus_metrics_handler(
-        _state: State<AppState>,
-    ) -> impl IntoResponse {
+    pub async fn prometheus_metrics_handler(_state: State<AppState>) -> impl IntoResponse {
         (
             StatusCode::NOT_FOUND,
             "Observability feature not enabled. Compile with --features observability to enable Prometheus metrics."

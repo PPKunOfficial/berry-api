@@ -1,14 +1,14 @@
-use std::time::Duration;
+use super::claude::ClaudeClient;
+use super::gemini::GeminiClient;
+use super::openai::OpenAIClient;
+use super::registry::get_global_registry;
+use super::traits::{AIBackendClient, BackendType, ChatCompletionConfig};
+use super::types::{ClientError, ClientResponse};
+use crate::config::model::ProviderBackendType;
 use async_trait::async_trait;
 use reqwest::header::HeaderMap;
 use serde_json::Value;
-use super::traits::{AIBackendClient, BackendType, ChatCompletionConfig};
-use super::openai::OpenAIClient;
-use super::claude::ClaudeClient;
-use super::gemini::GeminiClient;
-use super::types::{ClientError, ClientResponse};
-use super::registry::get_global_registry;
-use crate::config::model::ProviderBackendType;
+use std::time::Duration;
 
 /// 统一的客户端枚举，包装不同类型的AI后端客户端
 #[derive(Clone)]
@@ -40,7 +40,9 @@ impl AIBackendClient for UnifiedClient {
         match self {
             UnifiedClient::OpenAI(client) => UnifiedClient::OpenAI(client.with_timeout(timeout)),
             UnifiedClient::Claude(client) => UnifiedClient::Claude(client.with_timeout(timeout)),
-            UnifiedClient::Gemini(client) => UnifiedClient::Gemini(GeminiClient::with_base_url_and_timeout(client.base_url().to_string(), timeout)),
+            UnifiedClient::Gemini(client) => UnifiedClient::Gemini(
+                GeminiClient::with_base_url_and_timeout(client.base_url().to_string(), timeout),
+            ),
         }
     }
 
@@ -50,9 +52,15 @@ impl AIBackendClient for UnifiedClient {
         content_type: &headers::ContentType,
     ) -> Result<HeaderMap, ClientError> {
         match self {
-            UnifiedClient::OpenAI(client) => client.build_request_headers(authorization, content_type),
-            UnifiedClient::Claude(client) => client.build_request_headers(authorization, content_type),
-            UnifiedClient::Gemini(client) => client.build_request_headers(authorization, content_type),
+            UnifiedClient::OpenAI(client) => {
+                client.build_request_headers(authorization, content_type)
+            }
+            UnifiedClient::Claude(client) => {
+                client.build_request_headers(authorization, content_type)
+            }
+            UnifiedClient::Gemini(client) => {
+                client.build_request_headers(authorization, content_type)
+            }
         }
     }
 
@@ -72,16 +80,14 @@ impl AIBackendClient for UnifiedClient {
         match self {
             UnifiedClient::OpenAI(client) => client.models(token).await,
             UnifiedClient::Claude(client) => client.models(token).await,
-            UnifiedClient::Gemini(client) => {
-                match client.models(token).await {
-                    Ok(response) => {
-                        let status = response.status().as_u16();
-                        let body = response.text().await.unwrap_or_default();
-                        Ok(ClientResponse::new(status, body))
-                    }
-                    Err(e) => Err(e),
+            UnifiedClient::Gemini(client) => match client.models(token).await {
+                Ok(response) => {
+                    let status = response.status().as_u16();
+                    let body = response.text().await.unwrap_or_default();
+                    Ok(ClientResponse::new(status, body))
                 }
-            }
+                Err(e) => Err(e),
+            },
         }
     }
 
@@ -89,12 +95,10 @@ impl AIBackendClient for UnifiedClient {
         match self {
             UnifiedClient::OpenAI(client) => client.health_check(token).await,
             UnifiedClient::Claude(client) => client.health_check(token).await,
-            UnifiedClient::Gemini(client) => {
-                match client.models(token).await {
-                    Ok(response) => Ok(response.status().is_success()),
-                    Err(_) => Ok(false),
-                }
-            }
+            UnifiedClient::Gemini(client) => match client.models(token).await {
+                Ok(response) => Ok(response.status().is_success()),
+                Err(_) => Ok(false),
+            },
         }
     }
 
@@ -166,7 +170,9 @@ impl ClientFactory {
     }
 
     /// 根据后端类型和配置创建客户端（兼容旧接口）
-    #[deprecated(note = "Use create_client_from_provider_type instead for better type safety and plugin support")]
+    #[deprecated(
+        note = "Use create_client_from_provider_type instead for better type safety and plugin support"
+    )]
     pub fn create_client(
         backend_type: BackendType,
         base_url: String,
@@ -183,7 +189,9 @@ impl ClientFactory {
     }
 
     /// 从base_url自动推断后端类型并创建客户端（已废弃，建议使用create_client_from_provider_type）
-    #[deprecated(note = "Use create_client_from_provider_type instead to avoid hardcoded URL inference")]
+    #[deprecated(
+        note = "Use create_client_from_provider_type instead to avoid hardcoded URL inference"
+    )]
     pub fn create_client_from_url(
         base_url: String,
         timeout: Duration,
@@ -199,26 +207,17 @@ impl ClientFactory {
     }
 
     /// 创建OpenAI客户端
-    pub fn create_openai_client(
-        base_url: String,
-        timeout: Duration,
-    ) -> OpenAIClient {
+    pub fn create_openai_client(base_url: String, timeout: Duration) -> OpenAIClient {
         OpenAIClient::with_base_url_and_timeout(base_url, timeout)
     }
 
     /// 创建Claude客户端
-    pub fn create_claude_client(
-        base_url: String,
-        timeout: Duration,
-    ) -> ClaudeClient {
+    pub fn create_claude_client(base_url: String, timeout: Duration) -> ClaudeClient {
         ClaudeClient::with_base_url_and_timeout(base_url, timeout)
     }
 
     /// 创建Gemini客户端
-    pub fn create_gemini_client(
-        base_url: String,
-        timeout: Duration,
-    ) -> GeminiClient {
+    pub fn create_gemini_client(base_url: String, timeout: Duration) -> GeminiClient {
         GeminiClient::with_base_url_and_timeout(base_url, timeout)
     }
 }

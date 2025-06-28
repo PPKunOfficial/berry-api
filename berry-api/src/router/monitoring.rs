@@ -1,29 +1,23 @@
-use axum::{
-    extract::State,
-    response::Json,
-    http::StatusCode,
-};
-use serde_json::{json, Value};
 use crate::app::AppState;
+use axum::{extract::State, http::StatusCode, response::Json};
+use serde_json::{json, Value};
 
 /// 获取系统监控信息
-pub async fn get_monitoring_info(
-    State(state): State<AppState>,
-) -> Result<Json<Value>, StatusCode> {
+pub async fn get_monitoring_info(State(state): State<AppState>) -> Result<Json<Value>, StatusCode> {
     // 获取负载均衡服务健康状态
     let service_health = state.load_balancer.get_service_health().await;
-    
+
     // 获取缓存统计
     let cache_stats = state.load_balancer.get_cache_stats().await;
-    
+
     // 获取批量指标统计
     let batch_metrics_stats = state.batch_metrics.get_stats().await;
-    
+
     // 获取指标收集器统计
     let metrics_collector = state.load_balancer.get_metrics();
     let total_requests = metrics_collector.get_total_requests();
     let successful_requests = metrics_collector.get_successful_requests();
-    
+
     let response = json!({
         "status": "ok",
         "timestamp": chrono::Utc::now().to_rfc3339(),
@@ -68,20 +62,18 @@ pub async fn get_monitoring_info(
             "is_system_healthy": service_health.health_summary.is_system_healthy(),
         }
     });
-    
+
     Ok(Json(response))
 }
 
 /// 获取模型权重信息
-pub async fn get_model_weights(
-    State(state): State<AppState>,
-) -> Result<Json<Value>, StatusCode> {
+pub async fn get_model_weights(State(state): State<AppState>) -> Result<Json<Value>, StatusCode> {
     let config = &state.config;
     let mut models_info = Vec::new();
-    
+
     for (model_key, model_mapping) in &config.models {
         let mut backends_info = Vec::new();
-        
+
         for backend in &model_mapping.backends {
             backends_info.push(json!({
                 "provider": backend.provider,
@@ -93,7 +85,7 @@ pub async fn get_model_weights(
                 "billing_mode": backend.billing_mode,
             }));
         }
-        
+
         models_info.push(json!({
             "model_key": model_key,
             "model_name": model_mapping.name,
@@ -102,30 +94,28 @@ pub async fn get_model_weights(
             "backends": backends_info,
         }));
     }
-    
+
     let response = json!({
         "status": "ok",
         "timestamp": chrono::Utc::now().to_rfc3339(),
         "models": models_info,
     });
-    
+
     Ok(Json(response))
 }
 
 /// 清空缓存
-pub async fn clear_cache(
-    State(_state): State<AppState>,
-) -> Result<Json<Value>, StatusCode> {
+pub async fn clear_cache(State(_state): State<AppState>) -> Result<Json<Value>, StatusCode> {
     // 清空负载均衡缓存
     // 注意：这里需要遍历所有选择器来清空缓存
     // 由于架构限制，我们暂时返回成功状态
-    
+
     let response = json!({
         "status": "ok",
         "message": "Cache clear request received",
         "timestamp": chrono::Utc::now().to_rfc3339(),
     });
-    
+
     Ok(Json(response))
 }
 
@@ -135,26 +125,28 @@ pub async fn get_performance_metrics(
 ) -> Result<Json<Value>, StatusCode> {
     let metrics_collector = state.load_balancer.get_metrics();
     let service_health = state.load_balancer.get_service_health().await;
-    
+
     // 获取所有后端的详细指标
     let mut backend_metrics = Vec::new();
-    
+
     for model_key in service_health.model_stats.keys() {
         let config = &state.config;
-        
+
         // 查找对应的模型配置
         for (config_model_key, model_mapping) in &config.models {
             if config_model_key == model_key {
                 for backend in &model_mapping.backends {
                     let backend_key = format!("{}:{}", backend.provider, backend.model);
-                    
+
                     // 获取该后端的详细指标
                     let request_count = metrics_collector.get_backend_request_count(&backend_key);
-                    let failure_count = metrics_collector.get_failure_count(&backend.provider, &backend.model);
+                    let failure_count =
+                        metrics_collector.get_failure_count(&backend.provider, &backend.model);
                     let success_count = request_count.saturating_sub(failure_count as u64);
                     let latency = metrics_collector.get_latency(&backend.provider, &backend.model);
-                    let is_healthy = metrics_collector.is_healthy(&backend.provider, &backend.model);
-                    
+                    let is_healthy =
+                        metrics_collector.is_healthy(&backend.provider, &backend.model);
+
                     backend_metrics.push(json!({
                         "backend_key": backend_key,
                         "provider": backend.provider,
@@ -180,7 +172,7 @@ pub async fn get_performance_metrics(
             }
         }
     }
-    
+
     let response = json!({
         "status": "ok",
         "timestamp": chrono::Utc::now().to_rfc3339(),
@@ -192,22 +184,20 @@ pub async fn get_performance_metrics(
         },
         "backends": backend_metrics,
     });
-    
+
     Ok(Json(response))
 }
 
 /// 健康检查端点
-pub async fn health_check(
-    State(state): State<AppState>,
-) -> Result<Json<Value>, StatusCode> {
+pub async fn health_check(State(state): State<AppState>) -> Result<Json<Value>, StatusCode> {
     let service_health = state.load_balancer.get_service_health().await;
-    
+
     let status_code = if service_health.is_healthy() {
         StatusCode::OK
     } else {
         StatusCode::SERVICE_UNAVAILABLE
     };
-    
+
     let response = json!({
         "status": if service_health.is_healthy() { "healthy" } else { "unhealthy" },
         "timestamp": chrono::Utc::now().to_rfc3339(),
@@ -216,7 +206,7 @@ pub async fn health_check(
         "total_providers": service_health.health_summary.total_providers,
         "success_rate": service_health.success_rate(),
     });
-    
+
     match status_code {
         StatusCode::OK => Ok(Json(response)),
         _ => Err(status_code),

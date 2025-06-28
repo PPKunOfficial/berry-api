@@ -1,8 +1,8 @@
+use crate::router::routes::create_app_router;
+use berry_core::auth::rate_limit::RateLimitService;
 use berry_core::config::loader::load_config;
 use berry_loadbalance::LoadBalanceService;
 use berry_relay::relay::handler::loadbalanced::ConcreteLoadBalancedHandler;
-use crate::router::routes::create_app_router;
-use berry_core::auth::rate_limit::RateLimitService;
 
 use anyhow::Result;
 use axum::Router;
@@ -40,29 +40,34 @@ impl AppState {
         info!("Load balance service started");
 
         // 创建负载均衡处理器
-        let handler = Arc::new(ConcreteLoadBalancedHandler::new_with_service(load_balancer.clone()));
+        let handler = Arc::new(ConcreteLoadBalancedHandler::new_with_service(
+            load_balancer.clone(),
+        ));
 
         // 创建速率限制服务
         let rate_limiter = Arc::new(RateLimitService::new());
 
         // 创建Prometheus metrics (如果启用了observability功能)
         #[cfg(feature = "observability")]
-        let prometheus_metrics = match crate::observability::prometheus_metrics::PrometheusMetrics::new() {
-            Ok(metrics) => {
-                info!("Prometheus metrics initialized");
-                Some(metrics)
-            }
-            Err(e) => {
-                error!("Failed to initialize Prometheus metrics: {}", e);
-                None
-            }
-        };
+        let prometheus_metrics =
+            match crate::observability::prometheus_metrics::PrometheusMetrics::new() {
+                Ok(metrics) => {
+                    info!("Prometheus metrics initialized");
+                    Some(metrics)
+                }
+                Err(e) => {
+                    error!("Failed to initialize Prometheus metrics: {}", e);
+                    None
+                }
+            };
 
         #[cfg(not(feature = "observability"))]
         let prometheus_metrics = None;
 
         // 创建批量指标收集器
-        let batch_metrics = Arc::new(crate::observability::batch_metrics::BatchMetricsCollector::with_default_config());
+        let batch_metrics = Arc::new(
+            crate::observability::batch_metrics::BatchMetricsCollector::with_default_config(),
+        );
         info!("Batch metrics collector initialized");
 
         let app_state = Self {

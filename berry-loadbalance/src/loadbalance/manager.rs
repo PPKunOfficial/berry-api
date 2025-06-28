@@ -142,8 +142,6 @@ impl LoadBalanceManager {
             .update_smart_ai_connectivity(&backend_key, connectivity_ok);
     }
 
-    
-
     /// 获取模型的健康状态统计
     pub async fn get_health_stats(&self) -> HashMap<String, HealthStats> {
         let mut stats = HashMap::new();

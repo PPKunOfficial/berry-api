@@ -1,5 +1,5 @@
 //! Berry API Server
-//! 
+//!
 //! Main entry point for the Berry API load balancing service
 
 use berry_api::start_server;
