@@ -13,7 +13,7 @@ description = "Allowlist for common placeholder keys and example values."
 # 正则表达式列表，匹配到这些模式的字符串将被忽略。
 # 注意：这里的正则表达式是 Go 语言的 RE2 语法。
 # 我们使用 ''' 三引号来包含字符串，这样可以避免转义特殊字符。
-regex = [
+regexes = [
     '''your-api-key''',
     '''example-api-key''',
     '''dummy-api-key''',
