@@ -175,11 +175,12 @@ pub async fn start_server() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::Result;
     use axum::http::StatusCode;
     use axum_test::TestServer;
 
     #[tokio::test]
-    async fn test_health_endpoint() {
+    async fn test_health_endpoint() -> Result<()> {
         // 注意：这个测试需要有效的配置文件
         // 在实际测试中，你可能需要使用模拟的配置
 
@@ -192,7 +193,7 @@ mod tests {
         // 在实际项目中，应该使用模拟的服务
         if let Ok(app_state) = AppState::new().await {
             let app = create_app(app_state);
-            let server = TestServer::new(app).unwrap();
+            let server = TestServer::new(app)?;
 
             let response = server.get("/health").await;
             assert!(
@@ -200,19 +201,21 @@ mod tests {
                     || response.status_code() == StatusCode::SERVICE_UNAVAILABLE
             );
         }
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_index_endpoint() {
+    async fn test_index_endpoint() -> Result<()> {
         use crate::router::routes::index;
         use axum::routing::get;
 
         // 创建一个简单的测试，不需要真实的配置
         let app = Router::new().route("/", get(index));
-        let server = TestServer::new(app).unwrap();
+        let server = TestServer::new(app)?;
 
         let response = server.get("/").await;
         assert_eq!(response.status_code(), StatusCode::OK);
         assert_eq!(response.text(), "Berry API - Load Balanced AI Gateway");
+        Ok(())
     }
 }
