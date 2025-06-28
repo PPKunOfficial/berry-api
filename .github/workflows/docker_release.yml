@@ -21,6 +21,16 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
+      - name: 安装交叉编译工具链
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: 设置交叉编译环境变量
+        run: |
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+
       - name: Rust Cache
         uses: actions/cache@v4
         with:
@@ -45,8 +55,17 @@ jobs:
           cargo build --bin berry-api --release --target x86_64-unknown-linux-gnu
           cargo build --bin berry-api --release --target aarch64-unknown-linux-gnu
 
+          # 复制二进制文件到 Dockerfile 期望的路径
+          mkdir -p target/amd64/release
+          cp target/x86_64-unknown-linux-gnu/release/berry-api target/amd64/release/berry-api
+
+          mkdir -p target/arm64/release
+          cp target/aarch64-unknown-linux-gnu/release/berry-api target/arm64/release/berry-api
+
           ls -la target/x86_64-unknown-linux-gnu/release/
           ls -la target/aarch64-unknown-linux-gnu/release/
+          ls -la target/amd64/release/
+          ls -la target/arm64/release/
 
       - name: 准备 Linux Release 文件
         id: prepare_linux_assets
