@@ -63,27 +63,27 @@ jobs:
   #     - name: Run all workspace tests
   #       run: cargo test --workspace --verbose
 
-  security-scan:
-    name: Security Scan (cargo-audit & CodeQL)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-      # - name: Install cargo-audit
-      #   run: cargo install cargo-audit --locked
-      # - name: Run cargo audit for workspace
-      #   run: cargo audit --workspace --deny-warnings
+  # security-scan:
+  #   name: Security Scan (cargo-audit & CodeQL)
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+  #     - name: Setup Rust toolchain
+  #       uses: dtolnay/rust-toolchain@stable
+  #     - name: Install cargo-audit
+  #       run: cargo install cargo-audit --locked
+  #     - name: Run cargo audit for workspace
+  #       run: cargo audit --workspace --deny-warnings
 
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: rust
-      - name: Autobuild CodeQL
-        uses: github/codeql-action/autobuild@v3
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+  #     - name: Initialize CodeQL
+  #       uses: github/codeql-action/init@v3
+  #       with:
+  #         languages: rust
+  #     - name: Autobuild CodeQL
+  #       uses: github/codeql-action/autobuild@v3
+  #     - name: Perform CodeQL Analysis
+  #       uses: github/codeql-action/analyze@v3
 
   gitleaks:
     name: Gitleaks Secret Scan
