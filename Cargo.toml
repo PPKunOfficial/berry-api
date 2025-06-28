@@ -5,7 +5,7 @@ members = [
     "berry-loadbalance",
     "berry-relay",
     "berry-api",
-    "berry-cli"
+    "berry-cli",
 ]
 
 [workspace.dependencies]
@@ -53,8 +53,6 @@ axum-prometheus = "0.8"
 
 # 构建依赖
 vergen-git2 = { version = "1.0", features = ["build", "cargo", "rustc", "si"] }
-
-
 
 [workspace.lints.clippy]
 unwrap_used = "deny"
