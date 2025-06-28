@@ -5,12 +5,15 @@
 
 # 使用 Google 的 Distroless 镜像，它极小且安全，不包含 shell 和包管理器
 FROM gcr.io/distroless/cc-debian12
+ARG TARGETARCH
 
 # 设置工作目录
 WORKDIR /app
 
 # 从宿主机复制预编译的二进制文件
-COPY ./docker-binaries/berry-api /usr/local/bin/berry-api
+# 注意：这里假设你的 GitHub Actions 会将对应架构的二进制文件放置在
+# 构建上下文的 target/<TARGETARCH>/release/ 目录下
+COPY target/${TARGETARCH}/release/berry-api /usr/local/bin/berry-api
 
 # 暴露端口
 EXPOSE 3000

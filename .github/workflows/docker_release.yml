@@ -20,6 +20,16 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
+        
+      - name: 安装交叉编译工具链
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: 设置交叉编译环境变量
+        run: |
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
 
       - name: Rust Cache
         uses: actions/cache@v4
@@ -45,8 +55,19 @@ jobs:
           cargo build --bin berry-api --release --target x86_64-unknown-linux-gnu
           cargo build --bin berry-api --release --target aarch64-unknown-linux-gnu
 
-          ls -la target/x86_64-unknown-linux-gnu/release/
-          ls -la target/aarch64-unknown-linux-gnu/release/
+          # 创建 Docker 构建上下文目录
+          mkdir -p docker_build_context/target/amd64/release
+          mkdir -p docker_build_context/target/arm64/release
+
+          # 复制 Dockerfile 到构建上下文
+          cp Dockerfile.prebuilt docker_build_context/
+
+          # 复制二进制文件到 Docker 构建上下文期望的路径
+          cp target/x86_64-unknown-linux-gnu/release/berry-api docker_build_context/target/amd64/release/berry-api
+          cp target/aarch64-unknown-linux-gnu/release/berry-api docker_build_context/target/arm64/release/berry-api
+
+          ls -la docker_build_context/target/amd64/release/
+          ls -la docker_build_context/target/arm64/release/
 
       - name: 准备 Linux Release 文件
         id: prepare_linux_assets
@@ -85,8 +106,8 @@ jobs:
       - name: 构建并推送 Docker 镜像
         uses: docker/build-push-action@v5
         with:
-          context: .
-          file: ./Dockerfile.prebuilt
+          context: ./docker_build_context
+          file: ./docker_build_context/Dockerfile.prebuilt
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
