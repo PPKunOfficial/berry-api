@@ -13,4 +13,7 @@ pub use loadbalance::{
     BackendSelector, HealthChecker, HealthStats, HealthSummary, LoadBalanceManager,
     LoadBalanceService, MetricsCollector, RequestResult, SelectedBackend, ServiceHealth,
     SmartAiHealthChecker,
+    // 新的路由选择器相关类型
+    LoadBalanceRouteSelector, RouteSelector, SelectedRoute, RouteResult, RouteStats,
+    RouteSelectionError, RouteErrorType, RouteDetail, FailedRouteAttempt,
 };
