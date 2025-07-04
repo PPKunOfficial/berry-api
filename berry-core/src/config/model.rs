@@ -307,21 +307,13 @@ fn default_smart_ai_timeout_penalty() -> f64 {
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum LoadBalanceStrategy {
-    WeightedRandom,
-    RoundRobin,
-    LeastLatency,
-    Failover,
-    Random,
-    WeightedFailover,
-    /// 智能权重恢复策略 - 支持按请求计费的渐进式权重恢复
-    SmartWeightedFailover,
     /// 智能AI负载均衡 - 基于客户流量的小流量健康检查，成本感知
     SmartAi,
 }
 
 impl Default for LoadBalanceStrategy {
     fn default() -> Self {
-        Self::WeightedRandom
+        Self::SmartAi
     }
 }
 

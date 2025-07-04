@@ -159,10 +159,10 @@ backend_type = "openai"
 
 # ===== 模型映射配置 =====
 
-# GPT-4 模型 - 使用加权故障转移策略
+# GPT-4 模型 - 使用SmartAI策略
 [models.gpt_4]
 name = "gpt-4"
-strategy = "weighted_failover"           # 负载均衡策略
+strategy = "smart_ai"                    # 智能AI负载均衡策略
 enabled = true
 
 # 主要后端：OpenAI主账户
@@ -195,10 +195,10 @@ enabled = true
 billing_mode = "per_token"
 tags = ["backup"]
 
-# GPT-3.5-Turbo 模型 - 使用轮询策略
+# GPT-3.5-Turbo 模型 - 使用SmartAI策略
 [models.gpt_3_5_turbo]
 name = "gpt-3.5-turbo"
-strategy = "round_robin"
+strategy = "smart_ai"
 enabled = true
 
 [[models.gpt_3_5_turbo.backends]]
@@ -243,10 +243,10 @@ enabled = true
 billing_mode = "per_token"
 tags = ["premium", "official"]
 
-# 混合模型 - 使用最低延迟策略
+# 混合模型 - 使用SmartAI策略
 [models.fast_chat]
 name = "fast-chat"
-strategy = "least_latency"
+strategy = "smart_ai"
 enabled = true
 
 [[models.fast_chat.backends]]
@@ -289,10 +289,10 @@ enabled = true
 billing_mode = "per_token"
 tags = ["premium"]                      # premium后端
 
-# 高可用模型 - 使用故障转移策略
+# 高可用模型 - 使用SmartAI策略
 [models.high_availability]
 name = "ha-gpt-4"
-strategy = "failover"
+strategy = "smart_ai"
 enabled = true
 
 [[models.high_availability.backends]]
