@@ -23,6 +23,10 @@ Berry API 是一个高性能、生产就绪的AI服务负载均衡网关，专�
 - **[⚙️ 配置指南](docs/configuration.md)**: 详细的配置文件结构和参数说明。
 - **[🔌 API 使用指南](docs/api-guide.md)**: 兼容OpenAI API的接口使用说明。
 - **[⚖️ 负载均衡策略](docs/load-balancing-strategies.md)**: 深入了解各种负载均衡策略。
+- **[🛣️ 路由选择器概览](docs/route-selector-overview.md)**: 新的简化负载均衡接口概览和快速开始。
+- **[🏗️ 路由选择器设计](docs/route-selector-design.md)**: 详细的设计思路和架构说明。
+- **[🔄 路由选择器迁移指南](docs/route-selector-migration.md)**: 从传统接口迁移到路由选择器。
+- **[📋 路由选择器实现总结](docs/route-selector-implementation.md)**: 实现细节和验证结果。
 - **[🏥 健康检查与故障处理](docs/health-checks-and-fault-handling.md)**: 健康检查机制和故障转移流程。
 - **[🛠️ 命令行工具 (berry-cli)](docs/cli-tool.md)**: 运维管理工具的使用。
 - **[📈 性能优化与部署](docs/performance-optimization.md)**: 性能调优建议和生产部署指南。

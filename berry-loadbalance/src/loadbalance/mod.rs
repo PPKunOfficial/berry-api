@@ -11,8 +11,8 @@ pub use cache::{BackendSelectionCache, CacheStats};
 pub use health_checker::{HealthChecker, HealthSummary};
 pub use manager::{HealthStats, LoadBalanceManager};
 pub use route_selector::{
-    LoadBalanceRouteSelector, RouteSelector, SelectedRoute, RouteResult, RouteStats,
-    RouteSelectionError, RouteErrorType, RouteDetail, FailedRouteAttempt,
+    FailedRouteAttempt, LoadBalanceRouteSelector, RouteDetail, RouteErrorType, RouteResult,
+    RouteSelectionError, RouteSelector, RouteStats, SelectedRoute,
 };
 pub use selector::{BackendSelector, HealthCheckMethod, MetricsCollector};
 pub use service::{LoadBalanceService, RequestResult, SelectedBackend, ServiceHealth};

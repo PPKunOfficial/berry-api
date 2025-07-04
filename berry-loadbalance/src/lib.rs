@@ -10,10 +10,25 @@ pub mod loadbalance;
 
 // Re-export commonly used types
 pub use loadbalance::{
-    BackendSelector, HealthChecker, HealthStats, HealthSummary, LoadBalanceManager,
-    LoadBalanceService, MetricsCollector, RequestResult, SelectedBackend, ServiceHealth,
-    SmartAiHealthChecker,
+    BackendSelector,
+    FailedRouteAttempt,
+    HealthChecker,
+    HealthStats,
+    HealthSummary,
+    LoadBalanceManager,
     // 新的路由选择器相关类型
-    LoadBalanceRouteSelector, RouteSelector, SelectedRoute, RouteResult, RouteStats,
-    RouteSelectionError, RouteErrorType, RouteDetail, FailedRouteAttempt,
+    LoadBalanceRouteSelector,
+    LoadBalanceService,
+    MetricsCollector,
+    RequestResult,
+    RouteDetail,
+    RouteErrorType,
+    RouteResult,
+    RouteSelectionError,
+    RouteSelector,
+    RouteStats,
+    SelectedBackend,
+    SelectedRoute,
+    ServiceHealth,
+    SmartAiHealthChecker,
 };

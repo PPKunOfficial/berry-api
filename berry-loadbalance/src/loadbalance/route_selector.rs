@@ -3,18 +3,18 @@ use async_trait::async_trait;
 use std::time::Duration;
 
 /// 线路选择器 - 负载均衡的核心抽象
-/// 
+///
 /// 这个trait将复杂的负载均衡逻辑抽象为简单的线路选择接口：
 /// 1. 选择线路 - 根据模型名称选择最佳后端线路
 /// 2. 报告状态 - 告知选择器请求的成功/失败状态
 #[async_trait]
 pub trait RouteSelector: Send + Sync {
     /// 选择线路
-    /// 
+    ///
     /// # 参数
     /// - `model_name`: 请求的模型名称
     /// - `user_tags`: 可选的用户标签，用于过滤后端
-    /// 
+    ///
     /// # 返回
     /// - `Ok(SelectedRoute)`: 成功选择的线路信息
     /// - `Err(RouteSelectionError)`: 选择失败的详细错误信息
@@ -32,7 +32,7 @@ pub trait RouteSelector: Send + Sync {
     ) -> Result<SelectedRoute, RouteSelectionError>;
 
     /// 报告请求结果
-    /// 
+    ///
     /// 这是选择器了解线路状态的唯一方式，用于：
     /// - 更新健康状态
     /// - 调整权重
@@ -48,13 +48,13 @@ pub trait RouteSelector: Send + Sync {
 pub struct SelectedRoute {
     /// 唯一的线路标识符，用于后续状态报告
     pub route_id: String,
-    
+
     /// 后端提供商信息
     pub provider: RouteProvider,
-    
+
     /// 后端模型信息
     pub backend: RouteBackend,
-    
+
     /// 选择耗时
     pub selection_time: Duration,
 }
@@ -96,6 +96,7 @@ pub struct RouteProvider {
     pub api_key: String,
     pub headers: std::collections::HashMap<String, String>,
     pub timeout_seconds: u64,
+    pub backend_type: berry_core::ProviderBackendType,
 }
 
 /// 线路后端信息
@@ -245,6 +246,7 @@ impl LoadBalanceRouteSelector {
             api_key: provider.api_key.clone(),
             headers: provider.headers.clone(),
             timeout_seconds: provider.timeout_seconds,
+            backend_type: provider.backend_type.clone(),
         }
     }
 
@@ -263,12 +265,8 @@ impl LoadBalanceRouteSelector {
     /// 将RouteResult转换为RequestResult
     fn convert_route_result(result: RouteResult) -> super::service::RequestResult {
         match result {
-            RouteResult::Success { latency } => {
-                super::service::RequestResult::Success { latency }
-            }
-            RouteResult::Failure { error, .. } => {
-                super::service::RequestResult::Failure { error }
-            }
+            RouteResult::Success { latency } => super::service::RequestResult::Success { latency },
+            RouteResult::Failure { error, .. } => super::service::RequestResult::Failure { error },
         }
     }
 
@@ -289,12 +287,20 @@ impl RouteSelector for LoadBalanceRouteSelector {
         model_name: &str,
         user_tags: Option<&[String]>,
     ) -> Result<SelectedRoute, RouteSelectionError> {
-        match self.service.select_backend_with_user_tags(model_name, user_tags).await {
+        match self
+            .service
+            .select_backend_with_user_tags(model_name, user_tags)
+            .await
+        {
             Ok(selected) => Ok(Self::convert_selected_backend(selected)),
             Err(e) => {
                 // 尝试从错误中提取详细信息
-                if let Some(detailed_error) = e.downcast_ref::<super::selector::BackendSelectionError>() {
-                    let failed_attempts = detailed_error.failed_attempts.iter()
+                if let Some(detailed_error) =
+                    e.downcast_ref::<super::selector::BackendSelectionError>()
+                {
+                    let failed_attempts = detailed_error
+                        .failed_attempts
+                        .iter()
                         .map(|attempt| FailedRouteAttempt {
                             route_id: attempt.backend_key.clone(),
                             provider: attempt.provider.clone(),
@@ -331,7 +337,11 @@ impl RouteSelector for LoadBalanceRouteSelector {
         model_name: &str,
         provider_name: &str,
     ) -> Result<SelectedRoute, RouteSelectionError> {
-        match self.service.select_specific_backend(model_name, provider_name).await {
+        match self
+            .service
+            .select_specific_backend(model_name, provider_name)
+            .await
+        {
             Ok(selected) => Ok(Self::convert_selected_backend(selected)),
             Err(e) => Err(RouteSelectionError {
                 model_name: model_name.to_string(),
@@ -348,7 +358,9 @@ impl RouteSelector for LoadBalanceRouteSelector {
         match Self::parse_route_id(route_id) {
             Ok((provider, model)) => {
                 let request_result = Self::convert_route_result(result);
-                self.service.record_request_result(&provider, &model, request_result).await;
+                self.service
+                    .record_request_result(&provider, &model, request_result)
+                    .await;
             }
             Err(e) => {
                 tracing::error!("Failed to parse route_id '{}': {}", route_id, e);
@@ -374,16 +386,19 @@ impl RouteSelector for LoadBalanceRouteSelector {
                 // 尝试获取当前权重（这需要知道模型名称，这里简化处理）
                 let current_weight = 1.0; // 简化处理，实际应该从配置中获取
 
-                route_details.insert(backend_key.clone(), RouteDetail {
-                    route_id: backend_key,
-                    provider,
-                    model,
-                    is_healthy,
-                    request_count,
-                    error_count,
-                    average_latency,
-                    current_weight,
-                });
+                route_details.insert(
+                    backend_key.clone(),
+                    RouteDetail {
+                        route_id: backend_key,
+                        provider,
+                        model,
+                        is_healthy,
+                        request_count,
+                        error_count,
+                        average_latency,
+                        current_weight,
+                    },
+                );
             }
         }
 
