@@ -827,7 +827,8 @@ impl BackendSelector {
 
                 // SmartAI策略：使用信心度计算有效权重
                 let confidence = self.metrics.get_smart_ai_confidence(backend_key);
-                let effective_weight = self.calculate_smart_ai_effective_weight(backend, confidence);
+                let effective_weight =
+                    self.calculate_smart_ai_effective_weight(backend, confidence);
 
                 weights.insert(backend_key.clone(), effective_weight);
             }
@@ -940,20 +941,6 @@ impl BackendSelector {
             .cloned()
             .collect()
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     /// SmartAI 负载均衡选择
     fn select_smart_ai(&self, backends: &[Backend]) -> Result<Backend> {
