@@ -324,9 +324,9 @@ impl RouteBasedHandler {
                 |event| -> Result<Event, std::convert::Infallible> {
                     match event {
                         Ok(event) => Ok(Event::default().data(event.data)),
-                        Err(e) => Ok(
-                            Event::default().data(format!("data: {{\"error\": \"{e}\"}}\n\n"))
-                        ),
+                        Err(e) => {
+                            Ok(Event::default().data(format!("data: {{\"error\": \"{e}\"}}\n\n")))
+                        }
                     }
                 },
             );

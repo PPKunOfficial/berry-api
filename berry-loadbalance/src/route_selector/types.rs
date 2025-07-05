@@ -135,8 +135,7 @@ pub struct FailedRouteAttempt {
 }
 
 /// 线路统计信息
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct RouteStats {
     /// 总请求数
     pub total_requests: u64,
@@ -174,4 +173,3 @@ impl RouteStats {
         self.route_details.values().filter(|r| r.is_healthy).count()
     }
 }
-
