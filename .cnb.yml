@@ -1,6 +1,18 @@
-main:
+master:
   push:
     - stages:
+        - name: gitleaks
+          image: zricethezav/gitleaks
+          script: | 
+            gitleaks git --report-path gitleaks-report.csv .
+          
+        - name: fmt & clippy
+          image: rust:latest
+          script: |
+            rustup component add rustfmt clippy
+            cargo fmt --all --check
+            cargo clippy -- -D warnings
+
         - name: sync
           imports: https://cnb.cool/PPKunOfficial/berry-api-secrets/-/blob/main/env.yml
           image: tencentcom/git-sync
@@ -9,3 +21,14 @@ main:
             auth_type: https
             username: ${GIT_USERNAME}
             password: ${GIT_ACCESS_TOKEN}
+          
+
+$:
+  vscode:
+    - runner:
+        cpus: 8
+      docker:
+        build: .ide/Dockerfile
+      services:
+        - vscode
+        - docker

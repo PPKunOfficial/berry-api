@@ -1,4 +1,4 @@
-FROM rust:1.87
+FROM rust:latest
 
 RUN sed -i 's@deb.debian.org@mirrors.cloud.tencent.com@g' /etc/apt/sources.list.d/debian.sources
 
@@ -18,7 +18,7 @@ RUN curl -fsSL https://code-server.dev/install.sh | sh \
     && code-server --install-extension serayuzgur.crates \
     && code-server --install-extension formulahendry.code-runner \
     && code-server --install-extension tamasfe.even-better-toml \
-    && code-server --install-extension tencent-cloud.coding-copilot
+    && code-server --install-extension Tencent-Cloud.coding-copilot
 
 ENV RUST_BACKTRACE=1
 ENV CARGO_INCREMENTAL=1
