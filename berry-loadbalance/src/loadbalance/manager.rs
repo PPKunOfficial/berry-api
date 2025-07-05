@@ -123,7 +123,7 @@ impl LoadBalanceManager {
         self.metrics.record_smart_ai_request(&backend_key, result);
     }
 
-    /// 分类错误类型（用于SmartAI）
+    /// 分类错误类型（用于SmartAI）[TODO]
     pub fn classify_error(error: &anyhow::Error) -> SmartAiErrorType {
         let error_str = error.to_string().to_lowercase();
 
