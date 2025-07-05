@@ -17,10 +17,12 @@ impl OpenAIClient {
         Self::with_base_url_and_timeout(base_url, Duration::from_secs(30))
     }
 
+    #[deprecated(note = "Use new instead")]
     pub fn with_base_url(base_url: String) -> Self {
         Self::with_base_url_and_timeout(base_url, Duration::from_secs(30))
     }
 
+    #[deprecated(note = "Use with_base_url_and_timeout instead")]
     pub fn with_timeout(base_url: String, timeout: Duration) -> Self {
         let client = Client::builder()
             .timeout(timeout)
