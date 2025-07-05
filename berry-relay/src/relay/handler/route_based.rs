@@ -216,7 +216,7 @@ impl RouteBasedHandler {
 
         // 构建请求头
         let mut headers = route.get_headers();
-        headers.insert("Authorization".to_string(), format!("Bearer {}", api_key));
+        headers.insert("Authorization".to_string(), format!("Bearer {api_key}"));
         headers.insert("Content-Type".to_string(), content_type.to_string());
 
         // 创建客户端
@@ -325,7 +325,7 @@ impl RouteBasedHandler {
                     match event {
                         Ok(event) => Ok(Event::default().data(event.data)),
                         Err(e) => Ok(
-                            Event::default().data(format!("data: {{\"error\": \"{}\"}}\n\n", e))
+                            Event::default().data(format!("data: {{\"error\": \"{e}\"}}\n\n"))
                         ),
                     }
                 },

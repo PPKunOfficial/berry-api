@@ -136,6 +136,7 @@ pub struct FailedRouteAttempt {
 
 /// 线路统计信息
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct RouteStats {
     /// 总请求数
     pub total_requests: u64,
@@ -174,12 +175,3 @@ impl RouteStats {
     }
 }
 
-impl Default for RouteStats {
-    fn default() -> Self {
-        Self {
-            total_requests: 0,
-            successful_requests: 0,
-            route_details: std::collections::HashMap::new(),
-        }
-    }
-}
