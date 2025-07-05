@@ -7,28 +7,17 @@
 //! - Load balance management
 
 pub mod loadbalance;
+pub mod route_selector;
 
-// Re-export commonly used types
+// Re-export commonly used types from loadbalance module
 pub use loadbalance::{
-    BackendSelector,
-    FailedRouteAttempt,
-    HealthChecker,
-    HealthStats,
-    HealthSummary,
-    LoadBalanceManager,
-    // 新的路由选择器相关类型
-    LoadBalanceRouteSelector,
-    LoadBalanceService,
-    MetricsCollector,
-    RequestResult,
-    RouteDetail,
-    RouteErrorType,
-    RouteResult,
-    RouteSelectionError,
-    RouteSelector,
-    RouteStats,
-    SelectedBackend,
-    SelectedRoute,
-    ServiceHealth,
+    BackendSelector, HealthChecker, HealthStats, HealthSummary, LoadBalanceManager,
+    LoadBalanceService, MetricsCollector, RequestResult, SelectedBackend, ServiceHealth,
     SmartAiHealthChecker,
+};
+
+// Re-export route selector types
+pub use route_selector::{
+    FailedRouteAttempt, LoadBalanceRouteSelector, RouteBackend, RouteDetail, RouteErrorType,
+    RouteProvider, RouteResult, RouteSelectionError, RouteSelector, RouteStats, SelectedRoute,
 };
