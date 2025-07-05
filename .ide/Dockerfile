@@ -2,15 +2,6 @@ FROM rust:latest
 
 RUN sed -i 's@deb.debian.org@mirrors.cloud.tencent.com@g' /etc/apt/sources.list.d/debian.sources
 
-# Install additional development tools and dependencies
-RUN apt-get update && \
-    apt-get install -y \
-            cmake clang llvm-dev libclang-dev \
-            protobuf-compiler \
-            wget unzip lsof nload htop net-tools dnsutils openssh-server vim && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
 # Install Rust development VS Code extensions for code-server
 RUN curl -fsSL https://code-server.dev/install.sh | sh \
     && code-server --install-extension rust-lang.rust-analyzer \

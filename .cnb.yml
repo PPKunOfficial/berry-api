@@ -21,7 +21,34 @@ master:
             auth_type: https
             username: ${GIT_USERNAME}
             password: ${GIT_ACCESS_TOKEN}
-          
+
+tag:
+  create:
+    - stages:
+        - name: build-and-push-docker-image
+          imports: https://cnb.cool/PPKunOfficial/berry-api-secrets/-/blob/main/env.yml
+          image: docker:20.10-dind
+          script: |
+            # 安装必要的依赖
+            apk add --no-cache git curl
+            
+            # 设置Docker Buildx
+            docker buildx create --name mybuilder --use
+            docker buildx inspect --bootstrap
+            
+            # 登录到Docker Registry
+            echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
+            
+            # 获取当前tag版本
+            TAG=${CNB_TAG_NAME}
+            
+            # 构建并推送多平台Docker镜像
+            docker buildx build \
+              --platform linux/amd64,linux/arm64 \
+              --tag ${DOCKER_USERNAME}/berry-api:${TAG} \
+              --tag ${DOCKER_USERNAME}/berry-api:latest \
+              --push \
+              .
 
 $:
   vscode:
