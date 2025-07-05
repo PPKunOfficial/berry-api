@@ -1,8 +1,7 @@
 main:
   push:
-    pipeline:
-      stages:
-        - name: sync to github
+    - stages:
+        - name: sync
           imports: https://cnb.cool/PPKunOfficial/berry-api-secrets/-/blob/main/env.yml
           image: tencentcom/git-sync
           settings:
