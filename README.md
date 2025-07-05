@@ -26,6 +26,7 @@ Berry API 是一个高性能、生产就绪的AI服务负载均衡网关，专�
 - **[🛣️ 路由选择器概览](docs/route-selector-overview.md)**: 新的简化负载均衡接口概览和快速开始。
 - **[🏗️ 路由选择器设计](docs/route-selector-design.md)**: 详细的设计思路和架构说明。
 - **[📁 路由选择器模块结构](docs/route-selector-module-structure.md)**: 模块化代码组织和使用方式。
+- **[⚡ 路由选择器功能特性](docs/route-selector-features.md)**: 完整的功能介绍，包括强制后端选择。
 - **[🔄 路由选择器迁移指南](docs/route-selector-migration.md)**: 从传统接口迁移到路由选择器。
 - **[📋 路由选择器实现总结](docs/route-selector-implementation.md)**: 实现细节和验证结果。
 - **[🏥 健康检查与故障处理](docs/health-checks-and-fault-handling.md)**: 健康检查机制和故障转移流程。

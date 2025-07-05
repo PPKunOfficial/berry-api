@@ -25,8 +25,11 @@
 //! let route_selector: Arc<dyn RouteSelector> =
 //!     Arc::new(LoadBalanceRouteSelector::new(load_balancer));
 //!
-//! // 选择路由
+//! // 选择路由（自动负载均衡）
 //! let route = route_selector.select_route("gpt-4", None).await?;
+//!
+//! // 或者强制选择特定提供商
+//! let route = route_selector.select_specific_route("gpt-4", "openai").await?;
 //!
 //! // 使用路由信息
 //! let api_url = route.get_api_url("v1/chat/completions");
@@ -68,3 +71,183 @@ pub use types::{
     FailedRouteAttempt, RouteBackend, RouteDetail, RouteErrorType, RouteProvider, RouteResult,
     RouteSelectionError, RouteStats, SelectedRoute,
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    /// 创建一个简单的mock路由选择器用于测试
+    pub struct MockRouteSelector {
+        pub routes: Vec<SelectedRoute>,
+        pub current_index: std::sync::atomic::AtomicUsize,
+    }
+
+    impl MockRouteSelector {
+        pub fn new(routes: Vec<SelectedRoute>) -> Self {
+            Self {
+                routes,
+                current_index: std::sync::atomic::AtomicUsize::new(0),
+            }
+        }
+
+        pub fn create_test_route(
+            route_id: &str,
+            provider_name: &str,
+            model_name: &str,
+        ) -> SelectedRoute {
+            SelectedRoute {
+                route_id: route_id.to_string(),
+                provider: RouteProvider {
+                    name: provider_name.to_string(),
+                    base_url: "https://api.example.com".to_string(),
+                    api_key: "test-key".to_string(),
+                    headers: std::collections::HashMap::new(),
+                    timeout_seconds: 30,
+                    backend_type: berry_core::ProviderBackendType::OpenAI,
+                },
+                backend: RouteBackend {
+                    provider: provider_name.to_string(),
+                    model: model_name.to_string(),
+                    weight: 1.0,
+                    enabled: true,
+                    tags: vec![],
+                },
+                selection_time: Duration::from_millis(10),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl RouteSelector for MockRouteSelector {
+        async fn select_route(
+            &self,
+            _model_name: &str,
+            _user_tags: Option<&[String]>,
+        ) -> anyhow::Result<SelectedRoute, RouteSelectionError> {
+            if self.routes.is_empty() {
+                return Err(RouteSelectionError {
+                    model_name: _model_name.to_string(),
+                    message: "No routes available".to_string(),
+                    total_routes: 0,
+                    healthy_routes: 0,
+                    enabled_routes: 0,
+                    failed_attempts: vec![],
+                });
+            }
+
+            let index = self
+                .current_index
+                .load(std::sync::atomic::Ordering::Relaxed);
+            let route = self.routes[index % self.routes.len()].clone();
+            self.current_index
+                .store(index + 1, std::sync::atomic::Ordering::Relaxed);
+
+            Ok(route)
+        }
+
+        async fn select_specific_route(
+            &self,
+            _model_name: &str,
+            provider_name: &str,
+        ) -> anyhow::Result<SelectedRoute, RouteSelectionError> {
+            for route in &self.routes {
+                if route.provider.name == provider_name {
+                    return Ok(route.clone());
+                }
+            }
+
+            Err(RouteSelectionError {
+                model_name: _model_name.to_string(),
+                message: format!("Provider '{}' not found", provider_name),
+                total_routes: self.routes.len(),
+                healthy_routes: self.routes.len(),
+                enabled_routes: self.routes.len(),
+                failed_attempts: vec![],
+            })
+        }
+
+        async fn report_result(&self, _route_id: &str, _result: RouteResult) {
+            // Mock实现，不做任何操作
+        }
+
+        async fn get_route_stats(&self) -> RouteStats {
+            RouteStats::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn test_mock_route_selector() {
+        let routes = vec![
+            MockRouteSelector::create_test_route("test:gpt-4", "openai", "gpt-4"),
+            MockRouteSelector::create_test_route("test:claude", "anthropic", "claude-3"),
+        ];
+
+        let selector = MockRouteSelector::new(routes);
+
+        // 测试路由选择
+        let route = selector.select_route("gpt-4", None).await.unwrap();
+        assert_eq!(route.route_id, "test:gpt-4");
+        assert_eq!(route.provider.name, "openai");
+
+        // 测试特定提供商选择
+        let route = selector
+            .select_specific_route("claude", "anthropic")
+            .await
+            .unwrap();
+        assert_eq!(route.route_id, "test:claude");
+        assert_eq!(route.provider.name, "anthropic");
+
+        // 测试选择不存在的提供商
+        let result = selector.select_specific_route("gpt-4", "nonexistent").await;
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.message.contains("Provider 'nonexistent' not found"));
+    }
+
+    #[test]
+    fn test_selected_route_methods() {
+        let route = MockRouteSelector::create_test_route("test:gpt-4", "openai", "gpt-4");
+
+        // 测试URL构建
+        let url = route.get_api_url("v1/chat/completions");
+        assert_eq!(url, "https://api.example.com/v1/chat/completions");
+
+        // 测试API密钥获取
+        let api_key = route.get_api_key().unwrap();
+        assert_eq!(api_key, "test-key");
+
+        // 测试超时设置
+        let timeout = route.get_timeout();
+        assert_eq!(timeout, Duration::from_secs(30));
+    }
+
+    #[test]
+    fn test_route_stats() {
+        let mut stats = RouteStats::default();
+        assert_eq!(stats.success_rate(), 0.0);
+        assert_eq!(stats.healthy_routes_count(), 0);
+
+        // 添加一些测试数据
+        stats.total_requests = 100;
+        stats.successful_requests = 80;
+        assert_eq!(stats.success_rate(), 0.8);
+
+        // 添加路由详情
+        stats.route_details.insert(
+            "test:route".to_string(),
+            RouteDetail {
+                route_id: "test:route".to_string(),
+                provider: "test".to_string(),
+                model: "test-model".to_string(),
+                is_healthy: true,
+                request_count: 50,
+                error_count: 5,
+                average_latency: Some(Duration::from_millis(100)),
+                current_weight: 1.0,
+            },
+        );
+
+        assert_eq!(stats.healthy_routes_count(), 1);
+    }
+}

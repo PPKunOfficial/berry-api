@@ -99,6 +99,21 @@ async fn example() -> anyhow::Result<()> {
 }
 ```
 
+### 强制选择特定后端
+```rust
+// 方法1: 通过HTTP请求体中的backend参数
+let request_body = json!({
+    "model": "gpt-4",
+    "messages": [...],
+    "backend": "openai"  // 强制使用openai提供商
+});
+
+// 方法2: 直接调用选择器方法
+let route = route_selector
+    .select_specific_route("gpt-4", "openai")
+    .await?;
+```
+
 ### 测试友好的Mock实现
 ```rust
 use berry_loadbalance::route_selector::{RouteSelector, SelectedRoute, RouteResult, RouteStats};

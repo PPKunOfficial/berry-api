@@ -137,6 +137,37 @@ let handler = Arc::new(RouteBasedHandler::new(route_selector));
 }))
 ```
 
+### 阶段5: 使用强制后端选择功能
+
+路由选择器支持通过 `backend` 参数强制选择特定的后端提供商：
+
+#### HTTP请求中使用
+```json
+{
+    "model": "gpt-4",
+    "messages": [...],
+    "backend": "openai"
+}
+```
+
+#### 代码中直接使用
+```rust
+// 强制选择特定提供商
+let route = route_selector
+    .select_specific_route("gpt-4", "openai")
+    .await?;
+
+// 正常的路由选择
+let route = route_selector
+    .select_route("gpt-4", None)
+    .await?;
+```
+
+**用途**:
+- 调试特定提供商的问题
+- 测试不同提供商的响应
+- 临时绕过负载均衡逻辑
+
 ## 监控和调试
 
 ### 获取路由统计
