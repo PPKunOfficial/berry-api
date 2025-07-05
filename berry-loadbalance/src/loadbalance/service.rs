@@ -445,9 +445,14 @@ impl LoadBalanceService {
                 }
             }
             RequestResult::Failure { error } => {
-                self.manager.record_failure(provider, model);
+                // Chat请求失败应该使用Chat检查方式进行重试
+                self.manager.record_failure_with_method(
+                    provider,
+                    model,
+                    super::selector::HealthCheckMethod::Chat,
+                );
                 debug!(
-                    "Recorded failure for {}:{} with error: {}",
+                    "Recorded chat failure for {}:{} with error: {}",
                     provider, model, error
                 );
 

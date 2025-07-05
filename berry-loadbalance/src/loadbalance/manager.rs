@@ -100,6 +100,18 @@ impl LoadBalanceManager {
         self.metrics.record_failure(&backend_key);
     }
 
+    /// 记录请求失败（带检查方式）
+    pub fn record_failure_with_method(
+        &self,
+        provider: &str,
+        model: &str,
+        check_method: super::selector::HealthCheckMethod,
+    ) {
+        let backend_key = format!("{provider}:{model}");
+        self.metrics
+            .record_failure_with_method(&backend_key, check_method);
+    }
+
     /// 获取指标收集器的引用
     pub fn get_metrics(&self) -> Arc<MetricsCollector> {
         self.metrics.clone()
