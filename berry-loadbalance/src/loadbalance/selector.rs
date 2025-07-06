@@ -1,6 +1,7 @@
 use super::cache::{BackendSelectionCache, CacheStats};
 use anyhow::Result;
 use berry_core::config::model::{Backend, ModelMapping};
+use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -49,23 +50,89 @@ pub struct BackendSelector {
     selection_cache: Arc<BackendSelectionCache>,
 }
 
-/// 指标收集器，用于收集后端性能数据
+/// 合并的后端指标结构，包含单个后端的所有状态
+#[derive(Debug, Clone)]
+pub struct BackendMetrics {
+    /// 最近的请求延迟
+    pub latency: Option<Duration>,
+    /// 健康状态
+    pub health_status: bool,
+    /// 失败计数
+    pub failure_count: u32,
+    /// 最后健康检查时间
+    pub last_health_check: Option<Instant>,
+    /// 不健康后端信息
+    pub unhealthy_info: Option<UnhealthyBackend>,
+    /// 恢复尝试次数
+    pub recovery_attempts: u32,
+    /// 权重恢复状态
+    pub weight_recovery_state: Option<WeightRecoveryState>,
+    /// SmartAI 健康状态
+    pub smart_ai_health: Option<SmartAiBackendHealth>,
+    /// 请求计数
+    pub request_count: u64,
+    /// 创建时间（用于调试）
+    pub created_at: Instant,
+    /// 最后更新时间
+    pub updated_at: Instant,
+}
+
+impl BackendMetrics {
+    /// 创建新的后端指标
+    pub fn new() -> Self {
+        let now = Instant::now();
+        Self {
+            latency: None,
+            health_status: true,
+            failure_count: 0,
+            last_health_check: None,
+            unhealthy_info: None,
+            recovery_attempts: 0,
+            weight_recovery_state: None,
+            smart_ai_health: None,
+            request_count: 0,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    /// 创建带失败状态的后端指标
+    pub fn new_with_failure() -> Self {
+        let now = Instant::now();
+        Self {
+            latency: None,
+            health_status: false,
+            failure_count: 1,
+            last_health_check: None,
+            unhealthy_info: None,
+            recovery_attempts: 0,
+            weight_recovery_state: None,
+            smart_ai_health: None,
+            request_count: 1,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    /// 更新时间戳
+    pub fn touch(&mut self) {
+        self.updated_at = Instant::now();
+    }
+}
+
+impl Default for BackendMetrics {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// 优化后的指标收集器，使用单个锁保护所有后端状态
 pub struct MetricsCollector {
-    latencies: Arc<std::sync::RwLock<HashMap<String, Duration>>>,
-    health_status: Arc<std::sync::RwLock<HashMap<String, bool>>>,
-    failure_counts: Arc<std::sync::RwLock<HashMap<String, u32>>>,
-    last_health_check: Arc<std::sync::RwLock<HashMap<String, Instant>>>,
-    // 新增：不健康列表管理
-    unhealthy_backends: Arc<std::sync::RwLock<HashMap<String, UnhealthyBackend>>>,
-    recovery_attempts: Arc<std::sync::RwLock<HashMap<String, u32>>>,
-    // 新增：权重恢复状态管理
-    weight_recovery_states: Arc<std::sync::RwLock<HashMap<String, WeightRecoveryState>>>,
-    // SmartAI 相关字段
-    smart_ai_health: Arc<std::sync::RwLock<HashMap<String, SmartAiBackendHealth>>>,
-    // 请求计数
+    /// 所有后端的指标数据，使用 parking_lot::RwLock 提升性能
+    backends: Arc<RwLock<HashMap<String, BackendMetrics>>>,
+    /// 全局请求计数器，使用原子操作避免锁争用
     total_requests: Arc<std::sync::atomic::AtomicU64>,
     successful_requests: Arc<std::sync::atomic::AtomicU64>,
-    request_counts: Arc<std::sync::RwLock<HashMap<String, u64>>>,
 }
 
 /// 健康检查方式
@@ -164,25 +231,18 @@ pub struct RequestResult {
 impl MetricsCollector {
     pub fn new() -> Self {
         Self {
-            latencies: Arc::new(std::sync::RwLock::new(HashMap::new())),
-            health_status: Arc::new(std::sync::RwLock::new(HashMap::new())),
-            failure_counts: Arc::new(std::sync::RwLock::new(HashMap::new())),
-            last_health_check: Arc::new(std::sync::RwLock::new(HashMap::new())),
-            unhealthy_backends: Arc::new(std::sync::RwLock::new(HashMap::new())),
-            recovery_attempts: Arc::new(std::sync::RwLock::new(HashMap::new())),
-            weight_recovery_states: Arc::new(std::sync::RwLock::new(HashMap::new())),
-            smart_ai_health: Arc::new(std::sync::RwLock::new(HashMap::new())),
+            backends: Arc::new(RwLock::new(HashMap::new())),
             total_requests: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             successful_requests: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            request_counts: Arc::new(std::sync::RwLock::new(HashMap::new())),
         }
     }
 
     /// 记录请求延迟
     pub fn record_latency(&self, backend_key: &str, latency: Duration) {
-        if let Ok(mut latencies) = self.latencies.write() {
-            latencies.insert(backend_key.to_string(), latency);
-        }
+        let mut backends = self.backends.write();
+        let metrics = backends.entry(backend_key.to_string()).or_default();
+        metrics.latency = Some(latency);
+        metrics.touch();
     }
 
     /// 记录请求失败
@@ -203,68 +263,57 @@ impl MetricsCollector {
         self.total_requests
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        // 增加后端请求计数
-        if let Ok(mut counts) = self.request_counts.write() {
-            *counts.entry(backend_key.to_string()).or_insert(0) += 1;
-        }
+        // 获取写锁并更新所有相关状态
+        let mut backends = self.backends.write();
+        let metrics = backends.entry(backend_key.to_string()).or_default();
 
-        if let Ok(mut failures) = self.failure_counts.write() {
-            let count = failures.entry(backend_key.to_string()).or_insert(0);
-            *count += 1;
-            tracing::debug!("Updated failure count for {}: {}", backend_key, *count);
-        }
+        // 更新基本指标
+        metrics.request_count += 1;
+        metrics.failure_count += 1;
+        metrics.health_status = false;
+        metrics.touch();
 
-        // 标记为不健康
-        if let Ok(mut health) = self.health_status.write() {
-            health.insert(backend_key.to_string(), false);
-            tracing::debug!("Marked backend {} as unhealthy", backend_key);
-        }
+        tracing::debug!("Updated failure count for {}: {}", backend_key, metrics.failure_count);
+        tracing::debug!("Marked backend {} as unhealthy", backend_key);
 
-        // 添加到不健康列表
-        if let Ok(mut unhealthy) = self.unhealthy_backends.write() {
-            match unhealthy.get_mut(backend_key) {
-                Some(backend) => {
-                    backend.last_failure_time = now;
-                    backend.failure_count += 1;
-                    // 更新检查方式（使用最新的失败检查方式）
-                    backend.failure_check_method = check_method;
-                    tracing::debug!(
-                        "Updated existing unhealthy backend {}: failure_count={}, check_method={:?}",
-                        backend_key,
-                        backend.failure_count,
-                        backend.failure_check_method
-                    );
-                }
-                None => {
-                    tracing::debug!(
-                        "Adding new backend {} to unhealthy list with method: {:?}",
-                        backend_key,
-                        check_method
-                    );
-                    unhealthy.insert(
-                        backend_key.to_string(),
-                        UnhealthyBackend {
-                            backend_key: backend_key.to_string(),
-                            first_failure_time: now,
-                            last_failure_time: now,
-                            failure_count: 1,
-                            last_recovery_attempt: None,
-                            recovery_attempts: 0,
-                            failure_check_method: check_method,
-                        },
-                    );
-                }
+        // 更新或创建不健康后端信息
+        match &mut metrics.unhealthy_info {
+            Some(unhealthy) => {
+                unhealthy.last_failure_time = now;
+                unhealthy.failure_count += 1;
+                unhealthy.failure_check_method = check_method;
+                tracing::debug!(
+                    "Updated existing unhealthy backend {}: failure_count={}, check_method={:?}",
+                    backend_key,
+                    unhealthy.failure_count,
+                    unhealthy.failure_check_method
+                );
+            }
+            None => {
+                tracing::debug!(
+                    "Adding new backend {} to unhealthy list with method: {:?}",
+                    backend_key,
+                    check_method
+                );
+                metrics.unhealthy_info = Some(UnhealthyBackend {
+                    backend_key: backend_key.to_string(),
+                    first_failure_time: now,
+                    last_failure_time: now,
+                    failure_count: 1,
+                    last_recovery_attempt: None,
+                    recovery_attempts: 0,
+                    failure_check_method: check_method,
+                });
             }
         }
 
         // 清理权重恢复状态（如果存在）
-        if let Ok(mut recovery_states) = self.weight_recovery_states.write() {
-            if recovery_states.remove(backend_key).is_some() {
-                tracing::debug!(
-                    "Cleared weight recovery state for failed backend {}",
-                    backend_key
-                );
-            }
+        if metrics.weight_recovery_state.is_some() {
+            metrics.weight_recovery_state = None;
+            tracing::debug!(
+                "Cleared weight recovery state for failed backend {}",
+                backend_key
+            );
         }
     }
 
@@ -278,68 +327,66 @@ impl MetricsCollector {
         self.successful_requests
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        // 增加后端请求计数
-        if let Ok(mut counts) = self.request_counts.write() {
-            *counts.entry(backend_key.to_string()).or_insert(0) += 1;
-        }
+        // 获取写锁并更新所有相关状态
+        let mut backends = self.backends.write();
+        let metrics = backends.entry(backend_key.to_string()).or_default();
 
-        // 重置失败计数
-        if let Ok(mut failures) = self.failure_counts.write() {
-            failures.insert(backend_key.to_string(), 0);
-            tracing::debug!("Reset failure count for {} to 0", backend_key);
-        }
+        // 更新基本指标
+        metrics.request_count += 1;
+        metrics.failure_count = 0; // 重置失败计数
+        metrics.health_status = true;
+        metrics.touch();
 
-        // 标记为健康
-        if let Ok(mut health) = self.health_status.write() {
-            health.insert(backend_key.to_string(), true);
-            tracing::debug!("Marked backend {} as healthy", backend_key);
-        }
+        tracing::debug!("Reset failure count for {} to 0", backend_key);
+        tracing::debug!("Marked backend {} as healthy", backend_key);
 
         // 从不健康列表中移除
-        if let Ok(mut unhealthy) = self.unhealthy_backends.write() {
-            if unhealthy.remove(backend_key).is_some() {
-                tracing::debug!("Removed backend {} from unhealthy list", backend_key);
-            }
+        if metrics.unhealthy_info.is_some() {
+            metrics.unhealthy_info = None;
+            tracing::debug!("Removed backend {} from unhealthy list", backend_key);
         }
 
         // 重置恢复尝试计数
-        if let Ok(mut recovery) = self.recovery_attempts.write() {
-            if recovery.remove(backend_key).is_some() {
-                tracing::debug!("Reset recovery attempts for backend {}", backend_key);
-            }
-        }
+        metrics.recovery_attempts = 0;
+        tracing::debug!("Reset recovery attempts for backend {}", backend_key);
 
         // 清理权重恢复状态
-        if let Ok(mut recovery_states) = self.weight_recovery_states.write() {
-            if recovery_states.remove(backend_key).is_some() {
-                tracing::debug!(
-                    "Cleared weight recovery state for recovered backend {}",
-                    backend_key
-                );
-            }
+        if metrics.weight_recovery_state.is_some() {
+            metrics.weight_recovery_state = None;
+            tracing::debug!(
+                "Cleared weight recovery state for recovered backend {}",
+                backend_key
+            );
         }
     }
 
     /// 检查后端是否健康
     pub fn is_healthy(&self, provider: &str, model: &str) -> bool {
         let backend_key = format!("{provider}:{model}");
+        self.is_healthy_by_key(&backend_key)
+    }
 
-        if let Ok(health) = self.health_status.read() {
-            health.get(&backend_key).copied().unwrap_or(true) // 默认认为是健康的
-        } else {
-            true
-        }
+    /// 根据backend key检查后端是否健康
+    pub fn is_healthy_by_key(&self, backend_key: &str) -> bool {
+        let backends = self.backends.read();
+        backends
+            .get(backend_key)
+            .map(|metrics| metrics.health_status)
+            .unwrap_or(true) // 默认认为是健康的
     }
 
     /// 获取后端延迟
     pub fn get_latency(&self, provider: &str, model: &str) -> Option<Duration> {
         let backend_key = format!("{provider}:{model}");
+        self.get_latency_by_key(&backend_key)
+    }
 
-        if let Ok(latencies) = self.latencies.read() {
-            latencies.get(&backend_key).copied()
-        } else {
-            None
-        }
+    /// 根据backend key获取延迟
+    pub fn get_latency_by_key(&self, backend_key: &str) -> Option<Duration> {
+        let backends = self.backends.read();
+        backends
+            .get(backend_key)
+            .and_then(|metrics| metrics.latency)
     }
 
     /// 获取失败计数
@@ -350,34 +397,36 @@ impl MetricsCollector {
 
     /// 根据backend key获取失败计数
     pub fn get_failure_count_by_key(&self, backend_key: &str) -> u32 {
-        if let Ok(failures) = self.failure_counts.read() {
-            failures.get(backend_key).copied().unwrap_or(0)
-        } else {
-            0
-        }
+        let backends = self.backends.read();
+        backends
+            .get(backend_key)
+            .map(|metrics| metrics.failure_count)
+            .unwrap_or(0)
     }
 
     /// 更新健康检查时间
     pub fn update_health_check(&self, backend_key: &str) {
-        if let Ok(mut last_check) = self.last_health_check.write() {
-            last_check.insert(backend_key.to_string(), Instant::now());
-        }
+        let mut backends = self.backends.write();
+        let metrics = backends.entry(backend_key.to_string()).or_default();
+        metrics.last_health_check = Some(Instant::now());
+        metrics.touch();
     }
 
     /// 获取所有不健康的后端
     pub fn get_unhealthy_backends(&self) -> Vec<UnhealthyBackend> {
-        if let Ok(unhealthy) = self.unhealthy_backends.read() {
-            unhealthy.values().cloned().collect()
-        } else {
-            Vec::new()
-        }
+        let backends = self.backends.read();
+        backends
+            .values()
+            .filter_map(|metrics| metrics.unhealthy_info.clone())
+            .collect()
     }
 
     /// 检查后端是否需要恢复检查
     pub fn needs_recovery_check(&self, backend_key: &str, recovery_interval: Duration) -> bool {
-        if let Ok(unhealthy) = self.unhealthy_backends.read() {
-            if let Some(backend) = unhealthy.get(backend_key) {
-                match backend.last_recovery_attempt {
+        let backends = self.backends.read();
+        if let Some(metrics) = backends.get(backend_key) {
+            if let Some(unhealthy_info) = &metrics.unhealthy_info {
+                match unhealthy_info.last_recovery_attempt {
                     Some(last_attempt) => last_attempt.elapsed() >= recovery_interval,
                     None => true, // 从未尝试过恢复
                 }
@@ -394,14 +443,15 @@ impl MetricsCollector {
         let now = Instant::now();
         tracing::debug!("Recording recovery attempt for backend: {}", backend_key);
 
-        if let Ok(mut unhealthy) = self.unhealthy_backends.write() {
-            if let Some(backend) = unhealthy.get_mut(backend_key) {
-                backend.last_recovery_attempt = Some(now);
-                backend.recovery_attempts += 1;
+        let mut backends = self.backends.write();
+        if let Some(metrics) = backends.get_mut(backend_key) {
+            if let Some(unhealthy_info) = &mut metrics.unhealthy_info {
+                unhealthy_info.last_recovery_attempt = Some(now);
+                unhealthy_info.recovery_attempts += 1;
                 tracing::debug!(
                     "Updated recovery attempt for {}: attempt #{}",
                     backend_key,
-                    backend.recovery_attempts
+                    unhealthy_info.recovery_attempts
                 );
             } else {
                 tracing::warn!(
@@ -409,26 +459,25 @@ impl MetricsCollector {
                     backend_key
                 );
             }
-        }
 
-        if let Ok(mut recovery) = self.recovery_attempts.write() {
-            let count = recovery.entry(backend_key.to_string()).or_insert(0);
-            *count += 1;
+            // 更新全局恢复尝试计数
+            metrics.recovery_attempts += 1;
+            metrics.touch();
             tracing::debug!(
                 "Updated global recovery count for {}: {}",
                 backend_key,
-                *count
+                metrics.recovery_attempts
             );
         }
     }
 
     /// 检查后端是否在不健康列表中
     pub fn is_in_unhealthy_list(&self, backend_key: &str) -> bool {
-        if let Ok(unhealthy) = self.unhealthy_backends.read() {
-            unhealthy.contains_key(backend_key)
-        } else {
-            false
-        }
+        let backends = self.backends.read();
+        backends
+            .get(backend_key)
+            .map(|metrics| metrics.unhealthy_info.is_some())
+            .unwrap_or(false)
     }
 
     /// 记录按请求计费provider的被动验证成功
@@ -438,88 +487,87 @@ impl MetricsCollector {
             backend_key
         );
 
-        if let Ok(mut recovery_states) = self.weight_recovery_states.write() {
-            match recovery_states.get_mut(backend_key) {
-                Some(state) => {
-                    state.last_success_time = Instant::now();
-                    state.success_count += 1;
+        let mut backends = self.backends.write();
+        let metrics = backends.entry(backend_key.to_string()).or_default();
 
-                    // 根据成功次数逐步提高权重
-                    let new_stage = match state.success_count {
-                        1..=2 => RecoveryStage::RecoveryStage1, // 30%权重
-                        3..=4 => RecoveryStage::RecoveryStage2, // 50%权重
-                        _ => RecoveryStage::FullyRecovered,     // 100%权重
+        match &mut metrics.weight_recovery_state {
+            Some(state) => {
+                state.last_success_time = Instant::now();
+                state.success_count += 1;
+
+                // 根据成功次数逐步提高权重
+                let new_stage = match state.success_count {
+                    1..=2 => RecoveryStage::RecoveryStage1, // 30%权重
+                    3..=4 => RecoveryStage::RecoveryStage2, // 50%权重
+                    _ => RecoveryStage::FullyRecovered,     // 100%权重
+                };
+
+                if new_stage != state.recovery_stage {
+                    state.recovery_stage = new_stage.clone();
+                    state.current_weight = match new_stage {
+                        RecoveryStage::RecoveryStage1 => original_weight * 0.3,
+                        RecoveryStage::RecoveryStage2 => original_weight * 0.5,
+                        RecoveryStage::FullyRecovered => original_weight,
+                        _ => state.current_weight,
                     };
 
-                    if new_stage != state.recovery_stage {
-                        state.recovery_stage = new_stage.clone();
-                        state.current_weight = match new_stage {
-                            RecoveryStage::RecoveryStage1 => original_weight * 0.3,
-                            RecoveryStage::RecoveryStage2 => original_weight * 0.5,
-                            RecoveryStage::FullyRecovered => original_weight,
-                            _ => state.current_weight,
-                        };
+                    tracing::debug!(
+                        "Backend {} advanced to stage {:?} with weight {:.2}",
+                        backend_key,
+                        new_stage,
+                        state.current_weight
+                    );
 
+                    // 如果完全恢复，从不健康列表中移除并标记为健康
+                    if new_stage == RecoveryStage::FullyRecovered {
+                        metrics.unhealthy_info = None;
+                        metrics.health_status = true;
                         tracing::debug!(
-                            "Backend {} advanced to stage {:?} with weight {:.2}",
-                            backend_key,
-                            new_stage,
-                            state.current_weight
+                            "Removed fully recovered backend {} from unhealthy list",
+                            backend_key
                         );
-
-                        // 如果完全恢复，从不健康列表中移除并标记为健康
-                        if new_stage == RecoveryStage::FullyRecovered {
-                            if let Ok(mut unhealthy) = self.unhealthy_backends.write() {
-                                unhealthy.remove(backend_key);
-                                tracing::debug!(
-                                    "Removed fully recovered backend {} from unhealthy list",
-                                    backend_key
-                                );
-                            }
-
-                            if let Ok(mut health) = self.health_status.write() {
-                                health.insert(backend_key.to_string(), true);
-                                tracing::debug!(
-                                    "Marked fully recovered backend {} as healthy",
-                                    backend_key
-                                );
-                            }
-                        }
+                        tracing::debug!(
+                            "Marked fully recovered backend {} as healthy",
+                            backend_key
+                        );
                     }
                 }
-                None => {
-                    // 首次被动成功，创建恢复状态
-                    let recovery_state = WeightRecoveryState {
-                        backend_key: backend_key.to_string(),
-                        original_weight,
-                        current_weight: original_weight * 0.3, // 从30%开始
-                        recovery_stage: RecoveryStage::RecoveryStage1,
-                        last_success_time: Instant::now(),
-                        success_count: 1,
-                    };
+            }
+            None => {
+                // 首次被动成功，创建恢复状态
+                let recovery_state = WeightRecoveryState {
+                    backend_key: backend_key.to_string(),
+                    original_weight,
+                    current_weight: original_weight * 0.3, // 从30%开始
+                    recovery_stage: RecoveryStage::RecoveryStage1,
+                    last_success_time: Instant::now(),
+                    success_count: 1,
+                };
 
-                    recovery_states.insert(backend_key.to_string(), recovery_state);
-                    tracing::debug!(
-                        "Created recovery state for backend {} starting at 30% weight",
-                        backend_key
-                    );
-                }
+                metrics.weight_recovery_state = Some(recovery_state);
+                tracing::debug!(
+                    "Created recovery state for backend {} starting at 30% weight",
+                    backend_key
+                );
             }
         }
+
+        metrics.touch();
     }
 
     /// 获取backend的当前权重（考虑恢复状态）
     pub fn get_effective_weight(&self, backend_key: &str, original_weight: f64) -> f64 {
-        if let Ok(recovery_states) = self.weight_recovery_states.read() {
-            if let Some(state) = recovery_states.get(backend_key) {
+        let backends = self.backends.read();
+        if let Some(metrics) = backends.get(backend_key) {
+            if let Some(state) = &metrics.weight_recovery_state {
                 return state.current_weight;
             }
-        }
 
-        // 检查是否在不健康列表中
-        if self.is_in_unhealthy_list(backend_key) {
-            // 不健康的按请求计费provider使用10%权重
-            return original_weight * 0.1;
+            // 检查是否在不健康列表中
+            if metrics.unhealthy_info.is_some() {
+                // 不健康的按请求计费provider使用10%权重
+                return original_weight * 0.1;
+            }
         }
 
         // 默认使用原始权重
@@ -535,29 +583,26 @@ impl MetricsCollector {
         let mut effective_weights = Vec::with_capacity(backend_keys.len());
 
         // 一次性获取读锁，避免重复锁操作
-        let recovery_states = self.weight_recovery_states.read().ok();
-        let unhealthy_backends = self.unhealthy_backends.read().ok();
+        let backends = self.backends.read();
 
         for (i, backend_key) in backend_keys.iter().enumerate() {
             let original_weight = original_weights[i];
 
-            // 检查恢复状态
-            if let Some(ref states) = recovery_states {
-                if let Some(state) = states.get(backend_key) {
+            if let Some(metrics) = backends.get(backend_key) {
+                // 检查恢复状态
+                if let Some(state) = &metrics.weight_recovery_state {
                     effective_weights.push(state.current_weight);
                     continue;
                 }
-            }
 
-            // 检查是否在不健康列表中
-            let is_unhealthy = unhealthy_backends
-                .as_ref()
-                .map(|ub| ub.contains_key(backend_key))
-                .unwrap_or(false);
-
-            if is_unhealthy {
-                effective_weights.push(original_weight * 0.1);
+                // 检查是否在不健康列表中
+                if metrics.unhealthy_info.is_some() {
+                    effective_weights.push(original_weight * 0.1);
+                } else {
+                    effective_weights.push(original_weight);
+                }
             } else {
+                // 没有记录的后端，使用原始权重
                 effective_weights.push(original_weight);
             }
         }
@@ -572,18 +617,20 @@ impl MetricsCollector {
             backend_key
         );
 
-        if let Ok(mut recovery_states) = self.weight_recovery_states.write() {
-            let recovery_state = WeightRecoveryState {
-                backend_key: backend_key.to_string(),
-                original_weight,
-                current_weight: original_weight * 0.1, // 从10%开始
-                recovery_stage: RecoveryStage::Unhealthy,
-                last_success_time: Instant::now(),
-                success_count: 0,
-            };
+        let mut backends = self.backends.write();
+        let metrics = backends.entry(backend_key.to_string()).or_default();
 
-            recovery_states.insert(backend_key.to_string(), recovery_state);
-        }
+        let recovery_state = WeightRecoveryState {
+            backend_key: backend_key.to_string(),
+            original_weight,
+            current_weight: original_weight * 0.1, // 从10%开始
+            recovery_stage: RecoveryStage::Unhealthy,
+            last_success_time: Instant::now(),
+            success_count: 0,
+        };
+
+        metrics.weight_recovery_state = Some(recovery_state);
+        metrics.touch();
     }
 
     // SmartAI 相关方法
@@ -595,79 +642,82 @@ impl MetricsCollector {
             backend_key
         );
 
-        if let Ok(mut smart_health) = self.smart_ai_health.write() {
-            let health = smart_health
-                .entry(backend_key.to_string())
-                .or_insert_with(|| {
-                    SmartAiBackendHealth {
-                        confidence_score: 0.8, // 初始信心度
-                        total_requests: 0,
-                        consecutive_successes: 0,
-                        consecutive_failures: 0,
-                        last_request_time: result.timestamp,
-                        last_success_time: None,
-                        last_failure_time: None,
-                        error_counts: HashMap::new(),
-                        last_connectivity_check: None,
-                        connectivity_ok: true,
-                    }
-                });
+        let mut backends = self.backends.write();
+        let metrics = backends.entry(backend_key.to_string()).or_default();
 
-            // 更新基本统计
-            health.total_requests += 1;
-            health.last_request_time = result.timestamp;
+        // 获取或创建 SmartAI 健康状态
+        let health = metrics.smart_ai_health.get_or_insert_with(|| {
+            SmartAiBackendHealth {
+                confidence_score: 0.8, // 初始信心度
+                total_requests: 0,
+                consecutive_successes: 0,
+                consecutive_failures: 0,
+                last_request_time: result.timestamp,
+                last_success_time: None,
+                last_failure_time: None,
+                error_counts: HashMap::new(),
+                last_connectivity_check: None,
+                connectivity_ok: true,
+            }
+        });
 
-            if result.success {
-                health.consecutive_successes += 1;
-                health.consecutive_failures = 0;
-                health.last_success_time = Some(result.timestamp);
+        // 更新基本统计
+        health.total_requests += 1;
+        health.last_request_time = result.timestamp;
 
-                // 成功时提升信心度
-                health.confidence_score = (health.confidence_score + 0.1).min(1.0);
+        if result.success {
+            health.consecutive_successes += 1;
+            health.consecutive_failures = 0;
+            health.last_success_time = Some(result.timestamp);
+
+            // 成功时提升信心度
+            health.confidence_score = (health.confidence_score + 0.1).min(1.0);
+
+            tracing::debug!(
+                "SmartAI success for {}: confidence={:.3}, consecutive_successes={}",
+                backend_key,
+                health.confidence_score,
+                health.consecutive_successes
+            );
+        } else {
+            health.consecutive_failures += 1;
+            health.consecutive_successes = 0;
+            health.last_failure_time = Some(result.timestamp);
+
+            // 根据错误类型调整信心度
+            if let Some(error_type) = &result.error_type {
+                let penalty = match error_type {
+                    SmartAiErrorType::NetworkError => 0.3,
+                    SmartAiErrorType::AuthError => 0.8,
+                    SmartAiErrorType::RateLimitError => 0.1,
+                    SmartAiErrorType::ServerError => 0.2,
+                    SmartAiErrorType::ModelError => 0.3,
+                    SmartAiErrorType::TimeoutError => 0.2,
+                };
+
+                health.confidence_score = (health.confidence_score - penalty).max(0.05);
+
+                // 更新错误统计
+                *health.error_counts.entry(error_type.clone()).or_insert(0) += 1;
 
                 tracing::debug!(
-                    "SmartAI success for {}: confidence={:.3}, consecutive_successes={}",
+                    "SmartAI failure for {}: error={:?}, penalty={:.2}, confidence={:.3}",
                     backend_key,
-                    health.confidence_score,
-                    health.consecutive_successes
+                    error_type,
+                    penalty,
+                    health.confidence_score
                 );
-            } else {
-                health.consecutive_failures += 1;
-                health.consecutive_successes = 0;
-                health.last_failure_time = Some(result.timestamp);
-
-                // 根据错误类型调整信心度
-                if let Some(error_type) = &result.error_type {
-                    let penalty = match error_type {
-                        SmartAiErrorType::NetworkError => 0.3,
-                        SmartAiErrorType::AuthError => 0.8,
-                        SmartAiErrorType::RateLimitError => 0.1,
-                        SmartAiErrorType::ServerError => 0.2,
-                        SmartAiErrorType::ModelError => 0.3,
-                        SmartAiErrorType::TimeoutError => 0.2,
-                    };
-
-                    health.confidence_score = (health.confidence_score - penalty).max(0.05);
-
-                    // 更新错误统计
-                    *health.error_counts.entry(error_type.clone()).or_insert(0) += 1;
-
-                    tracing::debug!(
-                        "SmartAI failure for {}: error={:?}, penalty={:.2}, confidence={:.3}",
-                        backend_key,
-                        error_type,
-                        penalty,
-                        health.confidence_score
-                    );
-                }
             }
         }
+
+        metrics.touch();
     }
 
     /// 获取SmartAI后端信心度
     pub fn get_smart_ai_confidence(&self, backend_key: &str) -> f64 {
-        if let Ok(smart_health) = self.smart_ai_health.read() {
-            if let Some(health) = smart_health.get(backend_key) {
+        let backends = self.backends.read();
+        if let Some(metrics) = backends.get(backend_key) {
+            if let Some(health) = &metrics.smart_ai_health {
                 // 应用时间衰减
                 self.apply_time_decay(health.confidence_score, health.last_request_time)
             } else {
@@ -695,53 +745,55 @@ impl MetricsCollector {
 
     /// 更新连通性检查结果
     pub fn update_smart_ai_connectivity(&self, backend_key: &str, connectivity_ok: bool) {
-        if let Ok(mut smart_health) = self.smart_ai_health.write() {
-            let health = smart_health
-                .entry(backend_key.to_string())
-                .or_insert_with(|| SmartAiBackendHealth {
-                    confidence_score: 0.8,
-                    total_requests: 0,
-                    consecutive_successes: 0,
-                    consecutive_failures: 0,
-                    last_request_time: Instant::now(),
-                    last_success_time: None,
-                    last_failure_time: None,
-                    error_counts: HashMap::new(),
-                    last_connectivity_check: None,
-                    connectivity_ok: true,
-                });
+        let mut backends = self.backends.write();
+        let metrics = backends.entry(backend_key.to_string()).or_default();
 
-            health.last_connectivity_check = Some(Instant::now());
-            health.connectivity_ok = connectivity_ok;
+        let health = metrics.smart_ai_health.get_or_insert_with(|| SmartAiBackendHealth {
+            confidence_score: 0.8,
+            total_requests: 0,
+            consecutive_successes: 0,
+            consecutive_failures: 0,
+            last_request_time: Instant::now(),
+            last_success_time: None,
+            last_failure_time: None,
+            error_counts: HashMap::new(),
+            last_connectivity_check: None,
+            connectivity_ok: true,
+        });
 
-            if !connectivity_ok {
-                // 连通性失败时降低信心度
-                health.confidence_score = (health.confidence_score * 0.5).max(0.05);
-                tracing::debug!(
-                    "SmartAI connectivity failed for {}: confidence={:.3}",
-                    backend_key,
-                    health.confidence_score
-                );
-            }
+        health.last_connectivity_check = Some(Instant::now());
+        health.connectivity_ok = connectivity_ok;
+
+        if !connectivity_ok {
+            // 连通性失败时降低信心度
+            health.confidence_score = (health.confidence_score * 0.5).max(0.05);
+            tracing::debug!(
+                "SmartAI connectivity failed for {}: confidence={:.3}",
+                backend_key,
+                health.confidence_score
+            );
         }
+
+        metrics.touch();
     }
 
     /// 获取SmartAI后端的详细健康信息
     pub fn get_smart_ai_health_details(&self, backend_key: &str) -> Option<SmartAiBackendHealth> {
-        if let Ok(smart_health) = self.smart_ai_health.read() {
-            smart_health.get(backend_key).cloned()
-        } else {
-            None
-        }
+        let backends = self.backends.read();
+        backends
+            .get(backend_key)
+            .and_then(|metrics| metrics.smart_ai_health.clone())
     }
 
     /// 获取所有SmartAI后端的健康信息
     pub fn get_all_smart_ai_health(&self) -> HashMap<String, SmartAiBackendHealth> {
-        if let Ok(smart_health) = self.smart_ai_health.read() {
-            smart_health.clone()
-        } else {
-            HashMap::new()
-        }
+        let backends = self.backends.read();
+        backends
+            .iter()
+            .filter_map(|(key, metrics)| {
+                metrics.smart_ai_health.as_ref().map(|health| (key.clone(), health.clone()))
+            })
+            .collect()
     }
 
     /// 获取总请求数
@@ -758,29 +810,20 @@ impl MetricsCollector {
 
     /// 获取特定后端的请求数
     pub fn get_backend_request_count(&self, backend_key: &str) -> u64 {
-        if let Ok(counts) = self.request_counts.read() {
-            counts.get(backend_key).copied().unwrap_or(0)
-        } else {
-            0
-        }
+        let backends = self.backends.read();
+        backends
+            .get(backend_key)
+            .map(|metrics| metrics.request_count)
+            .unwrap_or(0)
     }
 
     /// 获取所有后端的请求计数
     pub fn get_all_request_counts(&self) -> HashMap<String, u64> {
-        if let Ok(counts) = self.request_counts.read() {
-            counts.clone()
-        } else {
-            HashMap::new()
-        }
-    }
-
-    /// 根据backend key获取延迟
-    pub fn get_latency_by_key(&self, backend_key: &str) -> Option<Duration> {
-        if let Ok(latencies) = self.latencies.read() {
-            latencies.get(backend_key).copied()
-        } else {
-            None
-        }
+        let backends = self.backends.read();
+        backends
+            .iter()
+            .map(|(key, metrics)| (key.clone(), metrics.request_count))
+            .collect()
     }
 }
 
@@ -1154,14 +1197,13 @@ impl BackendSelector {
             };
 
             // 从metrics中获取真实的last_failure_time
-            let last_failure_time =
-                if let Ok(unhealthy_backends) = self.metrics.unhealthy_backends.read() {
-                    unhealthy_backends
-                        .get(backend_key)
-                        .map(|ub| ub.last_failure_time)
-                } else {
-                    None
-                };
+            let last_failure_time = {
+                let backends = self.metrics.backends.read();
+                backends
+                    .get(backend_key)
+                    .and_then(|metrics| metrics.unhealthy_info.as_ref())
+                    .map(|ub| ub.last_failure_time)
+            };
 
             attempts.push(FailedAttempt {
                 backend_key: backend_key.clone(),
