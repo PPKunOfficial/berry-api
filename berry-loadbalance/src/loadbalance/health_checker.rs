@@ -5,7 +5,10 @@ use berry_core::client::{
 };
 use berry_core::config::model::{BillingMode, Config, Provider};
 use reqwest::Client;
-use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 

@@ -273,7 +273,11 @@ impl MetricsCollector {
         metrics.health_status = false;
         metrics.touch();
 
-        tracing::debug!("Updated failure count for {}: {}", backend_key, metrics.failure_count);
+        tracing::debug!(
+            "Updated failure count for {}: {}",
+            backend_key,
+            metrics.failure_count
+        );
         tracing::debug!("Marked backend {} as unhealthy", backend_key);
 
         // 更新或创建不健康后端信息
@@ -758,18 +762,20 @@ impl MetricsCollector {
         let mut backends = self.backends.write();
         let metrics = backends.entry(backend_key.to_string()).or_default();
 
-        let health = metrics.smart_ai_health.get_or_insert_with(|| SmartAiBackendHealth {
-            confidence_score: 0.8,
-            total_requests: 0,
-            consecutive_successes: 0,
-            consecutive_failures: 0,
-            last_request_time: Instant::now(),
-            last_success_time: None,
-            last_failure_time: None,
-            error_counts: HashMap::new(),
-            last_connectivity_check: None,
-            connectivity_ok: true,
-        });
+        let health = metrics
+            .smart_ai_health
+            .get_or_insert_with(|| SmartAiBackendHealth {
+                confidence_score: 0.8,
+                total_requests: 0,
+                consecutive_successes: 0,
+                consecutive_failures: 0,
+                last_request_time: Instant::now(),
+                last_success_time: None,
+                last_failure_time: None,
+                error_counts: HashMap::new(),
+                last_connectivity_check: None,
+                connectivity_ok: true,
+            });
 
         health.last_connectivity_check = Some(Instant::now());
         health.connectivity_ok = connectivity_ok;
@@ -801,7 +807,10 @@ impl MetricsCollector {
         backends
             .iter()
             .filter_map(|(key, metrics)| {
-                metrics.smart_ai_health.as_ref().map(|health| (key.clone(), health.clone()))
+                metrics
+                    .smart_ai_health
+                    .as_ref()
+                    .map(|health| (key.clone(), health.clone()))
             })
             .collect()
     }
