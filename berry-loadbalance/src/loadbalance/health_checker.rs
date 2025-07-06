@@ -5,7 +5,7 @@ use berry_core::client::{
 };
 use berry_core::config::model::{BillingMode, Config, Provider};
 use reqwest::Client;
-use std::sync::Arc;
+use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 
@@ -15,7 +15,7 @@ pub struct HealthChecker {
     config: Arc<Config>,
     metrics: Arc<MetricsCollector>,
     client: Client,
-    initial_check_done: Arc<std::sync::RwLock<bool>>,
+    initial_check_done: Arc<AtomicBool>,
 }
 
 impl HealthChecker {
@@ -32,7 +32,7 @@ impl HealthChecker {
             config,
             metrics,
             client,
-            initial_check_done: Arc::new(std::sync::RwLock::new(false)),
+            initial_check_done: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -51,13 +51,7 @@ impl HealthChecker {
         );
 
         // 检查是否是初始检查
-        let is_initial_check = match self.initial_check_done.read() {
-            Ok(initial_done) => !*initial_done,
-            Err(_) => {
-                warn!("Failed to acquire read lock for initial_check_done, assuming not initial");
-                false
-            }
-        };
+        let is_initial_check = !self.initial_check_done.load(Ordering::Acquire);
 
         if is_initial_check {
             info!("Performing initial health check - marking all enabled providers as healthy");
@@ -121,15 +115,8 @@ impl HealthChecker {
 
         // 标记初始检查已完成
         if is_initial_check {
-            match self.initial_check_done.write() {
-                Ok(mut initial_done) => {
-                    *initial_done = true;
-                    info!("Initial health check completed - subsequent checks will require chat validation for recovery");
-                }
-                Err(e) => {
-                    error!("Failed to acquire write lock for initial_check_done: {}", e);
-                }
-            }
+            self.initial_check_done.store(true, Ordering::Release);
+            info!("Initial health check completed - subsequent checks will require chat validation for recovery");
         }
 
         debug!("Completed health check for all providers");
