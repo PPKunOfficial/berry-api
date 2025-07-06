@@ -612,6 +612,16 @@ impl MetricsCollector {
 
     /// 初始化按请求计费provider的权重恢复状态
     pub fn initialize_per_request_recovery(&self, backend_key: &str, original_weight: f64) {
+        // 验证权重有效性
+        if original_weight <= 0.0 {
+            tracing::warn!(
+                "Invalid original_weight {} for backend {}, using default 1.0",
+                original_weight,
+                backend_key
+            );
+            return;
+        }
+
         tracing::debug!(
             "Initializing per-request recovery for backend: {} with 10% weight",
             backend_key
@@ -824,6 +834,59 @@ impl MetricsCollector {
             .iter()
             .map(|(key, metrics)| (key.clone(), metrics.request_count))
             .collect()
+    }
+
+    /// 清理长期未使用的后端指标（老化清理）
+    pub fn cleanup_stale_backends(&self, max_age: Duration) {
+        let mut backends = self.backends.write();
+        let now = Instant::now();
+        let initial_count = backends.len();
+
+        backends.retain(|backend_key, metrics| {
+            let age = now.duration_since(metrics.updated_at);
+            let should_keep = age <= max_age;
+
+            if !should_keep {
+                tracing::debug!(
+                    "Removing stale backend metrics for {}: age={:?}",
+                    backend_key,
+                    age
+                );
+            }
+
+            should_keep
+        });
+
+        let removed_count = initial_count - backends.len();
+        if removed_count > 0 {
+            tracing::info!(
+                "Cleaned up {} stale backend metrics (max_age={:?})",
+                removed_count,
+                max_age
+            );
+        }
+    }
+
+    /// 获取后端指标的统计信息
+    pub fn get_metrics_stats(&self) -> (usize, Duration, Duration) {
+        let backends = self.backends.read();
+        let count = backends.len();
+
+        if count == 0 {
+            return (0, Duration::ZERO, Duration::ZERO);
+        }
+
+        let now = Instant::now();
+        let mut oldest_age = Duration::ZERO;
+        let mut newest_age = Duration::MAX;
+
+        for metrics in backends.values() {
+            let age = now.duration_since(metrics.updated_at);
+            oldest_age = oldest_age.max(age);
+            newest_age = newest_age.min(age);
+        }
+
+        (count, oldest_age, newest_age)
     }
 }
 
