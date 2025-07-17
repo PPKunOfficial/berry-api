@@ -54,6 +54,9 @@ impl LoadBalanceService {
         // 启动健康检查器
         let health_checker = self.health_checker.clone();
         let is_running = self.is_running.clone();
+        let health_check_interval = Duration::from_secs(
+            self.manager.get_config().settings.health_check_interval_seconds
+        );
 
         tokio::spawn(async move {
             while *is_running.read().await {
@@ -62,13 +65,16 @@ impl LoadBalanceService {
                 }
 
                 // 等待下一次检查
-                tokio::time::sleep(Duration::from_secs(30)).await;
+                tokio::time::sleep(health_check_interval).await;
             }
         });
 
         // 启动恢复检查器
         let recovery_checker = self.health_checker.clone();
         let is_running_recovery = self.is_running.clone();
+        let recovery_check_interval = Duration::from_secs(
+            self.manager.get_config().settings.recovery_check_interval_seconds
+        );
 
         tokio::spawn(async move {
             while *is_running_recovery.read().await {
@@ -77,7 +83,7 @@ impl LoadBalanceService {
                 }
 
                 // 等待下一次恢复检查（通常比健康检查间隔更长）
-                tokio::time::sleep(Duration::from_secs(60)).await;
+                tokio::time::sleep(recovery_check_interval).await;
             }
         });
 
