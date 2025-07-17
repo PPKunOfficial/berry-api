@@ -55,7 +55,10 @@ impl LoadBalanceService {
         let health_checker = self.health_checker.clone();
         let is_running = self.is_running.clone();
         let health_check_interval = Duration::from_secs(
-            self.manager.get_config().settings.health_check_interval_seconds
+            self.manager
+                .get_config()
+                .settings
+                .health_check_interval_seconds,
         );
 
         tokio::spawn(async move {
@@ -73,7 +76,10 @@ impl LoadBalanceService {
         let recovery_checker = self.health_checker.clone();
         let is_running_recovery = self.is_running.clone();
         let recovery_check_interval = Duration::from_secs(
-            self.manager.get_config().settings.recovery_check_interval_seconds
+            self.manager
+                .get_config()
+                .settings
+                .recovery_check_interval_seconds,
         );
 
         tokio::spawn(async move {
