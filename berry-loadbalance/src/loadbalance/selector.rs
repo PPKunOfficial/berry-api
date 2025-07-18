@@ -5,6 +5,7 @@ use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tracing::warn;
 
 /// 后端选择错误类型
 #[derive(Debug, Clone)]
@@ -314,12 +315,22 @@ impl MetricsCollector {
                     backend_key,
                     check_method
                 );
-                // 预解析provider_id和model_name
+                // 预解析和验证provider_id和model_name
                 let parts: Vec<&str> = backend_key.split(':').collect();
                 let (provider_id, model_name) = if parts.len() == 2 {
-                    (parts[0].to_string(), parts[1].to_string())
+                    let provider = parts[0].trim();
+                    let model = parts[1].trim();
+                    
+                    // 验证格式：provider和model都不能为空
+                    if provider.is_empty() || model.is_empty() {
+                        warn!("Invalid backend key format: '{}' - provider or model is empty", backend_key);
+                        ("invalid".to_string(), "invalid".to_string())
+                    } else {
+                        (provider.to_string(), model.to_string())
+                    }
                 } else {
-                    ("unknown".to_string(), "unknown".to_string())
+                    warn!("Invalid backend key format: '{}' - expected format 'provider:model'", backend_key);
+                    ("invalid".to_string(), "invalid".to_string())
                 };
 
                 metrics.unhealthy_info = Some(UnhealthyBackend {
