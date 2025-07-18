@@ -37,10 +37,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// 优雅的关闭信号处理器
 async fn shutdown_signal() {
     use signal::unix::{signal, SignalKind};
-    
-    let mut sigint = signal(SignalKind::interrupt()).expect("Failed to install SIGINT handler");
-    let mut sigterm = signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");
-    
+
+    let mut sigint = match signal(SignalKind::interrupt()) {
+        Ok(sig) => sig,
+        Err(e) => {
+            tracing::error!("Failed to install SIGINT handler: {}", e);
+            return;
+        }
+    };
+
+    let mut sigterm = match signal(SignalKind::terminate()) {
+        Ok(sig) => sig,
+        Err(e) => {
+            tracing::error!("Failed to install SIGTERM handler: {}", e);
+            return;
+        }
+    };
+
     tokio::select! {
         _ = sigint.recv() => {
             tracing::info!("Received SIGINT, shutting down gracefully...");

@@ -35,7 +35,7 @@ impl HealthChecker {
 
         // 预构建provider到backends的映射
         let mut provider_backends = HashMap::new();
-        
+
         for model_mapping in config.models.values() {
             for backend in &model_mapping.backends {
                 provider_backends
@@ -69,20 +69,23 @@ impl HealthChecker {
         );
 
         // 使用 compare_exchange 来原子性地检查和设置标志，解决数据竞争问题
-        let is_initial_check =
-            match self
-                .initial_check_done
-                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            {
-                Ok(_) => {
-                    info!("Performing initial health check - marking all enabled providers as healthy");
-                    true
-                }
-                Err(_) => {
-                    debug!("Performing routine health check - only checking currently healthy providers");
-                    false
-                }
-            };
+        let is_initial_check = match self.initial_check_done.compare_exchange(
+            false,
+            true,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => {
+                info!("Performing initial health check - marking all enabled providers as healthy");
+                true
+            }
+            Err(_) => {
+                debug!(
+                    "Performing routine health check - only checking currently healthy providers"
+                );
+                false
+            }
+        };
 
         let mut tasks = Vec::new();
 
@@ -112,15 +115,16 @@ impl HealthChecker {
                     initial_check_done: Arc::new(AtomicBool::new(is_initial)),
                     provider_backends: HashMap::new(),
                 };
-                temp_checker.check_provider_health(
-                    &provider_id_clone,
-                    &provider_clone,
-                    &client,
-                    &metrics,
-                    &config,
-                    is_initial,
-                )
-                .await;
+                temp_checker
+                    .check_provider_health(
+                        &provider_id_clone,
+                        &provider_clone,
+                        &client,
+                        &metrics,
+                        &config,
+                        is_initial,
+                    )
+                    .await;
                 debug!(
                     "Completed health check task for provider: {}",
                     provider_id_clone
@@ -680,7 +684,8 @@ impl HealthChecker {
 
                         for model_mapping in self.config.models.values() {
                             for backend in &model_mapping.backends {
-                                if backend.provider == *provider_id && backend.model == *model_name {
+                                if backend.provider == *provider_id && backend.model == *model_name
+                                {
                                     backend_billing_mode = backend.billing_mode.clone();
                                     found_backend = true;
                                     break;

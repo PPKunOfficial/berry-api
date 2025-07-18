@@ -320,16 +320,22 @@ impl MetricsCollector {
                 let (provider_id, model_name) = if parts.len() == 2 {
                     let provider = parts[0].trim();
                     let model = parts[1].trim();
-                    
+
                     // 验证格式：provider和model都不能为空
                     if provider.is_empty() || model.is_empty() {
-                        warn!("Invalid backend key format: '{}' - provider or model is empty", backend_key);
+                        warn!(
+                            "Invalid backend key format: '{}' - provider or model is empty",
+                            backend_key
+                        );
                         ("invalid".to_string(), "invalid".to_string())
                     } else {
                         (provider.to_string(), model.to_string())
                     }
                 } else {
-                    warn!("Invalid backend key format: '{}' - expected format 'provider:model'", backend_key);
+                    warn!(
+                        "Invalid backend key format: '{}' - expected format 'provider:model'",
+                        backend_key
+                    );
                     ("invalid".to_string(), "invalid".to_string())
                 };
 
