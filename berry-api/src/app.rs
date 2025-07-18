@@ -104,7 +104,7 @@ pub fn create_app(state: AppState) -> Router {
 }
 
 /// 启动应用服务器
-pub async fn start_server() -> Result<()> {
+pub async fn start_server() -> Result<AppState> {
     // 初始化日志 - 完全依赖RUST_LOG环境变量
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
@@ -174,5 +174,5 @@ pub async fn start_server() -> Result<()> {
     }
 
     app_state.shutdown().await;
-    Ok(())
+    Ok(app_state)
 }

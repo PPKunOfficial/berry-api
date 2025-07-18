@@ -3,8 +3,9 @@ use anyhow::Result;
 use berry_core::client::{
     AIBackendClient, ChatCompletionConfig, ChatMessage, ChatRole, ClientFactory,
 };
-use berry_core::config::model::{BillingMode, Config, Provider};
+use berry_core::config::model::{Backend, BillingMode, Config, Provider};
 use reqwest::Client;
+use std::collections::HashMap;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -19,6 +20,7 @@ pub struct HealthChecker {
     metrics: Arc<MetricsCollector>,
     client: Client,
     initial_check_done: Arc<AtomicBool>,
+    provider_backends: HashMap<String, Vec<Backend>>,
 }
 
 impl HealthChecker {
@@ -31,11 +33,24 @@ impl HealthChecker {
             .build()
             .unwrap_or_else(|_| Client::new());
 
+        // 预构建provider到backends的映射
+        let mut provider_backends = HashMap::new();
+        
+        for model_mapping in config.models.values() {
+            for backend in &model_mapping.backends {
+                provider_backends
+                    .entry(backend.provider.clone())
+                    .or_insert_with(Vec::new)
+                    .push(backend.clone());
+            }
+        }
+
         Self {
             config,
             metrics,
             client,
             initial_check_done: Arc::new(AtomicBool::new(false)),
+            provider_backends,
         }
     }
 
@@ -53,14 +68,21 @@ impl HealthChecker {
             enabled_providers.len()
         );
 
-        // 检查是否是初始检查
-        let is_initial_check = !self.initial_check_done.load(Ordering::Acquire);
-
-        if is_initial_check {
-            info!("Performing initial health check - marking all enabled providers as healthy");
-        } else {
-            debug!("Performing routine health check - only checking currently healthy providers");
-        }
+        // 使用 compare_exchange 来原子性地检查和设置标志，解决数据竞争问题
+        let is_initial_check =
+            match self
+                .initial_check_done
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            {
+                Ok(_) => {
+                    info!("Performing initial health check - marking all enabled providers as healthy");
+                    true
+                }
+                Err(_) => {
+                    debug!("Performing routine health check - only checking currently healthy providers");
+                    false
+                }
+            };
 
         let mut tasks = Vec::new();
 
@@ -82,7 +104,15 @@ impl HealthChecker {
                     "Starting health check task for provider: {}",
                     provider_id_clone
                 );
-                Self::check_provider_health(
+                // 创建临时HealthChecker实例用于调用
+                let temp_checker = HealthChecker {
+                    config: config.clone(),
+                    metrics: metrics.clone(),
+                    client: client.clone(),
+                    initial_check_done: Arc::new(AtomicBool::new(is_initial)),
+                    provider_backends: HashMap::new(),
+                };
+                temp_checker.check_provider_health(
                     &provider_id_clone,
                     &provider_clone,
                     &client,
@@ -128,11 +158,12 @@ impl HealthChecker {
 
     /// 检查单个provider的健康状态
     async fn check_provider_health(
+        &self,
         provider_id: &str,
         provider: &Provider,
         client: &Client,
         metrics: &MetricsCollector,
-        config: &Config,
+        _config: &Config,
         is_initial_check: bool,
     ) {
         let start_time = Instant::now();
@@ -171,10 +202,10 @@ impl HealthChecker {
         let mut has_per_token_models = false;
         let mut per_request_models = Vec::new();
 
-        // 遍历所有模型映射，找到使用此provider的backends
-        for model_mapping in config.models.values() {
-            for backend in &model_mapping.backends {
-                if backend.provider == provider_id && provider.models.contains(&backend.model) {
+        // 使用预构建的映射快速获取provider的backends
+        if let Some(backends) = self.provider_backends.get(provider_id) {
+            for backend in backends {
+                if provider.models.contains(&backend.model) {
                     match backend.billing_mode {
                         BillingMode::PerToken => {
                             has_per_token_models = true;
@@ -201,10 +232,9 @@ impl HealthChecker {
 
             // 获取per-token模型列表
             let mut per_token_models = Vec::new();
-            for model_mapping in config.models.values() {
-                for backend in &model_mapping.backends {
-                    if backend.provider == provider_id
-                        && provider.models.contains(&backend.model)
+            if let Some(backends) = self.provider_backends.get(provider_id) {
+                for backend in backends {
+                    if provider.models.contains(&backend.model)
                         && backend.billing_mode == BillingMode::PerToken
                     {
                         per_token_models.push(backend.model.clone());
@@ -570,7 +600,7 @@ impl HealthChecker {
     pub async fn check_provider(&self, provider_id: &str) -> Result<()> {
         if let Some(provider) = self.config.providers.get(provider_id) {
             if provider.enabled {
-                Self::check_provider_health(
+                self.check_provider_health(
                     provider_id,
                     provider,
                     &self.client,
@@ -633,18 +663,9 @@ impl HealthChecker {
                     unhealthy_backend.backend_key
                 );
 
-                // 解析backend_key获取provider_id和model
-                let parts: Vec<&str> = unhealthy_backend.backend_key.split(':').collect();
-                if parts.len() != 2 {
-                    warn!(
-                        "Invalid backend key format: {}",
-                        unhealthy_backend.backend_key
-                    );
-                    continue;
-                }
-
-                let provider_id = parts[0];
-                let model_name = parts[1];
+                // 直接使用预解析的provider_id和model_name
+                let provider_id = &unhealthy_backend.provider_id;
+                let model_name = &unhealthy_backend.model_name;
 
                 debug!(
                     "Parsed backend key: provider={}, model={}",
@@ -659,7 +680,7 @@ impl HealthChecker {
 
                         for model_mapping in self.config.models.values() {
                             for backend in &model_mapping.backends {
-                                if backend.provider == provider_id && backend.model == model_name {
+                                if backend.provider == *provider_id && backend.model == *model_name {
                                     backend_billing_mode = backend.billing_mode.clone();
                                     found_backend = true;
                                     break;

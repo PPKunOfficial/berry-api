@@ -118,8 +118,8 @@ impl LoadBalancerMetrics for MetricsCollector {
     }
 
     fn record_backend_request(&self, backend_key: &str) {
-        // MetricsCollector 没有直接的记录请求方法，使用成功记录
-        self.record_success(backend_key);
+        // 使用专门的请求记录方法，避免语义歧义
+        self.record_request(backend_key);
     }
 
     fn record_backend_error(&self, backend_key: &str) {

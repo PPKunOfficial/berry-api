@@ -150,6 +150,8 @@ pub enum HealthCheckMethod {
 #[derive(Debug, Clone)]
 pub struct UnhealthyBackend {
     pub backend_key: String,
+    pub provider_id: String,
+    pub model_name: String,
     pub first_failure_time: Instant,
     pub last_failure_time: Instant,
     pub failure_count: u32,
@@ -245,6 +247,19 @@ impl MetricsCollector {
         metrics.touch();
     }
 
+    /// 记录请求（仅增加计数，不标记成功或失败）
+    pub fn record_request(&self, backend_key: &str) {
+        // 增加总请求计数
+        self.total_requests
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        // 获取写锁并更新请求计数
+        let mut backends = self.backends.write();
+        let metrics = backends.entry(backend_key.to_string()).or_default();
+        metrics.request_count += 1;
+        metrics.touch();
+    }
+
     /// 记录请求失败
     pub fn record_failure(&self, backend_key: &str) {
         self.record_failure_with_method(backend_key, HealthCheckMethod::Network);
@@ -299,8 +314,18 @@ impl MetricsCollector {
                     backend_key,
                     check_method
                 );
+                // 预解析provider_id和model_name
+                let parts: Vec<&str> = backend_key.split(':').collect();
+                let (provider_id, model_name) = if parts.len() == 2 {
+                    (parts[0].to_string(), parts[1].to_string())
+                } else {
+                    ("unknown".to_string(), "unknown".to_string())
+                };
+
                 metrics.unhealthy_info = Some(UnhealthyBackend {
                     backend_key: backend_key.to_string(),
+                    provider_id,
+                    model_name,
                     first_failure_time: now,
                     last_failure_time: now,
                     failure_count: 1,
@@ -1166,6 +1191,18 @@ impl BackendSelector {
     /// SmartAI加权随机选择
     fn weighted_random_select_smart_ai(&self, backends: &[(Backend, f64)]) -> Result<Backend> {
         let total_weight: f64 = backends.iter().map(|(_, w)| w).sum();
+
+        // 增加保护，防止total_weight为0或负数时出现panic
+        if total_weight <= 0.0 {
+            tracing::warn!(
+                "Total weight is zero or negative ({}), falling back to first backend for model '{}'",
+                total_weight,
+                self.mapping.name
+            );
+            // 当所有有效权重都为0时，直接返回第一个作为兜底
+            return Ok(backends[0].0.clone());
+        }
+
         let mut random_value = rand::random::<f64>() * total_weight;
 
         for (backend, weight) in backends {
