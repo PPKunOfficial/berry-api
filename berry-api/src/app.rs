@@ -103,8 +103,8 @@ pub fn create_app(state: AppState) -> Router {
     create_app_router().with_state(state)
 }
 
-/// 启动应用服务器
-pub async fn start_server() -> Result<AppState> {
+/// 启动应用服务器并返回监听地址和服务器句柄
+pub async fn start_server() -> Result<(std::net::SocketAddr, impl std::future::Future<Output = Result<(), hyper::Error>>, AppState)> {
     // 初始化日志 - 完全依赖RUST_LOG环境变量
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
@@ -155,24 +155,7 @@ pub async fn start_server() -> Result<AppState> {
     info!("  GET  /v1/models     - List models (OpenAI compatible)");
     info!("  GET  /v1/health     - Health check (OpenAI compatible)");
 
-    // 设置优雅关闭
-    let shutdown_signal = async {
-        if let Err(e) = tokio::signal::ctrl_c().await {
-            error!("Failed to install CTRL+C signal handler: {}", e);
-            return;
-        }
-        info!("Shutdown signal received");
-    };
-
-    // 启动服务器
-    let server = axum::serve(listener, app).with_graceful_shutdown(shutdown_signal);
-
-    if let Err(e) = server.await {
-        error!("Server error: {}", e);
-        app_state.shutdown().await;
-        return Err(e.into());
-    }
-
-    app_state.shutdown().await;
-    Ok(app_state)
+    // 返回监听地址、服务器句柄和应用状态
+    let server = axum::serve(listener, app);
+    Ok((addr, server, app_state))
 }
