@@ -1,3 +1,6 @@
+use crate::database::Database;
+use crate::handlers::UserHandler;
+use crate::repositories::UserRepository;
 use crate::router::routes::create_app_router;
 use berry_core::auth::rate_limit::RateLimitService;
 use berry_core::config::loader::load_config;
@@ -17,6 +20,8 @@ pub struct AppState {
     pub handler: Arc<ConcreteLoadBalancedHandler>,
     pub config: Arc<berry_core::config::model::Config>,
     pub rate_limiter: Arc<RateLimitService>,
+    pub database: Arc<Database>,
+    pub user_handler: Arc<UserHandler>,
     #[cfg(feature = "observability")]
     pub prometheus_metrics: Option<crate::observability::prometheus_metrics::PrometheusMetrics>,
     #[cfg(not(feature = "observability"))]
@@ -32,6 +37,11 @@ impl AppState {
         let config_path = berry_core::config::loader::get_config_path();
         info!("Configuration loaded successfully from: {}", config_path);
 
+        // 创建数据库连接
+        let database = Database::new(&config.settings.database.url).await?;
+        database.run_migrations().await?;
+        info!("Database connected and migrations applied");
+
         // 创建负载均衡服务
         let load_balancer = Arc::new(LoadBalanceService::new(config.clone())?);
 
@@ -46,6 +56,10 @@ impl AppState {
 
         // 创建速率限制服务
         let rate_limiter = Arc::new(RateLimitService::new());
+
+        // 创建用户仓库和处理器
+        let user_repository = UserRepository::new(database.clone());
+        let user_handler = Arc::new(UserHandler::new(user_repository));
 
         // 创建Prometheus metrics (如果启用了observability功能)
         #[cfg(feature = "observability")]
@@ -75,6 +89,8 @@ impl AppState {
             handler,
             config: Arc::new(config),
             rate_limiter,
+            database: Arc::new(database),
+            user_handler,
             prometheus_metrics,
             batch_metrics,
         };
@@ -103,8 +119,8 @@ pub fn create_app(state: AppState) -> Router {
     create_app_router().with_state(state)
 }
 
-/// 启动应用服务器并返回监听地址和服务器句柄
-pub async fn start_server() -> Result<(std::net::SocketAddr, impl std::future::Future<Output = Result<(), hyper::Error>>, AppState)> {
+/// 启动应用服务器并返回监听地址和应用状态
+pub async fn start_server() -> Result<(std::net::SocketAddr, AppState)> {
     // 初始化日志 - 完全依赖RUST_LOG环境变量
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
@@ -136,9 +152,6 @@ pub async fn start_server() -> Result<(std::net::SocketAddr, impl std::future::F
         }
     };
 
-    // 创建应用
-    let app = create_app(app_state.clone());
-
     // 启动服务器
     let bind_addr = std::env::var("BIND_ADDRESS").unwrap_or_else(|_| "127.0.0.1:3000".to_string());
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
@@ -155,7 +168,6 @@ pub async fn start_server() -> Result<(std::net::SocketAddr, impl std::future::F
     info!("  GET  /v1/models     - List models (OpenAI compatible)");
     info!("  GET  /v1/health     - Health check (OpenAI compatible)");
 
-    // 返回监听地址、服务器句柄和应用状态
-    let server = axum::serve(listener, app);
-    Ok((addr, server, app_state))
+    // 返回监听地址和应用状态
+    Ok((addr, app_state))
 }

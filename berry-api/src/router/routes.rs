@@ -35,6 +35,8 @@ pub fn create_app_router() -> Router<AppState> {
             "/smart-ai/models/{model}/weights",
             get(get_model_smart_ai_weights),
         )
+        // 用户管理路由
+        .nest("/api", crate::router::users::create_user_routes())
         .nest("/v1", create_v1_routes())
         .nest("/admin", create_admin_routes())
         .nest("/monitoring", create_monitoring_routes())

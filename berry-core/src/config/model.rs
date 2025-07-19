@@ -33,6 +33,9 @@ pub struct GlobalSettings {
     // SmartAI 相关配置
     #[serde(default)]
     pub smart_ai: SmartAiSettings,
+    // 数据库配置
+    #[serde(default)]
+    pub database: DatabaseSettings,
 }
 
 /// SmartAI 负载均衡配置
@@ -80,6 +83,26 @@ pub struct SmartAiConfidenceAdjustments {
     pub timeout_penalty: f64,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct DatabaseSettings {
+    #[serde(default = "default_database_url")]
+    pub url: String,
+    #[serde(default = "default_database_max_connections")]
+    pub max_connections: u32,
+    #[serde(default = "default_database_timeout")]
+    pub timeout_seconds: u64,
+}
+
+impl Default for DatabaseSettings {
+    fn default() -> Self {
+        Self {
+            url: default_database_url(),
+            max_connections: default_database_max_connections(),
+            timeout_seconds: default_database_timeout(),
+        }
+    }
+}
+
 impl Default for GlobalSettings {
     fn default() -> Self {
         Self {
@@ -92,6 +115,7 @@ impl Default for GlobalSettings {
             max_internal_retries: default_max_internal_retries(),
             health_check_timeout_seconds: default_health_check_timeout(),
             smart_ai: SmartAiSettings::default(),
+            database: DatabaseSettings::default(),
         }
     }
 }
@@ -302,6 +326,19 @@ fn default_smart_ai_model_error_penalty() -> f64 {
 
 fn default_smart_ai_timeout_penalty() -> f64 {
     0.2
+}
+
+// 数据库默认值函数
+fn default_database_url() -> String {
+    "postgres://localhost/berry".to_string()
+}
+
+fn default_database_max_connections() -> u32 {
+    5
+}
+
+fn default_database_timeout() -> u64 {
+    30
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]

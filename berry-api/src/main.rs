@@ -2,14 +2,14 @@
 //!
 //! Main entry point for the Berry API load balancing service
 
-use berry_api::start_server;
+use berry_api::{app::create_app, start_server};
 use std::time::Duration;
 use tokio::signal;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 启动服务器并获取监听地址、服务器句柄和应用状态
-    let (addr, server, app_state) = start_server().await?;
+    // 启动服务器并获取监听地址和应用状态
+    let (addr, app_state) = start_server().await?;
     tracing::info!("Server successfully started on http://{}", addr);
 
     // 启动后台任务来定期清理过时的后端指标，支持优雅关闭
@@ -26,19 +26,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    // 创建应用
+    let app = create_app(app_state.clone());
+    let listener = tokio::net::TcpListener::bind(&addr.to_string()).await?;
+    let server = axum::serve(listener, app);
+
     // 等待关闭信号
     shutdown_signal().await;
     tracing::info!("Received shutdown signal, starting graceful shutdown...");
 
-    // 优雅关闭服务器
-    let server_handle = tokio::spawn(server);
-    
     // 优雅关闭后台任务
     cleanup_handle.abort();
     tracing::info!("Cleanup task aborted");
 
-    // 等待服务器优雅关闭
-    if let Err(e) = server_handle.await {
+    // 优雅关闭服务器
+    if let Err(e) = server.await {
         tracing::error!("Server shutdown error: {}", e);
     }
 
