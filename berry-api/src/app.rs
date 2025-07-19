@@ -7,6 +7,7 @@ use berry_relay::relay::handler::loadbalanced::ConcreteLoadBalancedHandler;
 use anyhow::Result;
 use axum::Router;
 use std::sync::Arc;
+use std::future::IntoFuture;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
@@ -103,8 +104,10 @@ pub fn create_app(state: AppState) -> Router {
     create_app_router().with_state(state)
 }
 
+use tokio::task::JoinHandle;
+
 /// 启动应用服务器并返回监听地址和服务器句柄
-pub async fn start_server() -> Result<(std::net::SocketAddr, impl std::future::Future<Output = Result<(), hyper::Error>>, AppState)> {
+pub async fn start_server() -> Result<(std::net::SocketAddr, JoinHandle<Result<(), std::io::Error>>, AppState)> {
     // 初始化日志 - 完全依赖RUST_LOG环境变量
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
@@ -156,6 +159,6 @@ pub async fn start_server() -> Result<(std::net::SocketAddr, impl std::future::F
     info!("  GET  /v1/health     - Health check (OpenAI compatible)");
 
     // 返回监听地址、服务器句柄和应用状态
-    let server = axum::serve(listener, app);
+    let server = tokio::spawn(axum::serve(listener, app).into_future());
     Ok((addr, server, app_state))
 }

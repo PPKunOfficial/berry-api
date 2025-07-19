@@ -54,6 +54,8 @@ axum-prometheus = "0.8"
 # 构建依赖
 vergen-git2 = { version = "1.0", features = ["build", "cargo", "rustc", "si"] }
 
+hyper = { version = "1.5.1", features = ["full"] }
+
 [workspace.lints.clippy]
 unwrap_used = "deny"
 expect_used = "deny"
