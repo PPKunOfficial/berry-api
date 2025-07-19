@@ -32,7 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 优雅关闭服务器
     let server_handle = tokio::spawn(server);
-    
+
     // 优雅关闭后台任务
     cleanup_handle.abort();
     tracing::info!("Cleanup task aborted");

@@ -6,8 +6,8 @@ use berry_relay::relay::handler::loadbalanced::ConcreteLoadBalancedHandler;
 
 use anyhow::Result;
 use axum::Router;
-use std::sync::Arc;
 use std::future::IntoFuture;
+use std::sync::Arc;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
@@ -107,7 +107,11 @@ pub fn create_app(state: AppState) -> Router {
 use tokio::task::JoinHandle;
 
 /// 启动应用服务器并返回监听地址和服务器句柄
-pub async fn start_server() -> Result<(std::net::SocketAddr, JoinHandle<Result<(), std::io::Error>>, AppState)> {
+pub async fn start_server() -> Result<(
+    std::net::SocketAddr,
+    JoinHandle<Result<(), std::io::Error>>,
+    AppState,
+)> {
     // 初始化日志 - 完全依赖RUST_LOG环境变量
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
