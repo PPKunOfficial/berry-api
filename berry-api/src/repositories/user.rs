@@ -17,14 +17,15 @@ impl UserRepository {
         UserRepository { db }
     }
 
-    pub async fn create(&self,
+    pub async fn create(
+        &self,
         username: &str,
         email: &str,
         password: &str,
         full_name: Option<&str>,
     ) -> Result<User> {
         let password_hash = self.hash_password(password)?;
-        
+
         let user = sqlx::query_as::<_, User>(
             r#"
             INSERT INTO users (username, email, password_hash, full_name)
@@ -43,9 +44,7 @@ impl UserRepository {
         Ok(user)
     }
 
-    pub async fn find_by_id(&self,
-        id: Uuid
-    ) -> Result<Option<User>> {
+    pub async fn find_by_id(&self, id: Uuid) -> Result<Option<User>> {
         let user = sqlx::query_as::<_, User>(
             r#"
             SELECT id, username, email, password_hash, full_name, is_active, is_admin, created_at, updated_at, last_login_at
@@ -61,9 +60,7 @@ impl UserRepository {
         Ok(user)
     }
 
-    pub async fn find_by_username(&self,
-        username: &str
-    ) -> Result<Option<User>> {
+    pub async fn find_by_username(&self, username: &str) -> Result<Option<User>> {
         let user = sqlx::query_as::<_, User>(
             r#"
             SELECT id, username, email, password_hash, full_name, is_active, is_admin, created_at, updated_at, last_login_at
@@ -79,9 +76,7 @@ impl UserRepository {
         Ok(user)
     }
 
-    pub async fn find_by_email(&self,
-        email: &str
-    ) -> Result<Option<User>> {
+    pub async fn find_by_email(&self, email: &str) -> Result<Option<User>> {
         let user = sqlx::query_as::<_, User>(
             r#"
             SELECT id, username, email, password_hash, full_name, is_active, is_admin, created_at, updated_at, last_login_at
@@ -97,10 +92,7 @@ impl UserRepository {
         Ok(user)
     }
 
-    pub async fn update(&self,
-        id: Uuid,
-        updates: &UpdateUserRequest,
-    ) -> Result<Option<User>> {
+    pub async fn update(&self, id: Uuid, updates: &UpdateUserRequest) -> Result<Option<User>> {
         let user = sqlx::query_as::<_, User>(
             r#"
             UPDATE users
@@ -173,12 +165,9 @@ impl UserRepository {
         Ok(users)
     }
 
-    pub async fn verify_password(&self,
-        username: &str,
-        password: &str
-    ) -> Result<Option<User>> {
+    pub async fn verify_password(&self, username: &str, password: &str) -> Result<Option<User>> {
         let user = self.find_by_username(username).await?;
-        
+
         if let Some(user) = &user {
             if self.verify_password_hash(password, &user.password_hash)? {
                 return Ok(Some(user.clone()));
@@ -188,12 +177,10 @@ impl UserRepository {
         Ok(None)
     }
 
-    fn hash_password(&self,
-        password: &str
-    ) -> Result<String> {
+    fn hash_password(&self, password: &str) -> Result<String> {
         let salt = SaltString::generate(&mut OsRng);
         let argon2 = Argon2::default();
-        
+
         let password_hash = argon2
             .hash_password(password.as_bytes(), &salt)
             .map_err(|e| anyhow::anyhow!("Failed to hash password: {}", e))?
@@ -202,16 +189,12 @@ impl UserRepository {
         Ok(password_hash)
     }
 
-    fn verify_password_hash(
-        &self,
-        password: &str,
-        hash: &str
-    ) -> Result<bool> {
-        let parsed_hash = PasswordHash::new(hash)
-            .map_err(|e| anyhow::anyhow!("Invalid password hash: {}", e))?;
-        
+    fn verify_password_hash(&self, password: &str, hash: &str) -> Result<bool> {
+        let parsed_hash =
+            PasswordHash::new(hash).map_err(|e| anyhow::anyhow!("Invalid password hash: {}", e))?;
+
         let argon2 = Argon2::default();
-        
+
         Ok(argon2
             .verify_password(password.as_bytes(), &parsed_hash)
             .is_ok())

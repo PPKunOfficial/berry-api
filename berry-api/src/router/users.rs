@@ -24,8 +24,9 @@ async fn register_user(
     let result = crate::handlers::UserHandler::register(
         axum::extract::State(state.user_handler.clone()),
         payload,
-    ).await;
-    
+    )
+    .await;
+
     match result {
         Ok((json, status)) => Ok((status, json).into_response()),
         Err((status, json)) => Err((status, json).into_response()),
@@ -39,8 +40,9 @@ async fn login_user(
     let result = crate::handlers::UserHandler::login(
         axum::extract::State(state.user_handler.clone()),
         payload,
-    ).await;
-    
+    )
+    .await;
+
     match result {
         Ok((json, status)) => Ok((status, json).into_response()),
         Err((status, json)) => Err((status, json).into_response()),
@@ -50,10 +52,10 @@ async fn login_user(
 async fn list_users(
     State(state): State<AppState>,
 ) -> Result<axum::response::Response, axum::response::Response> {
-    let result = crate::handlers::UserHandler::list_users(
-        axum::extract::State(state.user_handler.clone()),
-    ).await;
-    
+    let result =
+        crate::handlers::UserHandler::list_users(axum::extract::State(state.user_handler.clone()))
+            .await;
+
     match result {
         Ok(json) => Ok(json.into_response()),
         Err((status, json)) => Err((status, json).into_response()),
@@ -67,8 +69,9 @@ async fn get_user(
     let result = crate::handlers::UserHandler::get_user(
         axum::extract::State(state.user_handler.clone()),
         path,
-    ).await;
-    
+    )
+    .await;
+
     match result {
         Ok(json) => Ok(json.into_response()),
         Err((status, json)) => Err((status, json).into_response()),
@@ -84,8 +87,9 @@ async fn update_user(
         axum::extract::State(state.user_handler.clone()),
         path,
         payload,
-    ).await;
-    
+    )
+    .await;
+
     match result {
         Ok(json) => Ok(json.into_response()),
         Err((status, json)) => Err((status, json).into_response()),
@@ -99,8 +103,9 @@ async fn delete_user(
     let result = crate::handlers::UserHandler::delete_user(
         axum::extract::State(state.user_handler.clone()),
         path,
-    ).await;
-    
+    )
+    .await;
+
     match result {
         Ok((json, status)) => Ok((status, json).into_response()),
         Err((status, json)) => Err((status, json).into_response()),

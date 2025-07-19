@@ -24,16 +24,12 @@ impl Database {
     }
 
     pub async fn run_migrations(&self) -> Result<()> {
-        sqlx::migrate!("./migrations")
-            .run(&self.pool)
-            .await?;
+        sqlx::migrate!("./migrations").run(&self.pool).await?;
         Ok(())
     }
 
     pub async fn ping(&self) -> Result<bool> {
-        let result: i32 = sqlx::query_scalar("SELECT 1")
-            .fetch_one(&self.pool)
-            .await?;
+        let result: i32 = sqlx::query_scalar("SELECT 1").fetch_one(&self.pool).await?;
         Ok(result == 1)
     }
 }
