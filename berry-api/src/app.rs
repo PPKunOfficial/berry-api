@@ -18,10 +18,6 @@ pub struct AppState {
     pub handler: Arc<ConcreteLoadBalancedHandler>,
     pub config: Arc<berry_core::config::model::Config>,
     pub rate_limiter: Arc<RateLimitService>,
-    #[cfg(feature = "observability")]
-    pub prometheus_metrics: Option<crate::observability::prometheus_metrics::PrometheusMetrics>,
-    #[cfg(not(feature = "observability"))]
-    pub prometheus_metrics: Option<()>,
     pub batch_metrics: Arc<crate::observability::batch_metrics::BatchMetricsCollector>,
 }
 
@@ -48,23 +44,6 @@ impl AppState {
         // 创建速率限制服务
         let rate_limiter = Arc::new(RateLimitService::new());
 
-        // 创建Prometheus metrics (如果启用了observability功能)
-        #[cfg(feature = "observability")]
-        let prometheus_metrics =
-            match crate::observability::prometheus_metrics::PrometheusMetrics::new() {
-                Ok(metrics) => {
-                    info!("Prometheus metrics initialized");
-                    Some(metrics)
-                }
-                Err(e) => {
-                    error!("Failed to initialize Prometheus metrics: {}", e);
-                    None
-                }
-            };
-
-        #[cfg(not(feature = "observability"))]
-        let prometheus_metrics = None;
-
         // 创建批量指标收集器
         let batch_metrics = Arc::new(
             crate::observability::batch_metrics::BatchMetricsCollector::with_default_config(),
@@ -76,17 +55,8 @@ impl AppState {
             handler,
             config: Arc::new(config),
             rate_limiter,
-            prometheus_metrics,
             batch_metrics,
         };
-
-        // 初始化Prometheus指标
-        #[cfg(feature = "observability")]
-        if let Some(ref metrics) = app_state.prometheus_metrics {
-            metrics.initialize_metrics(&app_state).await;
-            metrics.start_background_updater(app_state.clone());
-            info!("Prometheus metrics initialized and background updater started");
-        }
 
         Ok(app_state)
     }

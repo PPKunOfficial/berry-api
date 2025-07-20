@@ -15,14 +15,9 @@ pub async fn chat_completions(
     let method = "POST";
     let endpoint = "/v1/chat/completions";
 
-    // 记录正在处理的请求
-    #[cfg(feature = "observability")]
-    if let Some(ref metrics) = state.prometheus_metrics {
-        metrics
-            .http_requests_in_flight
-            .with_label_values(&[method, endpoint])
-            .inc();
-    }
+    // 记录正在处理的请求 - 已移除Prometheus支持
+    // 使用批量指标收集器记录
+    // 批量指标收集器会在请求完成时统一记录
     // 认证检查
     let token = authorization.token();
     let user = match state.config.validate_user_token(token) {
@@ -116,35 +111,11 @@ fn record_request_metrics(
     start: Instant,
     response: &axum::response::Response,
 ) {
-    #[cfg(feature = "observability")]
-    {
-        let latency = start.elapsed();
-        let status = response.status().to_string();
-
-        if let Some(ref metrics) = state.prometheus_metrics {
-            // 减少正在处理的请求计数
-            metrics
-                .http_requests_in_flight
-                .with_label_values(&[method, endpoint])
-                .dec();
-
-            // 记录请求总数
-            metrics
-                .http_requests_total
-                .with_label_values(&[method, endpoint, &status])
-                .inc();
-
-            // 记录请求延迟
-            metrics
-                .http_request_duration_seconds
-                .with_label_values(&[method, endpoint])
-                .observe(latency.as_secs_f64());
-        }
-    }
-
-    #[cfg(not(feature = "observability"))]
-    {
-        // 避免未使用变量警告
-        let _ = (state, method, endpoint, start, response);
-    }
+    let latency = start.elapsed();
+    let status = response.status().as_u16();
+    
+    // 使用批量指标收集器记录请求指标
+    state
+        .batch_metrics
+        .record_http_request(method, endpoint, status, latency);
 }

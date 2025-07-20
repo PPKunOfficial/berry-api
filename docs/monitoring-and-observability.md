@@ -1,88 +1,75 @@
 # 📊 监控与可观测性
 
-Berry API 提供完整的可观测性支持，包括指标收集、日志记录和健康监控。
+Berry API 提供基于面板的基础信心度观测，包括指标收集、日志记录和健康监控。
 
 ### 🎯 核心指标
 
-**HTTP 请求指标**
+**服务健康指标**
 
--   `http_requests_total` - 总请求数（按状态码、方法、路径分类）
--   `http_request_duration_seconds` - 请求延迟分布
--   `http_requests_in_flight` - 当前处理中的请求数
+- **服务运行状态** - 服务是否正常运行
+- **总请求数** - 累计处理的请求总数
+- **成功请求数** - 成功处理的请求数
+- **成功率** - 成功请求占总请求的百分比
+- **时间戳** - 指标更新时间
 
-**后端健康指标**
+**提供商健康指标**
 
--   `backend_health_status` - 后端健康状态（0=不健康，1=健康）
--   `backend_request_count_total` - 后端请求总数
--   `backend_error_count_total` - 后端错误总数
--   `backend_latency_seconds` - 后端响应延迟
+- **总提供商数** - 配置的提供商总数
+- **健康提供商数** - 当前健康的提供商数
+- **健康比例** - 健康提供商占总数的比例
 
-**负载均衡指标**
+**模型健康指标**
 
--   `load_balance_selections_total` - 负载均衡选择次数
--   `smart_ai_confidence_score` - SmartAI信心度分数
--   `circuit_breaker_state` - 熔断器状态
+- **总模型数** - 配置的模型总数
+- **健康模型数** - 当前健康的模型数
+- **健康比例** - 健康模型占总数的比例
+- **模型详情** - 每个模型的详细健康状态
 
-### 📈 Prometheus 集成
+### 📈 基础信心度观测
 
-**启用可观测性功能**
+**指标端点**
 
 ```bash
-# 编译时启用observability特性
-cargo build --release --features observability
+# 获取服务指标
+curl http://localhost:3000/metrics
 
-# 或在Cargo.toml中配置
-[features]
-default = ["observability"]
-observability = ["prometheus", "axum-prometheus"]
+# 获取详细监控信息
+curl http://localhost:3000/monitoring/info
+
+# 获取性能指标
+curl http://localhost:3000/monitoring/performance
 ```
 
-**Prometheus 配置**
-
-```yaml
-# prometheus.yml
-global:
-  scrape_interval: 15s
-
-scrape_configs:
-  - job_name: 'berry-api'
-    static_configs:
-      - targets: ['localhost:3000']
-    metrics_path: '/prometheus'
-    scrape_interval: 10s
-```
-
-**Grafana 仪表板**
-
-创建 Grafana 仪表板监控关键指标：
+**指标响应示例**
 
 ```json
 {
-  "dashboard": {
-    "title": "Berry API Dashboard",
-    "panels": [
-      {
-        "title": "Request Rate",
-        "type": "graph",
-        "targets": [
-          {
-            "expr": "rate(http_requests_total[5m])",
-            "legendFormat": "{{method}} {{status}}"
-          }
-        ]
-      },
-      {
-        "title": "Backend Health",
-        "type": "stat",
-        "targets": [
-          {
-            "expr": "backend_health_status",
-            "legendFormat": "{{provider}}:{{model}}"
-          }
-        ]
+  "service": {
+    "running": true,
+    "total_requests": 1250,
+    "successful_requests": 1200,
+    "success_rate": 0.96
+  },
+  "providers": {
+    "total": 3,
+    "healthy": 3,
+    "health_ratio": 1.0
+  },
+  "models": {
+    "total": 5,
+    "healthy": 5,
+    "health_ratio": 1.0,
+    "details": {
+      "gpt-4": {
+        "healthy_backends": 2,
+        "total_backends": 2,
+        "health_ratio": 1.0,
+        "is_healthy": true,
+        "average_latency_ms": 850
       }
-    ]
-  }
+    }
+  },
+  "timestamp": "2024-01-15T10:30:00Z"
 }
 ```
 
@@ -131,40 +118,6 @@ grep "latency" logs/berry-api.log | jq '.fields.latency_ms' | sort -n
 grep "Backend selected" logs/berry-api.log | jq -r '.fields.provider' | sort | uniq -c
 ```
 
-### 🚨 告警配置
-
-**Prometheus 告警规则**
-
-```yaml
-# alerts.yml
-groups:
-  - name: berry-api
-    rules:
-      - alert: HighErrorRate
-        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.1
-        for: 2m
-        labels:
-          severity: warning
-        annotations:
-          summary: "High error rate detected"
-
-      - alert: BackendDown
-        expr: backend_health_status == 0
-        for: 1m
-        labels:
-          severity: critical
-        annotations:
-          summary: "Backend {{ $labels.provider }}:{{ $labels.model }} is down"
-
-      - alert: HighLatency
-        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "High latency detected"
-```
-
 ### 🔍 健康检查监控
 
 **健康检查端点**
@@ -211,4 +164,29 @@ curl http://localhost:3000/admin/backend-health
     }
   }
 }
+```
+
+### 🖥️ 管理接口
+
+**系统状态监控**
+
+```bash
+# 获取系统统计信息
+curl http://localhost:3000/admin/system-stats
+
+# 获取模型权重信息
+curl http://localhost:3000/admin/model-weights
+
+# 获取速率限制使用情况
+curl http://localhost:3000/admin/rate-limit-usage
+```
+
+**性能监控**
+
+```bash
+# 获取详细性能指标
+curl http://localhost:3000/monitoring/performance
+
+# 获取模型权重监控
+curl http://localhost:3000/monitoring/model-weights
 ```

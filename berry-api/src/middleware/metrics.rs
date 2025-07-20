@@ -26,20 +26,6 @@ pub async fn metrics_middleware(request: Request, next: Next) -> Response {
         state
             .batch_metrics
             .record_http_request(&method, &path, status_code, duration);
-
-        // 如果启用了Prometheus指标，也更新Prometheus指标
-        #[cfg(feature = "observability")]
-        if let Some(ref prometheus_metrics) = state.prometheus_metrics {
-            prometheus_metrics
-                .http_requests_total
-                .with_label_values(&[&method, &path, &status_code.to_string()])
-                .inc();
-
-            prometheus_metrics
-                .http_request_duration_seconds
-                .with_label_values(&[&method, &path])
-                .observe(duration.as_secs_f64());
-        }
     }
 
     response
@@ -60,20 +46,6 @@ pub fn record_backend_request_metrics(
     state
         .batch_metrics
         .record_backend_request(provider, model, success, latency, error_type);
-
-    // 如果启用了Prometheus指标，也更新Prometheus指标
-    #[cfg(feature = "observability")]
-    if let Some(ref prometheus_metrics) = state.prometheus_metrics {
-        let backend_key = format!("{}:{}", provider, model);
-
-        prometheus_metrics.record_backend_request(&backend_key);
-
-        if success {
-            prometheus_metrics.record_backend_latency(&backend_key, latency.as_secs_f64());
-        } else {
-            prometheus_metrics.record_backend_error(&backend_key);
-        }
-    }
 }
 
 /// 健康检查指标记录辅助函数
@@ -87,12 +59,6 @@ pub fn record_health_check_metrics(
     state
         .batch_metrics
         .record_health_check(backend_key, healthy, check_duration);
-
-    // 如果启用了Prometheus指标，也更新Prometheus指标
-    #[cfg(feature = "observability")]
-    if let Some(ref prometheus_metrics) = state.prometheus_metrics {
-        prometheus_metrics.update_backend_health(backend_key, healthy);
-    }
 }
 
 /// 缓存指标记录辅助函数

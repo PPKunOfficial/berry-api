@@ -20,7 +20,6 @@ use super::{
     },
     smart_ai::{get_model_smart_ai_weights, get_smart_ai_weights},
 };
-use crate::observability::prometheus_metrics::prometheus_metrics_handler;
 
 /// 创建应用路由
 pub fn create_app_router() -> Router<AppState> {
@@ -28,7 +27,6 @@ pub fn create_app_router() -> Router<AppState> {
         .route("/", get(index))
         .route("/health", get(detailed_health_check))
         .route("/metrics", get(metrics))
-        .route("/prometheus", get(prometheus_metrics_handler))
         .route("/models", get(list_models))
         .route("/smart-ai/weights", get(get_smart_ai_weights))
         .route(
