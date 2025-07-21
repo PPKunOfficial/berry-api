@@ -113,7 +113,7 @@ fn record_request_metrics(
 ) {
     let latency = start.elapsed();
     let status = response.status().as_u16();
-    
+
     // 使用批量指标收集器记录请求指标
     state
         .batch_metrics
