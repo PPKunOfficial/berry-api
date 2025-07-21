@@ -142,6 +142,14 @@ curl http://localhost:3000/v1/models \
 }
 ```
 
+### 🎯 路由选择器使用
+
+Berry API 内置智能路由选择器，采用 **SmartAI 模式** 进行负载均衡：
+
+-   **SmartAI 模式**：根据后端健康状态、响应时间、错误率和动态权重等因素，智能地选择最优后端。
+-   **自动故障转移和恢复**：当后端出现故障时，自动将其从可用列表中移除，并在恢复后重新加入。
+-   **用户标签过滤**：支持根据用户配置的标签对后端进行过滤，实现更精细的路由控制，例如用于环境隔离（开发/测试/生产）或 A/B 测试。
+
 ### 🏥 健康检查与监控
 
 **基础健康检查**
@@ -202,5 +210,3 @@ curl http://localhost:3000/smart-ai/models/gpt-4/weights
 | `/admin/system-stats` | GET | ✅ | 系统统计信息 |
 | `/smart-ai/weights` | GET | ❌ | SmartAI全局权重 |
 | `/smart-ai/models/{model}/weights` | GET | ❌ | 特定模型SmartAI权重 |
-
-```

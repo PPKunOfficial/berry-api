@@ -23,7 +23,7 @@ Berry API 支持灵活的配置文件加载机制：
 cp config-example.toml config.toml
 
 # 方式2：使用SmartAI配置模板（推荐成本控制）
-cp config/smart_ai_example.toml config.toml
+cp smart_ai_example.toml config.toml
 
 # 方式3：使用环境变量指定配置文件
 export CONFIG_PATH=/path/to/your/config.toml
@@ -36,7 +36,7 @@ vim config.toml
 1. 环境变量 `CONFIG_PATH` 指定的路径
 2. 当前目录的 `config.toml`
 3. 当前目录的 `config-example.toml`
-4. `config/smart_ai_example.toml`
+4. `smart_ai_example.toml`
 
 **最小配置示例**：
 ```toml
