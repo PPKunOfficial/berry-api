@@ -41,6 +41,19 @@ impl OpenAIClient {
         Self { client, base_url }
     }
 
+    /// 构建API请求URL，如果base_url已经包含完整路径则直接使用
+    fn build_api_url(&self, path: &str) -> String {
+        let base_url = self.base_url.trim_end_matches('/');
+        
+        // 检查base_url是否已经包含了目标路径的结尾部分（如completions）
+        let path_end = path.split('/').last().unwrap_or(path);
+        if base_url.ends_with(path_end) {
+            base_url.to_string()
+        } else {
+            format!("{}/{}", base_url, path.trim_start_matches('/'))
+        }
+    }
+
     // 发送聊天完成请求
     pub async fn chat_completions(
         &self,
@@ -49,7 +62,7 @@ impl OpenAIClient {
     ) -> Result<reqwest::Response, ClientError> {
         let response = self
             .client
-            .post(format!("{}/v1/chat/completions", self.base_url))
+            .post(self.build_api_url("v1/chat/completions"))
             .headers(headers)
             .json(body)
             .send()
@@ -63,7 +76,7 @@ impl OpenAIClient {
         let auth_header_value = format!("Bearer {token}");
         let response = self
             .client
-            .get(format!("{}/v1/models", self.base_url))
+            .get(self.build_api_url("v1/models"))
             .header("Authorization", auth_header_value)
             .send()
             .await?;
