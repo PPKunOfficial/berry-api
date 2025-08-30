@@ -44,9 +44,9 @@ impl OpenAIClient {
     /// 构建API请求URL，如果base_url已经包含完整路径则直接使用
     fn build_api_url(&self, path: &str) -> String {
         let base_url = self.base_url.trim_end_matches('/');
-        
+
         // 检查base_url是否已经包含了目标路径的结尾部分（如completions）
-        let path_end = path.split('/').last().unwrap_or(path);
+        let path_end = path.split('/').next_back().unwrap_or(path);
         if base_url.ends_with(path_end) {
             base_url.to_string()
         } else {
